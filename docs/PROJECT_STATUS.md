@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | Not configured |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-2 complete |
-| Implementation | Stories 1-2 complete; Story 3 next |
+| Module 6.5 phase | Architecture frozen; Stories 1-3 complete |
+| Implementation | Stories 1-3 complete; Story 4 next |
 | Release | Unreleased |
 
 ## Governance
@@ -26,11 +26,11 @@
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
 The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
-The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-2 implementation is complete; the accepted baseline has 49 passing tests.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-2 implementation is complete; the accepted baseline has 85 passing tests.
 
 ## Next recommended work
 
-Begin Story 3 - Context Construction, Compression, Memory Routing - from the frozen architecture and green 49-test Story 2 baseline.
+Begin Story 4 - Capability Registry, Permissions, and Sandboxed Tool Execution - from the frozen architecture and green 85-test Story 3 baseline.
 
 ## Module 6.5 Architecture Freeze
 
@@ -41,6 +41,6 @@ Begin Story 3 - Context Construction, Compression, Memory Routing - from the fro
 - Source labs mapped: 6 of 6
 - Source deliverables mapped: 5 of 5
 - Named technologies assigned roles: 9 of 9
-- Implementation: STORIES 1-2 COMPLETE
+- Implementation: Stories 1-3 complete
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
 - Next phase: Story 3 - Context Construction, Compression, Memory Routing
