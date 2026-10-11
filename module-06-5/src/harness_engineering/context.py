@@ -64,6 +64,143 @@ class ConstructedContext(BaseModel):
     omitted_item_count: int = Field(ge=0)
 
 
+class ContextSummarizer(Protocol):
+    """Summarize bounded context without coupling policy to a provider."""
+
+    def __call__(self, items: Sequence[ContextItem]) -> str:
+        """Summarize context items.
+
+        Args:
+            items: Ordered context items selected for compression.
+
+        Returns:
+            A non-empty textual summary.
+        """
+        ...
+
+
+class CompressionResult(BaseModel):
+    """Auditable result of summarization-based context compression."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    compressed_item: ContextItem
+    source_items: tuple[ContextItem, ...]
+    source_token_estimate: int = Field(ge=0)
+    compressed_token_estimate: int = Field(ge=0)
+
+    @property
+    def tokens_saved(self) -> int:
+        """Return estimated tokens removed by compression.
+
+        Returns:
+            Non-negative estimated token savings.
+        """
+        return max(0, self.source_token_estimate - self.compressed_token_estimate)
+
+
+class ContextCompressor:
+    """Apply bounded summarization and sliding-window context strategies."""
+
+    def __init__(
+        self,
+        token_estimator: TokenEstimator,
+        summarizer: ContextSummarizer,
+    ) -> None:
+        """Initialize provider-neutral compression boundaries.
+
+        Args:
+            token_estimator: Token estimator used for auditable measurements.
+            summarizer: Bounded summarization implementation.
+
+        Raises:
+            ValueError: If the token estimator violates its contract.
+        """
+        self._token_estimator = token_estimator
+        self._summarizer = summarizer
+        self._estimate("")
+
+    def summarize(
+        self,
+        items: Sequence[ContextItem],
+        max_summary_tokens: int,
+    ) -> CompressionResult:
+        """Compress context while retaining source provenance and trust metadata.
+
+        Args:
+            items: Context items to summarize in their supplied order.
+            max_summary_tokens: Hard maximum estimated size of the summary.
+
+        Returns:
+            Auditable compression result retaining all source items.
+
+        Raises:
+            ValueError: If no items are supplied, the summary is empty, the
+                summary exceeds its token budget, or estimation is invalid.
+        """
+        if not items:
+            raise ValueError("at least one context item is required for compression")
+        if max_summary_tokens < 1:
+            raise ValueError("max_summary_tokens must be at least 1")
+
+        summary = self._summarizer(items).strip()
+        if not summary:
+            raise ValueError("context summarizer returned an empty summary")
+
+        compressed_tokens = self._estimate(summary)
+        if compressed_tokens > max_summary_tokens:
+            raise ValueError("compressed context exceeds the summary token budget")
+
+        source_tokens = sum(self._estimate(item.content) for item in items)
+        provenance = "summary://" + ",".join(item.provenance for item in items)
+
+        compressed_item = ContextItem(
+            content=summary,
+            provenance=provenance,
+            trust_level=self._least_trusted(items),
+            relevance=max(item.relevance for item in items),
+        )
+
+        return CompressionResult(
+            compressed_item=compressed_item,
+            source_items=tuple(items),
+            source_token_estimate=source_tokens,
+            compressed_token_estimate=compressed_tokens,
+        )
+
+    @staticmethod
+    def sliding_window(
+        items: Sequence[ContextItem],
+        max_items: int,
+    ) -> tuple[ContextItem, ...]:
+        """Retain the most recent bounded context items.
+
+        Args:
+            items: Chronologically ordered context, oldest to newest.
+            max_items: Maximum number of most-recent items to retain.
+
+        Returns:
+            A tuple containing at most the newest ``max_items`` entries.
+
+        Raises:
+            ValueError: If max_items is less than one.
+        """
+        if max_items < 1:
+            raise ValueError("max_items must be at least 1")
+        return tuple(items[-max_items:])
+
+    def _estimate(self, text: str) -> int:
+        estimate = self._token_estimator(text)
+        if isinstance(estimate, bool) or not isinstance(estimate, int) or estimate < 0:
+            raise ValueError("token estimator must return a non-negative integer")
+        return estimate
+
+    @staticmethod
+    def _least_trusted(items: Sequence[ContextItem]) -> TrustLevel:
+        if all(item.trust_level is TrustLevel.TRUSTED_APPLICATION for item in items):
+            return TrustLevel.TRUSTED_APPLICATION
+        return TrustLevel.UNTRUSTED_RETRIEVED
+
 class ContextManager:
     """Construct prompts while enforcing an application-owned token budget."""
 
