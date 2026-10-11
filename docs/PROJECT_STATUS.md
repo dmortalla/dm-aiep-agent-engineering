@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | Not configured |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Requirements approved; architecture research next |
-| Implementation | Not started |
+| Module 6.5 phase | Architecture frozen; Story 1 complete |
+| Implementation | Story 1 complete; Story 2 next |
 | Release | Unreleased |
 
 ## Governance
@@ -25,11 +25,12 @@
 ## Module 6.5 authoritative source
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
-The Module 6.5 requirements baseline was human-approved on 2026-10-10. It contains 62 source-derived requirements and 7 separately classified additive engineering requirements, for 69 total. Architecture has not yet been approved or implemented.
+The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Story 1 implementation is complete.
 
 ## Next recommended work
 
-Research source-named technologies and dependency compatibility, then prepare the Module 6.5 architecture for human review before implementation.
+Begin Story 2 - Planning, Dependencies, Priority Scheduling - from the frozen architecture and green Story 1 foundation.
 
 ## Module 6.5 Architecture Freeze
 
@@ -40,6 +41,6 @@ Research source-named technologies and dependency compatibility, then prepare th
 - Source labs mapped: 6 of 6
 - Source deliverables mapped: 5 of 5
 - Named technologies assigned roles: 9 of 9
-- Implementation: NOT STARTED
+- Implementation: STORY 1 COMPLETE
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
-- Next phase: architecture-conformant implementation planning
+- Next phase: Story 2 - Planning, Dependencies, Priority Scheduling

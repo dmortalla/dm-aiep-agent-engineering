@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dm-aiep-harness-engineering"
+version = "0.1.0"
+description = "Production-grade harness engineering runtime for governed AI agents."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.12,<3",
+]
+
+[project.optional-dependencies]
+orchestration = [
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",
+]
+mcp = [
+    "mcp>=2.3,<3",
+]
+memory = [
+    "mem0ai>=2.2,<3",
+]
+observability = [
+    "langsmith>=0.14,<1",
+    "langfuse>=4.17,<5",
+]
+guardrails = [
+    "guardrails-ai>=0.11,<1",
+]
+providers = [
+    "openai>=2.54,<3",
+    "anthropic>=1.13,<2",
+]
+ui = [
+    "streamlit>=1.50,<2",
+]
+dev = [
+    "pytest>=8,<10",
+    "pytest-cov>=6,<8",
+    "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harness_engineering"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
