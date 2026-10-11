@@ -26,7 +26,7 @@
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
 The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
-The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-2 implementation is complete; the accepted baseline has 85 passing tests.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-3 implementation is complete; the accepted baseline has 85 passing tests.
 
 ## Next recommended work
 
@@ -43,4 +43,4 @@ Begin Story 4 - Capability Registry, Permissions, and Sandboxed Tool Execution -
 - Named technologies assigned roles: 9 of 9
 - Implementation: Stories 1-3 complete
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
-- Next phase: Story 3 - Context Construction, Compression, Memory Routing
+- Next phase: Story 4 - Capability Registry, Permissions, and Sandboxed Tool Execution
