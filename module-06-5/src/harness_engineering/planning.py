@@ -185,3 +185,79 @@ class PriorityScheduler:
         if unknown:
             unknown_text = ", ".join(sorted(unknown))
             raise ValueError(f"Unknown completed task identifiers: {unknown_text}.")
+
+class SubtaskDefinition(BaseModel):
+    """Untrusted decomposition input awaiting planner validation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: Identifier
+    action: Identifier
+    description: str = Field(min_length=1, max_length=2000)
+    dependencies: tuple[Identifier, ...] = ()
+    priority: int = Field(default=0, ge=0, le=100)
+
+
+class PlanningEngine:
+    """Convert bounded task definitions into validated executable plans.
+
+    The engine validates requested actions against an application-owned
+    allowlist before producing executable subtasks. Planning therefore
+    describes requested work without granting execution authority.
+    """
+
+    def __init__(
+        self,
+        supported_actions: frozenset[str],
+        budget: RuntimeBudget | None = None,
+    ) -> None:
+        """Initialize the deterministic planning boundary.
+
+        Args:
+            supported_actions: Application-owned action identifiers accepted
+                by this planner.
+            budget: Runtime limits applied to generated execution plans.
+
+        Raises:
+            ValueError: If no supported actions are configured.
+        """
+        if not supported_actions:
+            raise ValueError("Planning engine requires at least one supported action.")
+
+        self._supported_actions = supported_actions
+        self._budget = budget or RuntimeBudget()
+
+    def decompose(
+        self,
+        goal: str,
+        definitions: tuple[SubtaskDefinition, ...],
+    ) -> ExecutionPlan:
+        """Decompose a goal into validated executable subtasks.
+
+        Args:
+            goal: High-level objective represented by the plan.
+            definitions: Proposed bounded decomposition of the goal.
+
+        Returns:
+            Structurally validated execution plan.
+
+        Raises:
+            ValueError: If a proposed action is not supported.
+        """
+        for definition in definitions:
+            if definition.action not in self._supported_actions:
+                raise ValueError(
+                    f"Unsupported planning action: {definition.action}."
+                )
+
+        tasks = tuple(
+            ExecutableSubtask(
+                task_id=definition.task_id,
+                description=definition.description,
+                dependencies=definition.dependencies,
+                priority=definition.priority,
+            )
+            for definition in definitions
+        )
+
+        return ExecutionPlan(goal=goal, tasks=tasks, budget=self._budget)
