@@ -100,3 +100,88 @@ class ExecutionPlan(BaseModel):
 
         if visited != len(self.tasks):
             raise ValueError("Plan contains a dependency cycle.")
+
+class PriorityScheduler:
+    """Select dependency-ready subtasks using deterministic priority ordering.
+
+    Higher numeric priority values execute first. Tasks with equal priority
+    preserve their declaration order in the validated execution plan.
+    """
+
+    def __init__(self, plan: ExecutionPlan) -> None:
+        """Initialize a scheduler for an already validated execution plan.
+
+        Args:
+            plan: Validated execution plan to schedule.
+        """
+        self._plan = plan
+        self._known_ids = frozenset(task.task_id for task in plan.tasks)
+        self._declaration_order = {
+            task.task_id: index for index, task in enumerate(plan.tasks)
+        }
+
+    def ready_tasks(
+        self,
+        completed_task_ids: frozenset[str] = frozenset(),
+    ) -> tuple[ExecutableSubtask, ...]:
+        """Return currently executable tasks in deterministic priority order.
+
+        Args:
+            completed_task_ids: Task identifiers already completed successfully.
+
+        Returns:
+            Ready, incomplete tasks ordered by descending priority and then
+            original declaration order.
+
+        Raises:
+            ValueError: If completion state contains an unknown task identifier.
+        """
+        self._validate_completed_ids(completed_task_ids)
+
+        ready = [
+            task
+            for task in self._plan.tasks
+            if task.task_id not in completed_task_ids
+            and set(task.dependencies).issubset(completed_task_ids)
+        ]
+
+        return tuple(
+            sorted(
+                ready,
+                key=lambda task: (
+                    -task.priority,
+                    self._declaration_order[task.task_id],
+                ),
+            )
+        )
+
+    def deterministic_order(self) -> tuple[ExecutableSubtask, ...]:
+        """Return the complete dependency-valid deterministic execution order.
+
+        Returns:
+            Every task ordered as it would become executable when each selected
+            task completes successfully.
+
+        Raises:
+            RuntimeError: If a validated plan cannot make scheduling progress.
+        """
+        completed: set[str] = set()
+        ordered: list[ExecutableSubtask] = []
+
+        while len(completed) < len(self._plan.tasks):
+            ready = self.ready_tasks(frozenset(completed))
+            if not ready:
+                raise RuntimeError("Validated plan cannot make scheduling progress.")
+
+            selected = ready[0]
+            ordered.append(selected)
+            completed.add(selected.task_id)
+
+        return tuple(ordered)
+
+    def _validate_completed_ids(self, completed_task_ids: frozenset[str]) -> None:
+        """Reject completion state that does not belong to this execution plan."""
+        unknown = completed_task_ids - self._known_ids
+        if unknown:
+            unknown_text = ", ".join(sorted(unknown))
+            raise ValueError(f"Unknown completed task identifiers: {unknown_text}.")
