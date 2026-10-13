@@ -1,0 +1,30 @@
+# Module 10 Definition of Done
+
+- [ ] All 27 authoritative course requirements are traced.
+- [ ] FastAPI production API works.
+- [ ] AI workflow is genuinely Dockerized.
+- [ ] Async execution and queue behavior work.
+- [ ] Caching is implemented and demonstrated.
+- [ ] Performance behavior is measured.
+- [ ] Horizontal scalability and load distribution are demonstrated.
+- [ ] CI/CD gates deployment.
+- [ ] Azure Container Apps deployment is genuinely exercised.
+- [ ] Azure Monitor receives genuine deployment telemetry.
+- [ ] Security controls and expected failure paths are tested.
+- [ ] Cost controls and teardown procedures exist.
+- [ ] Deployment checklist is exercised.
+- [ ] Incident-response procedure exists.
+- [ ] Rollback is demonstrable.
+- [ ] SLA/SLO considerations are evidence-grounded.
+- [ ] Streamlit exposes reviewer-visible working results.
+- [ ] Deterministic no-key mode works.
+- [ ] Optional live mode handles credentials securely.
+- [ ] Ruff passes.
+- [ ] Pytest passes.
+- [ ] Compileall passes.
+- [ ] Project-native integration and acceptance tests pass.
+- [ ] Evidence classifications are accurate.
+- [ ] Module isolation is preserved.
+- [ ] Production-ready AI deployment is proven.
+- [ ] Scalable AI backend system is proven.
+- [ ] Release documentation contains only verified claims.
