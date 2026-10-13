@@ -12,7 +12,11 @@ from typing import Any
 import pytest
 import uvicorn
 
-from mcp_enterprise_integration.errors import EnterpriseIntegrationError
+from mcp_enterprise_integration.capability_policy import CapabilityPolicy
+from mcp_enterprise_integration.errors import (
+    AuthorizationError,
+    EnterpriseIntegrationError,
+)
 from mcp_enterprise_integration.mcp_client import EnterpriseMcpClient
 from mcp_enterprise_integration.mcp_server import create_enterprise_mcp_server
 
@@ -222,4 +226,68 @@ async def test_client_translates_invalid_remote_input(mcp_endpoint: str) -> None
                     "action": "override_everything",
                     "account_status": "active",
                 },
+            )
+
+@pytest.mark.anyio
+async def test_authorized_path_allows_granted_remote_execution(
+    mcp_endpoint: str,
+) -> None:
+    """Authorize a discovered capability before real MCP execution."""
+    client = EnterpriseMcpClient(mcp_endpoint)
+    policy = CapabilityPolicy()
+
+    async with client.connect() as session:
+        authorization, result = await session.invoke_authorized_tool(
+            principal_role="viewer",
+            name="get_customer",
+            arguments={"customer_id": "CUST-001"},
+            policy=policy,
+        )
+
+    assert authorization.allowed is True
+    assert authorization.rule_id == "CAP-ALLOWLIST-001"
+    assert result["result"]["customer_id"] == "CUST-001"
+
+
+@pytest.mark.anyio
+async def test_discovered_but_unauthorized_tool_never_executes(
+    mcp_endpoint: str,
+) -> None:
+    """Deny a discovered capability before remote MCP invocation."""
+    client = EnterpriseMcpClient(mcp_endpoint)
+    policy = CapabilityPolicy()
+
+    async with client.connect() as session:
+        with pytest.raises(AuthorizationError, match="not authorized"):
+            await session.invoke_authorized_tool(
+                principal_role="viewer",
+                name="evaluate_enterprise_policy",
+                arguments={
+                    "customer_id": "CUST-001",
+                    "requester_role": "account_manager",
+                    "action": "account_change",
+                    "account_status": "active",
+                },
+                policy=policy,
+            )
+
+
+@pytest.mark.anyio
+async def test_self_declared_admin_cannot_gain_remote_authority(
+    mcp_endpoint: str,
+) -> None:
+    """Fail closed when an untrusted caller invents an authority role."""
+    client = EnterpriseMcpClient(mcp_endpoint)
+    policy = CapabilityPolicy()
+
+    async with client.connect() as session:
+        with pytest.raises(
+            AuthorizationError,
+            match="no application capability grants",
+        ):
+            await session.invoke_authorized_tool(
+                principal_role="self_declared_admin",
+                name="get_customer",
+                arguments={"customer_id": "CUST-001"},
+                policy=policy,
             )

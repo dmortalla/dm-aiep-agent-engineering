@@ -8,6 +8,10 @@ from typing import Any
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from mcp_enterprise_integration.capability_policy import (
+    CapabilityAuthorization,
+    CapabilityPolicy,
+)
 from mcp_enterprise_integration.errors import EnterpriseIntegrationError
 
 
@@ -54,6 +58,41 @@ class EnterpriseMcpSession:
             ) from exc
 
         return tuple(sorted(tool.name for tool in result.tools))
+
+    async def invoke_authorized_tool(
+        self,
+        *,
+        principal_role: str,
+        name: str,
+        arguments: dict[str, Any],
+        policy: CapabilityPolicy,
+    ) -> tuple[CapabilityAuthorization, dict[str, Any]]:
+        """Authorize and invoke one discovered MCP capability.
+
+        Discovery proves only that a capability exists. Application-owned
+        policy must independently authorize execution before the MCP call.
+
+        Args:
+            principal_role: Application-authenticated caller role.
+            name: Requested MCP capability name.
+            arguments: Untrusted arguments validated by the MCP server.
+            policy: Application-owned capability authorization policy.
+
+        Returns:
+            Authorization evidence and structured MCP result.
+
+        Raises:
+            AuthorizationError: If application policy denies execution.
+            EnterpriseIntegrationError: If discovery or invocation fails.
+        """
+        discovered = await self.discover_tools()
+        authorization = policy.authorize(
+            principal_role=principal_role,
+            capability=name,
+            discovered_capabilities=discovered,
+        )
+        result = await self.invoke_tool(name, arguments)
+        return authorization, result
 
     async def invoke_tool(
         self,
