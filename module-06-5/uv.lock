@@ -378,6 +378,7 @@ name = "dm-aiep-harness-engineering"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "langgraph" },
     { name = "pydantic" },
 ]
 
@@ -401,7 +402,6 @@ observability = [
     { name = "langsmith" },
 ]
 orchestration = [
-    { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
 ]
 providers = [
@@ -417,7 +417,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=1.13,<2" },
     { name = "guardrails-ai", marker = "extra == 'guardrails'", specifier = ">=0.11,<1" },
     { name = "langfuse", marker = "extra == 'observability'", specifier = ">=4.17,<5" },
-    { name = "langgraph", marker = "extra == 'orchestration'", specifier = ">=1.2,<2" },
+    { name = "langgraph", specifier = ">=1.2,<2" },
     { name = "langgraph-checkpoint-sqlite", marker = "extra == 'orchestration'", specifier = ">=3,<4" },
     { name = "langsmith", marker = "extra == 'observability'", specifier = ">=0.14,<1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
