@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dm-aiep-reliability-safety-observability"
+version = "0.1.0"
+description = "Reliability, safety, observability, and evaluation engineering module."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # REQ-SEC-010 / ADR-007-011: guardrails-ai 0.10.1 is explicitly excluded.
+    "guardrails-ai>=0.11,<0.12,!=0.10.1",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.6,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-cov>=6,<8",
+    "pytest>=8,<10",
+    "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reliability_safety_observability"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-config --strict-markers"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
