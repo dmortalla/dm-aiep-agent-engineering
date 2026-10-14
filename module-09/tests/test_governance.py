@@ -1,0 +1,173 @@
+"""Deterministic governance checks: traceability, ADRs, stories, evidence, isolation, encoding."""
+
+import ast
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from multimodal_voice_platform.contracts.evidence import EvidenceClass
+from multimodal_voice_platform.contracts.limits import LatencyStage
+from multimodal_voice_platform.contracts.modality import Modality
+from multimodal_voice_platform.contracts.providers import ProviderPort
+from multimodal_voice_platform.contracts.session import ExecutionMode
+from multimodal_voice_platform.contracts.streaming import StreamEventType
+
+MODULE_ROOT = Path(__file__).resolve().parents[1]
+DOCS = MODULE_ROOT / "docs"
+SKIPPED_DIRS = {".venv", ".pytest_cache", ".ruff_cache", "__pycache__"}
+TEXT_SUFFIXES = {".md", ".py", ".toml", ".json", ".txt", ".lock", ".yaml", ".yml"}
+ALLOWED_THIRD_PARTY = {"pydantic", "pytest", "multimodal_voice_platform"}
+FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
+FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
+
+
+@pytest.fixture(scope="module")
+def governance() -> dict[str, Any]:
+    return json.loads((DOCS / "governance" / "module-09-governance.json").read_text("utf-8"))
+
+
+def _doc(name: str) -> str:
+    return (DOCS / name).read_text("utf-8")
+
+
+def _owned_files(suffixes: set[str]) -> list[Path]:
+    return [
+        path
+        for path in MODULE_ROOT.rglob("*")
+        if path.is_file()
+        and path.suffix in suffixes
+        and not SKIPPED_DIRS.intersection(path.relative_to(MODULE_ROOT).parts)
+    ]
+
+
+def test_all_17_source_groups_are_traced(governance: dict[str, Any]) -> None:
+    source = [req for req in governance["requirements"] if req["kind"] == "source"]
+    assert {req["group"] for req in source} == set(range(1, 18))
+    assert governance["source_group_count"] == 17
+    assert [req["id"] for req in source] == [f"SRC-{n:03d}" for n in range(1, 19)]
+    deliverables = {req["title"] for req in source if req["group"] == 17}
+    assert deliverables == {
+        "Deliverable: voice-enabled AI assistant",
+        "Deliverable: multimodal AI platform",
+    }
+
+
+def test_every_requirement_is_documented_and_mapped_to_real_stories(
+    governance: dict[str, Any],
+) -> None:
+    story_ids = {story["id"] for story in governance["stories"]}
+    requirements_doc = _doc("REQUIREMENTS.md")
+    traceability_doc = _doc("TRACEABILITY.md")
+    for req in governance["requirements"]:
+        assert req["id"] in requirements_doc, req["id"]
+        assert req["id"] in traceability_doc, req["id"]
+        assert req["stories"], req["id"]
+        assert set(req["stories"]) <= story_ids, req["id"]
+    referenced = {story for req in governance["requirements"] for story in req["stories"]}
+    assert referenced == story_ids
+
+
+def test_nine_adrs_exist_and_match_governance(governance: dict[str, Any]) -> None:
+    adrs = governance["adrs"]
+    assert [adr["id"] for adr in adrs] == [f"ADR-009-{n:03d}" for n in range(1, 10)]
+    for adr in adrs:
+        text = (DOCS / adr["file"]).read_text("utf-8")
+        heading = text.splitlines()[0]
+        assert heading.startswith(f"# {adr['id']}: "), adr["id"]
+        assert heading.removeprefix(f"# {adr['id']}: ").lower() == adr["title"].lower()
+        assert "## Status\n\nAccepted" in text, adr["id"]
+    assert len(list((DOCS / "adr").glob("ADR-009-*.md"))) == 9
+
+
+def test_ten_stories_are_represented(governance: dict[str, Any]) -> None:
+    stories = governance["stories"]
+    assert [story["id"] for story in stories] == [f"9.{n}" for n in range(1, 11)]
+    stories_doc = _doc("STORIES.md")
+    for story in stories:
+        assert f"| {story['id']} | {story['title']} |" in stories_doc, story["id"]
+
+
+def test_story_9_1_claims_design_evidence_only(governance: dict[str, Any]) -> None:
+    assert governance["story_9_1_evidence_class"] == EvidenceClass.DESIGN_DOCUMENTATION
+    assert governance["implemented_capabilities"] == []
+    assert {req["status"] for req in governance["requirements"]} == {"designed"}
+    statuses = {story["id"]: story["status"] for story in governance["stories"]}
+    assert statuses.pop("9.1") == "complete-design-only"
+    assert set(statuses.values()) == {"not-started"}
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md"):
+        assert "design" in _doc(name).lower()
+
+
+def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:
+    classes = {item["id"]: item for item in governance["evidence_classes"]}
+    assert set(classes) == {member.value for member in EvidenceClass}
+    assert classes["design_documentation"]["runtime_executed"] is False
+    live = [name for name, item in classes.items() if item["live_provider_executed"]]
+    assert live == ["live_integration"]
+    for name in classes:
+        assert f"`{name}`" in _doc("EVIDENCE_POLICY.md"), name
+
+
+def test_vocabularies_match_contracts(governance: dict[str, Any]) -> None:
+    assert governance["stream_events"] == [member.value for member in StreamEventType]
+    assert governance["latency_stages"] == [member.value for member in LatencyStage]
+    assert governance["modalities"] == [member.value for member in Modality]
+    assert governance["provider_ports"] == [member.value for member in ProviderPort]
+    assert governance["execution_modes"] == [member.value for member in ExecutionMode]
+
+
+def test_security_invariants_are_documented(governance: dict[str, Any]) -> None:
+    invariants = governance["security_invariants"]
+    assert [item["id"] for item in invariants] == [f"SEC-{n:03d}" for n in range(1, 27)]
+    threat_model = _doc("SECURITY_THREAT_MODEL.md")
+    for item in invariants:
+        assert f"| {item['id']} | {item['title']} |" in threat_model, item["id"]
+        assert item["control"] and item["stories"], item["id"]
+
+
+def test_definition_of_done_matches_governance(governance: dict[str, Any]) -> None:
+    checklist = re.findall(r"^- \[ \] (.+)$", _doc("DEFINITION_OF_DONE.md"), re.MULTILINE)
+    assert checklist == governance["definition_of_done"]
+    assert len(checklist) == 25
+
+
+def test_module_imports_only_stdlib_pydantic_pytest_and_itself() -> None:
+    allowed = set(sys.stdlib_module_names) | ALLOWED_THIRD_PARTY
+    for path in _owned_files({".py"}):
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]
+            else:
+                continue
+            for name in names:
+                assert name.split(".")[0] in allowed, f"{path}: {name}"
+
+
+def test_source_has_no_command_execution_path() -> None:
+    for path in (MODULE_ROOT / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                module = getattr(node, "module", None) or ""
+                names = {module, *(alias.name for alias in node.names)}
+                assert not names & FORBIDDEN_MODULES, path
+            if isinstance(node, ast.Call):
+                func = node.func
+                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+                assert name not in FORBIDDEN_CALLS, f"{path}: {name}"
+
+
+def test_owned_text_files_are_utf8_without_bom() -> None:
+    files = _owned_files(TEXT_SUFFIXES)
+    assert files
+    for path in files:
+        raw = path.read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf"), path
+        raw.decode("utf-8")
