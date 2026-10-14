@@ -332,6 +332,7 @@ class _GraphState(TypedDict):
 
 
 StepExecutor = Callable[[ExecutableSubtask, LifecycleInput], StepResult]
+BeforeStep = Callable[[ExecutableSubtask, LifecycleInput], None]
 
 
 class LifecycleRuntime:
@@ -345,6 +346,7 @@ class LifecycleRuntime:
         workflow_policy: WorkflowPolicy | None = None,
         clock: Callable[[], float] = monotonic,
         cancellation: Callable[[], bool] | None = None,
+        before_step: BeforeStep | None = None,
     ) -> None:
         """Bind trusted application configuration, never contextual authority.
 
@@ -358,6 +360,9 @@ class LifecycleRuntime:
                 When omitted, derive from the plan with a 180-second ceiling.
             clock: Trusted monotonic clock, injectable without real waiting.
             cancellation: Trusted bool source. Failure aborts; activation latches.
+            before_step: Optional application gate outside retry/error classification.
+                Observed runs persist a pre-attempt boundary before calling it.
+                This seam supports restart-safe work, not effect-session reservations.
             wait: Trusted waiting implementation. Inject a recorder for deterministic
                 tests; normal execution uses sleep. Exceptions abort without retry.
 
@@ -398,6 +403,9 @@ class LifecycleRuntime:
             raise ContractValidationError("Fallback must be a trusted callable or absent.")
         if not callable(clock) or (cancellation is not None and not callable(cancellation)):
             raise ContractValidationError("Bind callable clock and cancellation sources.")
+        if before_step is not None and not callable(before_step):
+            raise ContractValidationError("Before-step gate must be a trusted callable or absent.")
+        self._before_step = before_step
         self._fallback_step = fallback_step
         self._clock = clock
         self._off_switch = OffSwitch()
@@ -790,6 +798,20 @@ class LifecycleRuntime:
         counters = {"attempt_count": value.attempt_count + 1,
                     "total_attempts": value.total_attempts + 1}
         effectful = task.task_id in state.get("effect_work", frozenset())
+        if self._before_step is not None:
+            if effectful:
+                raise ContractValidationError(
+                    "Before-step gates do not support effect-session reservations."
+                )
+            # Approval suspension is not a failed/consumed action attempt. The
+            # existing observer persists the prefix before any gate can suspend.
+            self._observe(state, value)
+            self._before_step(task, state["request"])
+            reason = self._control_reason(state)
+            if reason is not None:
+                return {"lifecycle": self._move(
+                    value, LifecyclePhase.SAFE_STOP, stop_reason=reason, blocked_execution=True,
+                )}
         if effectful:
             # Persist a conservative attempt reservation before any external call.
             # Observer errors occur outside the step-error classification boundary.
