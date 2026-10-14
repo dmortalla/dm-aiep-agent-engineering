@@ -38,3 +38,21 @@ completion across Stories 10.3–10.11.
 E-002, E-004, E-006, E-010 and all remaining course deliverables retain planned
 status. Unsupported live configuration is rejected; secure live execution itself
 has not been implemented or verified.
+
+
+## Concrete Story 10.3 evidence
+
+| Requirement | Implementation | Verified evidence |
+|---|---|---|
+| C-001, C-022 | `api.py` factory, `http_schemas.py`, accepted service invocation | Typed deterministic HTTP inference and OpenAPI schema tests |
+| C-003, C-019 (application portion only) | Runnable Uvicorn factory, liveness/readiness routes | In-process HTTP lifecycle checks; actual deployment remains planned |
+| C-013 (API boundary) | Body-read and inference deadlines, lifecycle readiness | Timeout cleanup, external cancellation, disconnect and failure tests |
+| C-014, E-008 (API boundary) | `http_boundary.py`, strict HTTP schemas, sanitized failures | Actual streamed body/header bounds, input rejection, no sensitive public/log details |
+| E-001, E-003 | Module-local dependencies and separate transport files | Core import isolation regression; unchanged accepted core source |
+| E-005, E-007 | Accepted deterministic service and explicit output evidence | HTTP deterministic output and no-key core regression tests |
+| E-009, E-011, E-012 | Typed HTTP configuration/interfaces, bounded diagnostic logging | Ruff, pytest, compileall and expected/unexpected failure tests |
+| E-004 (API reviewer interface only) | README runnable example and OpenAPI | HTTP contract checks; Streamlit reviewer interface remains Story 10.7 |
+
+See `STORY_10_3.md` for exact gate results and limitations. No container,
+local-model, live-provider, external deployment, scaling, queue/cache, or cloud
+telemetry evidence has been added. Full requirement acceptance remains pending.

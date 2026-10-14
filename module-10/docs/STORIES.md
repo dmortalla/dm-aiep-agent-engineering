@@ -13,6 +13,10 @@ This completion does not establish later-story or production-deployment evidence
 ## Story 10.3 - Production FastAPI Service
 Implement inference, liveness, readiness, validation, request identifiers, payload bounds, timeouts, secure errors, and OpenAPI contracts.
 
+Implemented with a separate HTTP layer and deterministic HTTP/failure tests.
+See [Story 10.3 evidence](STORY_10_3.md). Independent acceptance is pending;
+actual deployment and full-module completion are not claimed.
+
 ## Story 10.4 - Async Execution, Queueing, Caching, and Performance
 Implement bounded asynchronous work, queue lifecycle, cache contracts, backpressure, concurrency controls, and performance evidence.
 

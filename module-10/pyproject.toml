@@ -7,10 +7,10 @@ name = "module10-ai-service"
 version = "0.1.0"
 description = "Framework-independent Module 10 inference core"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1"]
 
 [dependency-groups]
-dev = ["pytest>=8.3,<9", "ruff>=0.11,<1"]
+dev = ["pytest>=8.3,<9", "ruff>=0.11,<1", "httpx>=0.28,<1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/module10_ai"]

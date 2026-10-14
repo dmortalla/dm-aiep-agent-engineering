@@ -252,6 +252,7 @@ def test_package_import_and_framework_isolation() -> None:
         "assert module10_ai.RuntimeConfig().mode == 'deterministic'"
     )
     subprocess.run([sys.executable, "-I", "-c", code], check=True, capture_output=True)
-    assert importlib.metadata.requires("module10-ai-service") in (None, [])
+    assert {requirement.split("<")[0].split(">=")[0] for requirement in
+            importlib.metadata.requires("module10-ai-service")} == {"fastapi", "uvicorn"}
     assert inspect.iscoroutinefunction(InferenceService.infer)
     assert sys.version_info[:2] == (3, 12)
