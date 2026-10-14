@@ -93,13 +93,26 @@ def test_ten_stories_are_represented(governance: dict[str, Any]) -> None:
 
 def test_story_9_1_claims_design_evidence_only(governance: dict[str, Any]) -> None:
     assert governance["story_9_1_evidence_class"] == EvidenceClass.DESIGN_DOCUMENTATION
-    assert governance["implemented_capabilities"] == []
-    assert {req["status"] for req in governance["requirements"]} == {"designed"}
     statuses = {story["id"]: story["status"] for story in governance["stories"]}
-    assert statuses.pop("9.1") == "complete-design-only"
-    assert set(statuses.values()) == {"not-started"}
+    assert statuses["9.1"] == "complete-design-only"
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md"):
         assert "design" in _doc(name).lower()
+
+
+def test_story_9_2_claims_only_the_deterministic_foundation(governance: dict[str, Any]) -> None:
+    assert governance["story_9_2_evidence_class"] == EvidenceClass.AUTOMATED_TEST
+    assert governance["implemented_capabilities"] == ["deterministic_multimodal_foundation"]
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    assert statuses.pop("ENG-001") == "partially-implemented"
+    assert set(statuses.values()) == {"designed"}
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories.pop("9.1") == "complete-design-only"
+    assert stories.pop("9.2") == "complete-deterministic-foundation"
+    assert set(stories.values()) == {"not-started"}
+    foundation_doc = _doc("DETERMINISTIC_FOUNDATION.md")
+    assert "no inference" in foundation_doc.lower()
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md"):
+        assert "no inference" in " ".join(_doc(name).lower().split()), name
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

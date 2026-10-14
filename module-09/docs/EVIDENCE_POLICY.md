@@ -43,3 +43,14 @@ multimodal, voice, streaming, provider, or UI functionality works.
 The Story 9.1 automated tests check contract and governance consistency (for example, that a
 contract rejects an oversized file). They do not exercise any multimodal capability, so they do
 not count as functional capability evidence for any SRC requirement.
+
+## Story 9.2 classification
+
+Story 9.2 evidence is **`automated_test`**: the test suite runs every committed fixture through the
+deterministic adapters with sockets blocked and no credentials. `DeterministicRunRecord` can also
+emit `deterministic_demo` records for reviewer runs. It rejects every other class, so deterministic
+runs can never be labeled `live_integration`.
+
+This evidence proves that the deterministic, no-key path runs reproducibly through the provider
+ports. It does not prove vision, document understanding, speech-to-text, or any other SRC
+capability: the adapters replay scripted output for committed fixtures and perform no inference.

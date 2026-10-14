@@ -5,8 +5,10 @@
 Story 9.1 baseline. Requirements are traced to stories in [TRACEABILITY.md](TRACEABILITY.md).
 The machine-readable copy is [governance/module-09-governance.json](governance/module-09-governance.json).
 
-Implementation status for every requirement below is **designed only**. No multimodal, voice,
-streaming, provider, or UI capability is implemented by Story 9.1.
+Implementation status for every source requirement below is **designed only**. Story 9.1
+implements no capability. Story 9.2 partially implements ENG-001 with deterministic, no-key
+fixture playback, which performs no inference and satisfies no SRC requirement. Every other
+requirement is designed only.
 
 ## Source-derived requirements
 

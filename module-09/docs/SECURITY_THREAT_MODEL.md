@@ -2,8 +2,9 @@
 
 ## Status
 
-Story 9.1 design. Controls marked "contract" are enforced today by the typed models in
-`src/multimodal_voice_platform/contracts/` and covered by automated tests. Every other control is
+Story 9.1 design, updated for Story 9.2. Controls marked "contract" are enforced today by the
+typed models in `src/multimodal_voice_platform/contracts/` and covered by automated tests. Controls
+marked "9.2" are enforced by the deterministic foundation and its tests. Every other control is
 planned for the listed story and is **not implemented yet**.
 
 ## Assets
@@ -54,7 +55,7 @@ planned for the listed story and is **not implemented yet**.
 | SEC-009 | Prompt-injection containment | Content as data in reasoning context | Planned | 9.5, 9.10 |
 | SEC-010 | No arbitrary command execution | No shell/eval path; governance test scans source | Contract (test) | 9.1, 9.10 |
 | SEC-011 | No authority from model/provider/content output | Fixed untrusted trust on results | Contract | 9.1, 9.5, 9.8 |
-| SEC-012 | Provider/network trust boundaries | Only live adapters reach the network | Planned | 9.2, 9.8 |
+| SEC-012 | Provider/network trust boundaries | Only live adapters reach the network | Deterministic adapters (9.2: no network imports; socket-blocked test); 9.8 (live) | 9.2, 9.8 |
 | SEC-013 | Outbound provider allowlisting | `SessionConfig.allowed_live_providers` allowlist (empty by default, so live fails closed) | Contract (allowlist); 9.8 (endpoints) | 9.1, 9.8 |
 | SEC-014 | Bounded payloads | Text, delta, transcript, event size bounds | Contract | 9.1, 9.7 |
 | SEC-015 | Timeout behavior | Timeout ceilings in `ResourceBudget` | Contract (bounds); 9.8 (enforcement) | 9.1, 9.8, 9.10 |
@@ -64,7 +65,7 @@ planned for the listed story and is **not implemented yet**.
 | SEC-019 | No secrets in logs, traces, evidence, URLs, source control, or committed config | Credential never in emitted models; payload scanning tests | Planned | 9.8, 9.10 |
 | SEC-020 | Explicit opt-in live credentials | Live requires `live_opt_in=True` and a credential | Contract | 9.1, 9.8 |
 | SEC-021 | Ephemeral user-supplied credentials | Session memory only, never persisted | Planned | 9.8, 9.9 |
-| SEC-022 | No unnecessary retention of sensitive content | Session-scoped references, deleted at session end | Planned | 9.2, 9.9, 9.10 |
+| SEC-022 | No unnecessary retention of sensitive content | Session-scoped references, deleted at session end | Deterministic content store (9.2: in-memory, released per session); 9.9/9.10 (UI and uploads) | 9.2, 9.9, 9.10 |
 | SEC-023 | Safe structured errors | `SafeError` model | Contract | 9.1, 9.7 |
 | SEC-024 | Testable expected failure paths | Rejection tests for every contract | Contract (tests) | 9.1, 9.10 |
 | SEC-025 | Accurate evidence classification | `EvidenceRecord` validators | Contract | 9.1, 9.9, 9.10 |

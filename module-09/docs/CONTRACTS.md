@@ -2,7 +2,10 @@
 
 Story 9.1 defines typed contracts in `src/multimodal_voice_platform/contracts/`. They are
 Pydantic v2 models (frozen, `extra="forbid"`) and `typing.Protocol` ports. They define shapes and
-invariants only. No provider, transport, or processing code exists yet.
+invariants only. Story 9.2 implements the vision, document, and speech-to-text ports with
+deterministic fixture-playback adapters only, without changing these contracts (see
+[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)). No live provider, transport, or
+genuine processing code exists yet.
 
 | Module | Boundary | Key types | ADRs |
 |---|---|---|---|

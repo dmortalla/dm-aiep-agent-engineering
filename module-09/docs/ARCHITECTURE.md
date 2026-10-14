@@ -5,9 +5,12 @@
 Frozen by the human-approved Story 9.1 specification (2026-10-14). Reopen only for a genuine
 contradiction with the authoritative source or a serious production/security flaw.
 
-This document describes the target architecture. Story 9.1 implements none of the runtime
-components below. It provides only the typed contracts in
-`src/multimodal_voice_platform/contracts/`. See [CONTRACTS.md](CONTRACTS.md).
+This document describes the target architecture. Story 9.1 provides the typed contracts in
+`src/multimodal_voice_platform/contracts/` (see [CONTRACTS.md](CONTRACTS.md)). Story 9.2 adds
+deterministic fixture-playback adapters for the vision, document, and speech-to-text ports in
+`src/multimodal_voice_platform/adapters/deterministic/` (see
+[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)). No other runtime component below is
+implemented yet.
 
 ## Goal
 
@@ -161,7 +164,9 @@ module-09/
     contracts/                           Story 9.1: typed contracts only
       modality.py   session.py   providers.py
       streaming.py  limits.py    evidence.py   errors.py
-    (core/, adapters/, interface/, ui/)  later stories; not created yet
+    adapters/deterministic/              Story 9.2: no-key fixture playback (no inference)
+      fixture_data/                      committed fixtures + manifest
+    (core/, adapters/live/, interface/, ui/)  later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
 ```
@@ -173,7 +178,7 @@ These are implementation choices left to the owning story. They must fit the fro
 | Decision | Owning story |
 |---|---|
 | WebSocket server framework and hosting process | 9.7 |
-| Deterministic fixture formats and generation | 9.2 |
+| Deterministic fixture formats and generation | 9.2 (decided: stdlib-generated PNG/WAV, plain text, Markdown; SHA-256 manifest) |
 | Image/document parsing libraries and magic-byte checks | 9.3 |
 | Audio decoding library and sample formats | 9.4 |
 | Specific live providers and models | 9.8 |

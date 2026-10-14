@@ -1,11 +1,12 @@
 # Module 9 Story Roadmap
 
-Ten stories deliver Module 9. Only Story 9.1 is complete, and it is design only.
+Ten stories deliver Module 9. Story 9.1 is complete (design only). Story 9.2 is complete
+(deterministic fixture playback only; no genuine inference). Stories 9.3 to 9.10 are not started.
 
 | Story | Title | Scope | Status |
 |---|---|---|---|
 | 9.1 | Architecture & Contracts | Authoritative requirements; traceability; architecture; ADRs; typed modality, session, provider, and streaming contracts; threat/security model; acceptance and Definition of Done foundation | Complete (design/documentation only) |
-| 9.2 | Deterministic Multimodal Foundation | Reproducible text, image, audio, and document fixtures; deterministic provider implementations; no-key execution | Not started |
+| 9.2 | Deterministic Multimodal Foundation | Reproducible text, image, audio, and document fixtures; deterministic provider implementations; no-key execution | Complete (deterministic foundation only; see [DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)) |
 | 9.3 | Document + Vision Understanding | Validated image and document processing; structured understanding | Not started |
 | 9.4 | Audio + Speech Pipeline | Audio processing; STT; TTS | Not started |
 | 9.5 | Cross-Modal Reasoning Workflow | Combine processed modalities into a single reasoning context; genuine multimodal reasoning result | Not started |

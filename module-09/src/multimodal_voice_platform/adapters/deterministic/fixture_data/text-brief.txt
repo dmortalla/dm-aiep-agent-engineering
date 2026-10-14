@@ -1,0 +1,3 @@
+Module 9 deterministic text fixture.
+This short plain-text passage was written for the Module 9 test suite.
+It contains no personal data and no secrets.

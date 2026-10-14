@@ -7,9 +7,16 @@ with measured latency. Streamlit will be the reviewer-facing UI. Business logic 
 
 ## Current status
 
-**Story 9.1 (Architecture & Contracts) is complete. It is design only.** No multimodal, voice,
-streaming, provider, or UI capability is implemented yet. Story 9.1 evidence is
-`design_documentation` and proves design intent only. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+**Story 9.1 (Architecture & Contracts) is complete. It is design only.** Story 9.1 evidence is
+`design_documentation` and proves design intent only.
+
+**Story 9.2 (Deterministic Multimodal Foundation) is complete.** It adds committed text, image,
+audio, and document fixtures and deterministic, no-key fixture-playback adapters for the vision,
+document, and speech-to-text ports. They perform no inference and need no network, key, or spend.
+Story 9.2 evidence is `automated_test`. See [docs/DETERMINISTIC_FOUNDATION.md](docs/DETERMINISTIC_FOUNDATION.md).
+
+No genuine vision, document, speech, cross-modal, voice, streaming, live-provider, or UI capability
+is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -21,6 +28,7 @@ streaming, provider, or UI capability is implemented yet. Story 9.1 evidence is
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, trust boundaries, flows (Mermaid) |
 | [adr/](docs/adr/) | ADR-009-001 to ADR-009-009 |
 | [CONTRACTS.md](docs/CONTRACTS.md) | Modality, session, provider, streaming, evidence contracts |
+| [DETERMINISTIC_FOUNDATION.md](docs/DETERMINISTIC_FOUNDATION.md) | Story 9.2 fixtures, deterministic adapters, run records |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |

@@ -5,9 +5,11 @@ and to the evidence that must exist before it counts as satisfied. The machine-r
 [governance/module-09-governance.json](governance/module-09-governance.json). Automated tests
 keep the two in sync.
 
-**Current status for every row: designed, not implemented.** Story 9.1 contributes architecture
-and contract design only, which is `design_documentation` evidence. Planned evidence is never
-completed evidence.
+**Current status: every row is designed, not implemented, except ENG-001, which is partially
+implemented.** Story 9.1 contributes architecture and contract design only, which is
+`design_documentation` evidence. Story 9.2 contributes the deterministic foundation for ENG-001
+(`automated_test` evidence). Deterministic fixture playback is not evidence for any SRC
+requirement. Planned evidence is never completed evidence.
 
 ## Source-derived requirements
 
@@ -36,7 +38,7 @@ completed evidence.
 
 | Requirement | Delivering stories | Anchor |
 |---|---|---|
-| ENG-001 Deterministic no-key mode | 9.2, 9.9 | `ExecutionMode.DETERMINISTIC` default |
+| ENG-001 Deterministic no-key mode (partially implemented: 9.2 foundation) | 9.2, 9.9 | `ExecutionMode.DETERMINISTIC` default, `adapters.deterministic` |
 | ENG-002 Opt-in ephemeral BYOK live mode | 9.8 | `SessionConfig.live_opt_in`, `LiveCredential` |
 | ENG-003 Streamlit presentation layer | 9.9 | ADR-009-002 |
 | ENG-004 Logic outside Streamlit | 9.1, 9.2, 9.9 | ADR-009-002, `multimodal_voice_platform` package |
@@ -53,4 +55,5 @@ completed evidence.
 
 - Source requirement groups traced: 17 of 17 (18 requirement IDs).
 - Additive engineering requirements traced: 12 of 12.
-- Requirements implemented: 0. Story 9.1 is design only.
+- Requirements fully implemented: 0. Partially implemented: ENG-001 (Story 9.2 deterministic
+  foundation). Story 9.1 is design only.
