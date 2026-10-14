@@ -6,6 +6,10 @@ Establish requirements, architecture, ADRs, traceability, security boundaries, e
 ## Story 10.2 - Typed AI Service Contracts
 Implement typed domain contracts, configuration, deterministic runtime, service layer, and tested failure boundaries.
 
+Implemented by `src/module10_ai`, with module-local packaging and deterministic
+tests in `tests/test_core.py`. See [Story 10.2 evidence](STORY_10_2.md).
+This completion does not establish later-story or production-deployment evidence.
+
 ## Story 10.3 - Production FastAPI Service
 Implement inference, liveness, readiness, validation, request identifiers, payload bounds, timeouts, secure errors, and OpenAPI contracts.
 

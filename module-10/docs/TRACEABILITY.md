@@ -17,3 +17,24 @@
 | E-001-E-012 | 10.1-10.11 | Architecture, tests, UI, operational and release evidence |
 
 Traceability is updated as implementation evidence becomes concrete. Planned evidence must never be represented as completed evidence.
+
+## Concrete Story 10.2 evidence
+
+The table above retains the full-module planned evidence. The following evidence
+is limited to the framework-independent deterministic core, not full requirement
+completion across Stories 10.3–10.11.
+
+| Requirement | Implementation | Verified evidence |
+|---|---|---|
+| E-001 | Standalone `pyproject.toml`, `src/module10_ai`, `uv.lock` | Installed-package subprocess import, no runtime dependencies; foreign-file preservation check |
+| E-003 | Framework-independent `service.py` and `runtime.py` | `test_package_import_and_framework_isolation`; UI remains planned |
+| E-005 | `RuntimeConfig` defaults and `DeterministicRuntime` | Valid inference, reproducibility, no-key and no-network tests |
+| E-007 | `EvidenceClass` and result validation | Deterministic classification and mismatch tests; no local-runtime/live-cloud execution evidence |
+| E-008, C-014 (partial) | Strict immutable contracts, bounded data-only output, safe errors | Request/result validation, prompt-as-data, repr/error protection, credential-presence/no-network tests |
+| E-009 | Module-local Ruff, pytest, compileall configuration | Native gate results recorded in `STORY_10_2.md` |
+| E-011 | Typed public interfaces and Google-style docstrings | Ruff includes Google-style docstring rules; source inspection |
+| E-012 | Narrow service failure translation, preserved cancellation and defects | Failure translation, cause preservation, malformed output, cancellation, and programming-error tests |
+
+E-002, E-004, E-006, E-010 and all remaining course deliverables retain planned
+status. Unsupported live configuration is rejected; secure live execution itself
+has not been implemented or verified.
