@@ -6,18 +6,24 @@ accepts data only, not graph state, config, commands, permissions, or node names
 Tool adapters must retain BoundedToolExecutor's independent authorization.
 Slice 2 adds bounded retries/backoff and a workflow-local circuit breaker.
 Slice 3 adds finite fallback, workflow deadlines, and application cancellation.
-Recovery remains deferred.
+Story 6 Slice 2 adds public boundary observation. Resuming from a restored
+prefix is not part of the public API: only the recovery coordinator invokes the
+private resume seam, after reconciling a stored checkpoint. Committed-effect
+replay prevention remains deferred.
 Trusted executors must terminate; graph bounds do not preempt Python callbacks.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
+from math import isfinite
 from time import monotonic, sleep
 from typing import Annotated, Self, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from harness_engineering.domain import RuntimeBudget
 from harness_engineering.errors import (
     AuthorityViolationError,
     ContractValidationError,
@@ -255,10 +261,69 @@ class LifecycleState(BaseModel):
         return self
 
 
+@dataclass(frozen=True)
+class LifecycleBounds:
+    """Trusted bootstrap limits exposed read-only for recovery reconciliation.
+
+    Attributes:
+        task_ids: Accepted work in deterministic application scheduling order.
+        max_attempts_per_action: Retry policy attempts allowed for one action.
+        failure_threshold: Consecutive transient failures that open the circuit.
+        deadline_seconds: Effective workflow deadline, never above the plan's.
+        budget: Accepted plan budget carrying tool, provider, and token limits.
+    """
+
+    task_ids: tuple[str, ...]
+    max_attempts_per_action: int
+    failure_threshold: int
+    deadline_seconds: float
+    budget: RuntimeBudget
+
+
+@dataclass(frozen=True)
+class BoundarySnapshot:
+    """Validated lifecycle state observed at a coherent application boundary.
+
+    Attributes:
+        lifecycle: State already checked against trusted plan and policy.
+        attempts: Consumed attempts per action in scheduling order, covering
+            each completed action and any partially attempted current action.
+        elapsed_seconds: Workflow time consumed, including restored consumption.
+    """
+
+    lifecycle: LifecycleState
+    attempts: tuple[int, ...]
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True)
+class RestoredProgress:
+    """Inert result of recovery reconciliation; constructing one grants nothing.
+
+    No public runtime method accepts this type. Only the recovery coordinator
+    passes it to the private resume seam, after reconciling a stored checkpoint.
+    It carries no work identifiers, routes, limits, or policy. The runtime maps
+    the prefix onto its own trusted scheduling order and rebuilds its state.
+
+    Attributes:
+        results: Validated result for each completed action, in order.
+        attempts: Attempts each completed action consumed, in the same order.
+        elapsed_seconds: Workflow time already consumed before this invocation.
+    """
+
+    results: tuple[StepResult, ...]
+    attempts: tuple[int, ...]
+    elapsed_seconds: float
+
+
+BoundaryObserver = Callable[[BoundarySnapshot], None]
+
+
 class _GraphState(TypedDict):
     lifecycle: LifecycleState
     request: LifecycleInput
     controls: RunControls
+    observer: BoundaryObserver | None
 
 
 StepExecutor = Callable[[ExecutableSubtask, LifecycleInput], StepResult]
@@ -336,6 +401,7 @@ class LifecycleRuntime:
         )
         self._wait = wait
         self._tasks = PriorityScheduler(snapshot).deterministic_order()
+        self._budget = snapshot.budget
         self._execute_step = execute_step
         self._task_ids = tuple(task.task_id for task in self._tasks)
         graph = StateGraph(_GraphState)
@@ -376,14 +442,86 @@ class LifecycleRuntime:
             ContractValidationError: For invalid input or lifecycle invariants.
             Exception: Unexpected adapter/framework defects propagate without retry.
         """
+        return self._invoke(request, LifecycleState(), 0.0, None)
+
+    def bounds(self) -> LifecycleBounds:
+        """Return trusted bootstrap limits for reconciling persisted history.
+
+        Returns:
+            Immutable copies of application-owned order and limits. Nothing in
+            the result can be written back to change runtime authority.
+        """
+        return LifecycleBounds(
+            task_ids=self._task_ids,
+            max_attempts_per_action=self._retry_policy.max_retries + 1,
+            failure_threshold=self._retry_policy.failure_threshold,
+            deadline_seconds=self._workflow_policy.deadline_seconds,
+            budget=self._budget,
+        )
+
+    def run_observed(
+        self, request: LifecycleInput, *, observer: BoundaryObserver,
+    ) -> LifecycleState:
+        """Invoke the same compiled graph from fresh state, reporting boundaries.
+
+        Like run(), this always starts from fresh application state. It accepts
+        no prior progress, completed work, or restored state of any kind. The
+        observer runs after each consumed attempt and at each cancellation or
+        deadline stop; its exceptions abort the run.
+
+        Args:
+            request: Untrusted text; extra authority or routing fields fail closed.
+            observer: Trusted callable receiving validated boundary snapshots.
+
+        Returns:
+            A validated completed or safe-stop snapshot with observed progression.
+
+        Raises:
+            ContractValidationError: For invalid input, a non-callable observer,
+                or violated lifecycle invariants.
+            Exception: Unexpected adapter, observer, or framework defects propagate.
+        """
+        if not callable(observer):
+            raise ContractValidationError("Bind a callable trusted boundary observer.")
+        return self._invoke(request, LifecycleState(), 0.0, observer)
+
+    def _resume_reconciled(
+        self, request: LifecycleInput, *, observer: BoundaryObserver,
+        restored: RestoredProgress,
+    ) -> LifecycleState:
+        """Resume after a reconciled completed prefix; private to recovery.
+
+        Not a supported application entry point. The sole intended caller is
+        CheckpointedLifecycle.recover, which first loads the latest stored
+        checkpoint and reconciles it against this runtime's bounds. The prefix
+        is still rebuilt and fully validated here against the trusted plan,
+        order, and policy; the workflow deadline is reduced by consumed time.
+
+        Raises:
+            ContractValidationError: For invalid input, an invalid restored
+                prefix, or violated lifecycle invariants.
+        """
+        if not callable(observer):
+            raise ContractValidationError("Bind a callable trusted boundary observer.")
+        if type(restored) is not RestoredProgress:
+            raise ContractValidationError("Restored progress must come from trusted recovery.")
+        elapsed = restored.elapsed_seconds
+        if type(elapsed) is not float or not isfinite(elapsed) or elapsed < 0:
+            raise ContractValidationError("Restored elapsed time must be finite and non-negative.")
+        return self._invoke(request, self._restored(restored), elapsed, observer)
+
+    def _invoke(
+        self, request: LifecycleInput, lifecycle: LifecycleState, consumed_seconds: float,
+        observer: BoundaryObserver | None,
+    ) -> LifecycleState:
         try:
             checked = LifecycleInput.model_validate(request)
         except ValidationError as exc:
             raise ContractValidationError("Lifecycle input accepts bounded text only.") from exc
-        started = checked_time(self._clock)
+        now = checked_time(self._clock)
         output = self._graph.invoke(
-            {"lifecycle": LifecycleState(), "request": checked,
-             "controls": RunControls(started, started)},
+            {"lifecycle": lifecycle, "request": checked,
+             "controls": RunControls(now - consumed_seconds, now), "observer": observer},
             config={"recursion_limit": (2 + 2 * self._retry_policy.max_retries)
                     * len(self._tasks) + 3},
         )
@@ -391,6 +529,64 @@ class LifecycleRuntime:
         if result.phase not in {LifecyclePhase.COMPLETED, LifecyclePhase.SAFE_STOP}:
             raise ContractValidationError("Graph did not reach a terminal outcome.")
         return result
+
+    def _restored(self, restored: RestoredProgress) -> LifecycleState:
+        """Rebuild a completed-prefix state from trusted order and policy only."""
+        results, attempts = restored.results, restored.attempts
+        if (type(results) is not tuple or type(attempts) is not tuple
+                or len(results) != len(attempts) or len(results) > len(self._tasks)):
+            raise ContractValidationError("Restored prefix conflicts with the trusted plan.")
+        policy = self._retry_policy
+        history = [LifecyclePhase.PENDING]
+        delays: list[float] = []
+        for count in attempts:
+            if (type(count) is not int or not 1 <= count <= policy.max_retries + 1
+                    or count > policy.failure_threshold):
+                raise ContractValidationError(
+                    "Restored attempts are impossible under trusted retry policy."
+                )
+            for retry_number in range(1, count):
+                history += [LifecyclePhase.EXECUTING, LifecyclePhase.RETRY_PENDING]
+                delays.append(policy.delay(retry_number))
+            history += [LifecyclePhase.EXECUTING, LifecyclePhase.STEP_COMPLETED]
+        try:
+            lifecycle = LifecycleState(
+                phase=history[-1], completed_task_ids=self._task_ids[:len(results)],
+                results=results, step_count=len(results),
+                attempt_count=attempts[-1] if attempts else 0, total_attempts=sum(attempts),
+                backoff_delays=tuple(delays), history=tuple(history),
+            )
+        except ValidationError as exc:
+            raise ContractValidationError("Restored prefix is not a valid lifecycle.") from exc
+        return self._checked({"lifecycle": lifecycle})
+
+    def _observe(self, state: _GraphState, value: LifecycleState) -> dict[str, LifecycleState]:
+        """Report a validated boundary to the trusted observer before continuing."""
+        observer = state.get("observer")
+        if observer is not None:
+            checked = self._checked({"lifecycle": value})
+            controls = state.get("controls")
+            if type(controls) is not RunControls:
+                raise ContractValidationError("Missing trusted invocation time accounting.")
+            reading = checked_time(self._clock)
+            if reading < controls.last_reading:
+                raise ContractValidationError("Application monotonic clock regressed.")
+            controls.last_reading = reading
+            counts: list[int] = []
+            current = 0
+            for phase in checked.history[1:]:
+                if phase is LifecyclePhase.EXECUTING:
+                    current += 1
+                elif phase is LifecyclePhase.STEP_COMPLETED:
+                    counts.append(current)
+                    current = 0
+            current -= int(checked.phase is LifecyclePhase.EXECUTING) + int(
+                checked.blocked_execution
+            )
+            if current:
+                counts.append(current)
+            observer(BoundarySnapshot(checked, tuple(counts), reading - controls.started))
+        return {"lifecycle": value}
 
     def _checked(self, state: _GraphState) -> LifecycleState:
         try:
@@ -550,25 +746,30 @@ class LifecycleRuntime:
                     fallback_ids = (*fallback_ids, task.task_id)
                     activations = (*activations, counters["total_attempts"])
                 delay = policy.delay(counters["attempt_count"])
-                return {"lifecycle": self._move(
+                moved = self._move(
                     value, LifecyclePhase.RETRY_PENDING, **counters, circuit=circuit,
                     backoff_delays=(*value.backoff_delays, delay),
                     fallback_task_ids=fallback_ids, fallback_activation_attempts=activations,
-                )}
-            return {"lifecycle": self._move(
-                value, LifecyclePhase.SAFE_STOP, **counters, circuit=circuit, stop_reason=reason,
-            )}
+                )
+            if reason is not None:
+                moved = self._move(
+                    value, LifecyclePhase.SAFE_STOP, **counters, circuit=circuit,
+                    stop_reason=reason,
+                )
         except (HarnessError, ValidationError):
             # Expected boundary failures stop without retry or granting authority.
-            return {"lifecycle": self._move(
+            moved = self._move(
                 value, LifecyclePhase.SAFE_STOP, **counters, stop_reason=StopReason.STEP_FAILURE
-            )}
-        return {"lifecycle": self._move(
-            value, LifecyclePhase.STEP_COMPLETED,
-            **counters, circuit=value.circuit.succeeded(policy.failure_threshold),
-            completed_task_ids=(*value.completed_task_ids, task.task_id),
-            results=(*value.results, result), step_count=value.step_count + 1,
-        )}
+            )
+        else:
+            moved = self._move(
+                value, LifecyclePhase.STEP_COMPLETED,
+                **counters, circuit=value.circuit.succeeded(policy.failure_threshold),
+                completed_task_ids=(*value.completed_task_ids, task.task_id),
+                results=(*value.results, result), step_count=value.step_count + 1,
+            )
+        # Every consumed attempt is a boundary; observer failures are never step failures.
+        return self._observe(state, moved)
 
     def _route_scheduled(self, state: _GraphState) -> LifecyclePhase:
         value = self._checked(state)
@@ -635,4 +836,6 @@ class LifecycleRuntime:
         value = self._checked(state)
         if value.phase is not LifecyclePhase.SAFE_STOP:
             raise ContractValidationError("Safe stop requires an application failure outcome.")
+        if value.stop_reason in {StopReason.CANCELLED, StopReason.DEADLINE_EXHAUSTED}:
+            return self._observe(state, value)
         return {"lifecycle": value}
