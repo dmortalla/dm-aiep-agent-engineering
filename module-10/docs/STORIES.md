@@ -20,6 +20,9 @@ actual deployment and full-module completion are not claimed.
 ## Story 10.4 - Async Execution, Queueing, Caching, and Performance
 Implement bounded asynchronous work, queue lifecycle, cache contracts, backpressure, concurrency controls, and performance evidence.
 
+Implemented; pending independent acceptance. See [Story 10.4 evidence](STORY_10_4.md).
+Evidence is process-local and deterministic; distributed scaling and full C-027 remain pending.
+
 ## Story 10.5 - Containerized AI Workflow
 Build and validate the hardened non-root Docker deployment unit.
 

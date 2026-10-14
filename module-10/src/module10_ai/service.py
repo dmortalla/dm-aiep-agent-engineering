@@ -40,11 +40,7 @@ class InferenceService:
             ContractError: Caller input is invalid or exceeds configured bounds.
             InferenceFailure: Expected runtime failure or malformed provider output.
         """
-        if type(request) is not InferenceRequest:
-            raise ContractError("Service requires an InferenceRequest.")
-        request.__post_init__()
-        if len(request.text) > self._config.max_text_characters:
-            raise ContractError("Text exceeds the configured runtime ceiling.")
+        self.validate_request(request)
         try:
             result = await self._runtime.infer(request)
         except (RuntimeFailure, ContractError) as exc:
@@ -62,3 +58,18 @@ class InferenceService:
         except ContractError as exc:
             raise InferenceFailure("Provider returned an invalid inference result.") from exc
         return result
+
+    def validate_request(self, request: InferenceRequest) -> None:
+        """Validate admission before execution or cache reuse.
+
+        Args:
+            request: Domain request subject to this service's configured ceiling.
+
+        Raises:
+            ContractError: Request is malformed or exceeds the runtime ceiling.
+        """
+        if type(request) is not InferenceRequest:
+            raise ContractError("Service requires an InferenceRequest.")
+        request.__post_init__()
+        if len(request.text) > self._config.max_text_characters:
+            raise ContractError("Text exceeds the configured runtime ceiling.")

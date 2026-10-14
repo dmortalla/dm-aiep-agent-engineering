@@ -56,3 +56,19 @@ has not been implemented or verified.
 See `STORY_10_3.md` for exact gate results and limitations. No container,
 local-model, live-provider, external deployment, scaling, queue/cache, or cloud
 telemetry evidence has been added. Full requirement acceptance remains pending.
+
+
+## Concrete Story 10.4 evidence — pending independent acceptance
+
+| Requirement | Implementation | Tested evidence |
+|---|---|---|
+| C-005, C-006 | `execution.py` bounded `JobQueue` / `LocalExecution` | Fixed workers, pending capacity, saturation, states, success/failure, cancellation, timeout, startup/shutdown, invalid handles; `test_execution.py` |
+| C-007 | `cache.py` explicit `InferenceCache`, TTL/LRU and hashed keys | Exact keys, hit/miss, TTL expiration, eviction, invalidation, concurrent access, counters and preserved deterministic evidence |
+| C-009 | Reproducible local workload test | Two concurrent workers, eight cold calls, eight warm cache hits with zero additional runtime calls; actual batch timings in `STORY_10_4.md` |
+| C-013 (local portion), E-012 | Queue/API lifecycle and controlled failures | Cleanup, surviving workers, cache defects, saturation 503, execution 504; accepted 10.2/10.3 regressions retained |
+| C-014, E-008 | Pre-cache service admission, untrusted cached result revalidation | Runtime ceiling cannot be bypassed by prepopulated cache; bad evidence rejected; IDs/output grant no privileged authority |
+| E-001, E-003, E-005, E-007, E-009, E-011 | Standalone standard-library application composition | No new dependency, no provider calls, separate HTTP/domain contracts, native gates and deterministic evidence |
+| C-027 (partial only) | Bounded process-local backend behavior | Local invariants only; scalable-backend deliverable remains incomplete pending distributed/cloud and independent acceptance evidence |
+
+No durable/distributed queue, distributed cache, C-004 orchestration, C-008 load
+balancing, cloud performance, or production deployment is established here.

@@ -11,6 +11,8 @@ from starlette.responses import JSONResponse
 
 from module10_ai.config import RuntimeConfig
 from module10_ai.errors import ConfigurationError, ContractError, InferenceFailure
+from module10_ai.execution import JobTimeout, LocalExecution, QueueUnavailable
+from module10_ai.execution_config import ExecutionConfig
 from module10_ai.http_boundary import HttpBoundary, error_response, record_failure
 from module10_ai.http_config import HttpConfig
 from module10_ai.http_schemas import ErrorOutput, HealthOutput, InferenceInput, InferenceOutput
@@ -20,11 +22,13 @@ from module10_ai.service import InferenceService
 def create_app(
     config: HttpConfig | None = None,
     service: InferenceService | None = None,
+    execution_config: ExecutionConfig | None = None,
 ) -> FastAPI:
     """Construct an isolated, no-key deterministic HTTP application.
 
     Args:
         config: Trusted validated HTTP limits, or secure defaults.
+        execution_config: Trusted process-local queue/cache limits.
         service: Accepted application service; trusted injection supports failure testing.
 
     Returns:
@@ -45,14 +49,18 @@ def create_app(
     if not isinstance(execution, InferenceService):
         raise ConfigurationError("Application requires InferenceService.")
 
+    queued = LocalExecution(execution, execution_config)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """Declare readiness only while the constructed service is accepting work."""
+        await queued.start()
         app.state.ready = True
         try:
             yield
         finally:
             app.state.ready = False
+            await queued.close()
 
     app = FastAPI(
         title="Module 10 deterministic inference",
@@ -63,6 +71,7 @@ def create_app(
         redoc_url=None,
     )
     app.state.ready = False
+    app.state.execution = queued
     app.add_middleware(HttpBoundary, config=settings)
 
     @app.exception_handler(RequestValidationError)
@@ -93,7 +102,7 @@ def create_app(
     @app.get("/health/ready", response_model=HealthOutput, responses={503: {"model": HealthOutput}})
     async def readiness() -> HealthOutput | JSONResponse:
         """Report constructed deterministic service lifecycle readiness only."""
-        if not app.state.ready:
+        if not app.state.ready or not queued.accepting:
             return JSONResponse(HealthOutput(status="not-ready").model_dump(), status_code=503)
         return HealthOutput(status="ready")
 
@@ -142,7 +151,7 @@ def create_app(
     ) -> InferenceOutput | JSONResponse:
         """Convert HTTP contracts and invoke the service once under a cooperative deadline."""
         request_id = request.state.request_id
-        if not app.state.ready:
+        if not app.state.ready or not queued.accepting:
             return error_response(503, "not_ready", "Service is not accepting work.", request_id)
         if len(payload.text) > settings.max_text_characters:
             return error_response(
@@ -151,7 +160,15 @@ def create_app(
         deadline = asyncio.timeout(settings.inference_timeout_seconds)
         try:
             async with deadline:
-                result = await execution.infer(payload.to_domain())
+                result = await queued.infer(payload.to_domain())
+        except QueueUnavailable:
+            return error_response(
+                503, "queue_unavailable", "Execution capacity unavailable.", request_id
+            )
+        except JobTimeout:
+            return error_response(
+                504, "inference_timeout", "Inference deadline exceeded.", request_id
+            )
         except TimeoutError:
             if not deadline.expired():
                 raise

@@ -1,4 +1,4 @@
-# Module 10 deterministic inference service — Stories 10.2–10.3
+# Module 10 deterministic inference service — Stories 10.2–10.4
 
 This standalone Python 3.12 package supplies a framework-independent inference
 core and a FastAPI HTTP boundary. Deterministic inference performs no external
@@ -39,8 +39,9 @@ to distinguish future evidence; neither mode is implemented or authorized here.
 
 The asynchronous `InferenceRuntime` protocol supports trusted provider injection
 without HTTP or UI imports. Execution is one bounded deterministic pass, with no
-retry loop or external cost. HTTP deadlines are now implemented in Story 10.3. Queueing, cache behavior,
-and concurrency controls remain later-story work.
+retry loop or external cost. HTTP deadlines are implemented in Story 10.3.
+Story 10.4 adds process-local queueing, caching, and concurrency controls around
+this core.
 
 Invalid caller input raises `ContractError`; invalid configuration raises
 `ConfigurationError`. Expected provider `RuntimeFailure` or `ContractError`
@@ -89,8 +90,9 @@ not evidence of container or cloud deployment.
 | `GET /openapi.json` | Typed API contract, bounds, error responses and correlation header |
 
 Interactive `/docs` is disabled by default; opt in with
-`HttpConfig(docs_enabled=True)`. ReDoc stays disabled. Readiness checks no future
-provider, queue, cache, cloud, or telemetry dependency. It does not prove capacity,
+`HttpConfig(docs_enabled=True)`. ReDoc stays disabled. Readiness now checks the
+fixed worker lifecycle alongside service lifespan. It checks no future provider,
+cloud, or telemetry dependency. It does not prove capacity,
 scaling, or cloud readiness.
 
 Every HTTP response gets `X-Request-ID`. A single inbound ID containing 1–64 ASCII
@@ -133,6 +135,65 @@ ASGI body bounds apply after server delivery; server/proxy connection, transport
 header, and aggregate concurrency limits are separate later deployment controls.
 
 See [Story 10.3 evidence](docs/STORY_10_3.md). HTTP integration is exercised in-process
-with no external listener or provider. Story 10.4+ capabilities and overall production
-readiness remain unproven. The locked Starlette version warns that HTTPX TestClient
+with no external listener or provider. Story 10.5+ capabilities and overall
+production readiness remain unproven. The locked Starlette version warns that HTTPX TestClient
 support is deprecated; it remains supported and all current HTTP checks pass.
+
+
+## Story 10.4 bounded local execution
+
+The same inference endpoint now queues work and awaits its result. Its response
+schema and request-ID behavior are preserved. Saturation returns a sanitized 503
+`queue_unavailable`; unavailable workers return 503 `not_ready`. Healthy saturation
+does not make readiness fail. The existing HTTP deadline includes queue waiting;
+a separate worker deadline bounds execution. Both return the established 504.
+
+Pass `execution_config=ExecutionConfig(...)` to `create_app`; import the settings
+from `module10_ai.execution_config`. No new dependencies or environment reads exist.
+
+| Setting | Default | Supported range |
+|---|---:|---:|
+| max_workers | 4 | 1–32 |
+| queue_capacity | 32 pending slots | 1–1024 |
+| job_timeout_seconds | 5 | 0.01–30 |
+| cache_capacity | 128 entries | 1–4096 |
+| cache_ttl_seconds | 60 | 0.01–3600 |
+
+`LocalExecution` in `module10_ai.execution` implements the `JobQueue` application
+contract: `start`, `submit`, `cancel`, `close`. `submit` returns an opaque `Job`
+whose `state` and awaitable `result()` expose completion. No public HTTP job
+identifiers or polling endpoints are added. Handles and IDs grant no authority.
+Queue/cache aggregate statistics are available for later telemetry integration.
+Use each execution instance on one event loop and close it before that loop exits.
+Startup is idempotent; shutdown permanently closes that instance.
+
+There are fixed worker tasks and at most one execution task per worker; submissions
+create no tasks. Pending slots plus workers bound retained outstanding records.
+Cancellation removes no pending slot until its bounded tombstone is consumed.
+Shutdown rejects submissions, cancels running work, drains pending work, and awaits
+cooperative runtime cleanup. There are no retries. Runtimes must honor cancellation;
+asyncio cannot forcibly preempt blocking CPU work or cancellation suppression.
+
+The thread-safe process-local cache implements `InferenceCache`: exact-input,
+versioned SHA-256 keys, TTL from insertion/refresh (not access), LRU eviction,
+idempotent invalidation, and hit/miss/expiration/eviction statistics. Expiration
+occurs on get/put/stats; stale entries are never returned. Hashes avoid raw values
+but are not encryption; do not log keys or sensitive result content. Results remain
+untrusted deterministic data; cache metadata does not change their evidence class.
+Concurrent cold misses may repeat work within the worker bound; single-flight
+coalescing is not promised. Cache errors fail safely rather than returning corrupt
+output. Service request limits are checked before cache lookup.
+
+Queue and cache are neither durable nor distributed. Restart loses jobs/results;
+completed job handles are not retained in a server history. Distributed scaling,
+load balancing, cloud performance, deployment, and full C-027 acceptance are deferred.
+
+Reproduce local deterministic performance evidence:
+
+```powershell
+.venv/Scripts/python.exe -m pytest tests/test_execution.py::test_local_performance --capture=tee-sys
+```
+
+The test reports actual batch elapsed times, runtime calls, hits, and peak
+concurrency. Acceptance uses resource invariants and avoided repeated calls,
+without fragile timing/speedup thresholds. See [Story 10.4 evidence](docs/STORY_10_4.md).
