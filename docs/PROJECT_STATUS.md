@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | Not configured |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-5 complete |
-| Implementation | Stories 1-5 complete; Story 6 next |
+| Module 6.5 phase | Architecture frozen; Stories 1-6 complete |
+| Implementation | Stories 1-6 complete; Story 7 next |
 | Release | Unreleased |
 
 ## Governance
@@ -26,11 +26,11 @@
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
 The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
-The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-5 implementation is complete; the accepted Story 5 baseline has 439 passing tests.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-6 implementation is complete; the accepted Story 6 baseline has 616 passing tests.
 
 ## Next recommended work
 
-Begin Story 6 - Checkpointing, Recovery, and Idempotent Re-entry - from the frozen architecture and independently verified green 439-test Story 5 baseline.
+Begin Story 7 - Durable Human Approval and Async Escalation - from the frozen architecture and independently verified green 616-test Story 6 baseline.
 
 ## Module 6.5 Architecture Freeze
 
@@ -41,6 +41,6 @@ Begin Story 6 - Checkpointing, Recovery, and Idempotent Re-entry - from the froz
 - Source labs mapped: 6 of 6
 - Source deliverables mapped: 5 of 5
 - Named technologies assigned roles: 9 of 9
-- Implementation: Stories 1-5 complete
+- Implementation: Stories 1-6 complete
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
-- Next phase: Story 6 - Checkpointing, Recovery, and Idempotent Re-entry
+- Next phase: Story 7 - Durable Human Approval and Async Escalation
