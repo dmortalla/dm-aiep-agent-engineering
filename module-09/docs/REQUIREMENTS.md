@@ -5,10 +5,11 @@
 Story 9.1 baseline. Requirements are traced to stories in [TRACEABILITY.md](TRACEABILITY.md).
 The machine-readable copy is [governance/module-09-governance.json](governance/module-09-governance.json).
 
-Implementation status for every source requirement below is **designed only**. Story 9.1
-implements no capability. Story 9.2 partially implements ENG-001 with deterministic, no-key
-fixture playback, which performs no inference and satisfies no SRC requirement. Every other
-requirement is designed only.
+Story 9.1 implements no capability. Story 9.2 partially implements ENG-001 with deterministic,
+no-key fixture playback, which performs no inference and satisfies no SRC requirement. Story 9.3
+partially implements SRC-002, SRC-004, and ENG-006 with validated ingestion and genuine local image
+analysis and document extraction, with no model inference (see [UNDERSTANDING.md](UNDERSTANDING.md)).
+No requirement is fully satisfied. Every other requirement is designed only.
 
 ## Source-derived requirements
 

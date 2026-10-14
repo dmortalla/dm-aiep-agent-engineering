@@ -9,8 +9,10 @@ This document describes the target architecture. Story 9.1 provides the typed co
 `src/multimodal_voice_platform/contracts/` (see [CONTRACTS.md](CONTRACTS.md)). Story 9.2 adds
 deterministic fixture-playback adapters for the vision, document, and speech-to-text ports in
 `src/multimodal_voice_platform/adapters/deterministic/` (see
-[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)). No other runtime component below is
-implemented yet.
+[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)). Story 9.3 adds the image and document
+ingestion boundary (`ingestion/`), local processing adapters for the vision and document ports
+(`adapters/local/`), and the understanding service and records (`understanding/`) (see
+[UNDERSTANDING.md](UNDERSTANDING.md)). No other runtime component below is implemented yet.
 
 ## Goal
 
@@ -166,6 +168,9 @@ module-09/
       streaming.py  limits.py    evidence.py   errors.py
     adapters/deterministic/              Story 9.2: no-key fixture playback (no inference)
       fixture_data/                      committed fixtures + manifest
+    ingestion/                           Story 9.3: magic-byte/UTF-8 validation and staging
+    adapters/local/                      Story 9.3: local image analysis, document extraction
+    understanding/                       Story 9.3: understanding service and records
     (core/, adapters/live/, interface/, ui/)  later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
@@ -179,7 +184,7 @@ These are implementation choices left to the owning story. They must fit the fro
 |---|---|
 | WebSocket server framework and hosting process | 9.7 |
 | Deterministic fixture formats and generation | 9.2 (decided: stdlib-generated PNG/WAV, plain text, Markdown; SHA-256 manifest) |
-| Image/document parsing libraries and magic-byte checks | 9.3 |
+| Image/document parsing libraries and magic-byte checks | 9.3 (decided: Pillow for PNG/JPEG/WebP, pypdf for PDF, stdlib Markdown/text parsing, stdlib magic-byte sniffing) |
 | Audio decoding library and sample formats | 9.4 |
 | Specific live providers and models | 9.8 |
 | Deployment target and packaging | 9.10 |

@@ -5,10 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "dm-aiep-multimodal-voice-platform"
 version = "0.1.0"
-description = "Module 9 multimodal and voice AI platform (Stories 9.1-9.2: contracts and deterministic foundation)."
+description = "Module 9 multimodal and voice AI platform (Stories 9.1-9.3: contracts, deterministic foundation, local document and vision understanding)."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "pillow>=12.3,<13",
     "pydantic>=2.12,<3",
+    "pypdf>=6.19,<7",
 ]
 
 [project.optional-dependencies]

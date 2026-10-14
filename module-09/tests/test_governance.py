@@ -21,6 +21,11 @@ DOCS = MODULE_ROOT / "docs"
 SKIPPED_DIRS = {".venv", ".pytest_cache", ".ruff_cache", "__pycache__"}
 TEXT_SUFFIXES = {".md", ".py", ".toml", ".json", ".txt", ".lock", ".yaml", ".yml"}
 ALLOWED_THIRD_PARTY = {"pydantic", "pytest", "multimodal_voice_platform"}
+RESTRICTED_THIRD_PARTY = {
+    "PIL": {"adapters/local/image_analysis.py"},
+    "pypdf": {"adapters/local/document_parsing.py"},
+}
+"""Story 9.3 decoders, each allowed in exactly one source module (and in tests)."""
 FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
 FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
 
@@ -101,18 +106,37 @@ def test_story_9_1_claims_design_evidence_only(governance: dict[str, Any]) -> No
 
 def test_story_9_2_claims_only_the_deterministic_foundation(governance: dict[str, Any]) -> None:
     assert governance["story_9_2_evidence_class"] == EvidenceClass.AUTOMATED_TEST
-    assert governance["implemented_capabilities"] == ["deterministic_multimodal_foundation"]
+    assert governance["implemented_capabilities"][0] == "deterministic_multimodal_foundation"
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
-    assert statuses.pop("ENG-001") == "partially-implemented"
-    assert set(statuses.values()) == {"designed"}
+    assert statuses["ENG-001"] == "partially-implemented"
     stories = {story["id"]: story["status"] for story in governance["stories"]}
-    assert stories.pop("9.1") == "complete-design-only"
-    assert stories.pop("9.2") == "complete-deterministic-foundation"
-    assert set(stories.values()) == {"not-started"}
+    assert stories["9.2"] == "complete-deterministic-foundation"
     foundation_doc = _doc("DETERMINISTIC_FOUNDATION.md")
     assert "no inference" in foundation_doc.lower()
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md"):
         assert "no inference" in " ".join(_doc(name).lower().split()), name
+
+
+def test_story_9_3_claims_only_local_understanding(governance: dict[str, Any]) -> None:
+    assert governance["story_9_3_evidence_class"] == EvidenceClass.AUTOMATED_TEST
+    assert governance["implemented_capabilities"] == [
+        "deterministic_multimodal_foundation",
+        "local_document_vision_understanding",
+    ]
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    partial = {"ENG-001", "SRC-002", "SRC-004", "ENG-006"}
+    assert {rid for rid, status in statuses.items() if status != "designed"} == partial
+    assert {statuses[rid] for rid in partial} == {"partially-implemented"}
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories.pop("9.1") == "complete-design-only"
+    assert stories.pop("9.2") == "complete-deterministic-foundation"
+    assert stories.pop("9.3") == "complete-local-understanding"
+    assert set(stories.values()) == {"not-started"}
+    understanding_doc = " ".join(_doc("UNDERSTANDING.md").lower().split())
+    assert "no model inference" in understanding_doc
+    assert "not semantic" in understanding_doc
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
+        assert "no model inference" in " ".join(_doc(name).lower().split()), name
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:
@@ -148,9 +172,13 @@ def test_definition_of_done_matches_governance(governance: dict[str, Any]) -> No
     assert len(checklist) == 25
 
 
-def test_module_imports_only_stdlib_pydantic_pytest_and_itself() -> None:
+def test_module_imports_only_stdlib_pydantic_pytest_itself_and_scoped_decoders() -> None:
     allowed = set(sys.stdlib_module_names) | ALLOWED_THIRD_PARTY
+    package = MODULE_ROOT / "src" / "multimodal_voice_platform"
+    test_helpers = {path.stem for path in (MODULE_ROOT / "tests").glob("*.py")}
     for path in _owned_files({".py"}):
+        in_tests = path.is_relative_to(MODULE_ROOT / "tests")
+        owner = path.relative_to(package).as_posix() if path.is_relative_to(package) else None
         tree = ast.parse(path.read_text("utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -160,7 +188,11 @@ def test_module_imports_only_stdlib_pydantic_pytest_and_itself() -> None:
             else:
                 continue
             for name in names:
-                assert name.split(".")[0] in allowed, f"{path}: {name}"
+                root = name.split(".")[0]
+                if root in RESTRICTED_THIRD_PARTY:
+                    assert in_tests or owner in RESTRICTED_THIRD_PARTY[root], f"{path}: {name}"
+                    continue
+                assert root in allowed or (in_tests and root in test_helpers), f"{path}: {name}"
 
 
 def test_source_has_no_command_execution_path() -> None:

@@ -5,20 +5,22 @@ and to the evidence that must exist before it counts as satisfied. The machine-r
 [governance/module-09-governance.json](governance/module-09-governance.json). Automated tests
 keep the two in sync.
 
-**Current status: every row is designed, not implemented, except ENG-001, which is partially
-implemented.** Story 9.1 contributes architecture and contract design only, which is
-`design_documentation` evidence. Story 9.2 contributes the deterministic foundation for ENG-001
-(`automated_test` evidence). Deterministic fixture playback is not evidence for any SRC
-requirement. Planned evidence is never completed evidence.
+**Current status: every row is designed, not implemented, except ENG-001, SRC-002, SRC-004, and
+ENG-006, which are partially implemented.** Story 9.1 contributes architecture and contract design
+only, which is `design_documentation` evidence. Story 9.2 contributes the deterministic foundation
+for ENG-001 (`automated_test` evidence). Deterministic fixture playback is not evidence for any SRC
+requirement. Story 9.3 contributes `automated_test` evidence of validated ingestion, local image
+analysis, and local document extraction and structural analysis, with no model inference (see
+[UNDERSTANDING.md](UNDERSTANDING.md)). Planned evidence is never completed evidence.
 
 ## Source-derived requirements
 
 | Requirement | Delivering stories | Contract / architecture anchor | Required evidence before "satisfied" |
 |---|---|---|---|
 | SRC-001 Engineer multimodal AI applications | 9.1, 9.5, 9.9, 9.10 | Whole architecture | Integrated platform acceptance, reviewer-visible |
-| SRC-002 Vision models | 9.3, 9.8 | `VisionPort`, `Modality.IMAGE` | automated_test + deterministic_demo; live_integration for live vision |
+| SRC-002 Vision models (partially implemented: 9.3 local pixel analysis, no vision model) | 9.3, 9.8 | `VisionPort`, `Modality.IMAGE` | automated_test + deterministic_demo; live_integration for live vision |
 | SRC-003 Audio processing | 9.4 | `Modality.AUDIO`, audio limits | automated_test + deterministic_demo |
-| SRC-004 Document understanding | 9.3 | `DocumentUnderstandingPort`, `Modality.DOCUMENT` | automated_test + deterministic_demo |
+| SRC-004 Document understanding (partially implemented: 9.3 local extraction and structure, no semantic understanding) | 9.3 | `DocumentUnderstandingPort`, `Modality.DOCUMENT` | automated_test + deterministic_demo |
 | SRC-005 Cross-modal reasoning | 9.5 | `ReasoningPort`, `ReasoningRequest.inputs` | automated_test + deterministic_demo |
 | SRC-006 Speech-to-text | 9.4, 9.8 | `SpeechToTextPort`, `transcript_partial/final` | automated_test + deterministic_demo; live_integration for live STT |
 | SRC-007 Text-to-speech | 9.4, 9.8 | `TextToSpeechPort`, `audio_ready` | automated_test + deterministic_demo; live_integration for live TTS |
@@ -43,7 +45,7 @@ requirement. Planned evidence is never completed evidence.
 | ENG-003 Streamlit presentation layer | 9.9 | ADR-009-002 |
 | ENG-004 Logic outside Streamlit | 9.1, 9.2, 9.9 | ADR-009-002, `multimodal_voice_platform` package |
 | ENG-005 Reviewer-visible working results | 9.9, 9.10 | ADR-009-009 |
-| ENG-006 Untrusted content never grants authority | 9.1, 9.3, 9.5, 9.10 | ADR-009-007, `TrustLevel` |
+| ENG-006 Untrusted content never grants authority (partially implemented: 9.3 image and document path) | 9.1, 9.3, 9.5, 9.10 | ADR-009-007, `TrustLevel` |
 | ENG-007 Bounded cost and latency | 9.1, 9.8, 9.10 | ADR-009-008, `ResourceBudget` |
 | ENG-008 Observability without secrets | 9.7, 9.10 | `metric` event, `SafeError` |
 | ENG-009 Accurate evidence classification | 9.1, 9.9, 9.10 | `EvidenceClass`, `EvidenceRecord` |
@@ -56,4 +58,5 @@ requirement. Planned evidence is never completed evidence.
 - Source requirement groups traced: 17 of 17 (18 requirement IDs).
 - Additive engineering requirements traced: 12 of 12.
 - Requirements fully implemented: 0. Partially implemented: ENG-001 (Story 9.2 deterministic
-  foundation). Story 9.1 is design only.
+  foundation); SRC-002, SRC-004, and ENG-006 (Story 9.3 local understanding). Story 9.1 is design
+  only.

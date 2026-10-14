@@ -4,8 +4,11 @@ Module 9 is done only when every item below has verified evidence of the require
 [EVIDENCE_POLICY.md](EVIDENCE_POLICY.md)). Design documentation alone never checks a box except
 where the item itself is about documentation or traceability.
 
-Current state: Story 9.1 complete (design only) and Story 9.2 complete (deterministic foundation).
-No item below is satisfied yet. Item 1 is traced at the design level and still needs implementation
+Current state: Story 9.1 complete (design only), Story 9.2 complete (deterministic foundation), and
+Story 9.3 complete (local document and vision understanding, no model inference). No item below is
+satisfied yet. Story 9.3 contributes automated evidence toward "Vision processing works" and
+"Document understanding works"; both stay unchecked until model-based vision (9.8) and
+reviewer-visible results (9.9) exist. Item 1 is traced at the design level and still needs implementation
 evidence before it can be checked. Story 9.2 contributes deterministic foundation evidence toward
 "Deterministic no-key mode is reproducible", which stays unchecked until every essential workflow
 runs deterministically (Story 9.9).

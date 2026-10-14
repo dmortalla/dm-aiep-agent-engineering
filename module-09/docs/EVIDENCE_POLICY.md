@@ -54,3 +54,16 @@ runs can never be labeled `live_integration`.
 This evidence proves that the deterministic, no-key path runs reproducibly through the provider
 ports. It does not prove vision, document understanding, speech-to-text, or any other SRC
 capability: the adapters replay scripted output for committed fixtures and perform no inference.
+
+## Story 9.3 classification
+
+Story 9.3 evidence is **`automated_test`**: the suite runs generated PNG, JPEG, WebP, PDF, Markdown,
+and text inputs through validated ingestion and the local vision and document adapters, with
+sockets blocked and no credentials. `UnderstandingRecord` can emit `deterministic_demo` records for
+reviewer runs and rejects every other class.
+
+Story 9.3 performs local extraction and structural analysis with no model inference. Its records
+name their processing kinds (`local_extraction`, `local_structural_analysis`) and reject
+`fixture_playback` and `model_inference`. This evidence partially supports SRC-002, SRC-004, and
+ENG-006. It is not evidence of model-based vision, semantic document understanding, live
+integration, or reviewer-visible results. See [UNDERSTANDING.md](UNDERSTANDING.md).

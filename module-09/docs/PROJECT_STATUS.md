@@ -7,9 +7,9 @@
 | Architecture | Frozen (human-approved Story 9.1 specification, 2026-10-14) |
 | ADRs | 9 accepted (ADR-009-001 to ADR-009-009) |
 | Requirements | 18 source-derived (17 groups) + 12 additive engineering |
-| Stories | 9.1 complete (design only); 9.2 complete (deterministic foundation); 9.3 to 9.10 not started |
-| Implemented capabilities | Deterministic multimodal foundation only (no-key fixture playback; no inference) |
-| Evidence obtained | 9.1: `design_documentation`. 9.2: `automated_test` |
+| Stories | 9.1 complete (design only); 9.2 complete (deterministic foundation); 9.3 complete (local document and vision understanding); 9.4 to 9.10 not started |
+| Implemented capabilities | Deterministic multimodal foundation (no-key fixture playback; no inference). Local document and vision understanding (validated ingestion, pixel analysis, document extraction and structure; no model inference) |
+| Evidence obtained | 9.1: `design_documentation`. 9.2: `automated_test`. 9.3: `automated_test` |
 | Release | Unreleased |
 
 ## What exists
@@ -23,16 +23,21 @@
   session-scoped content store, deterministic fixture-playback adapters for the vision, document,
   and speech-to-text ports, and typed, evidence-classified run records. See
   [DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md).
-- Contract, governance, fixture, adapter, and security tests in `tests/`.
+- Story 9.3 local understanding in `src/multimodal_voice_platform/ingestion/`, `adapters/local/`,
+  and `understanding/`: magic-byte and UTF-8 validated ingestion, Pillow-based image pixel analysis,
+  Markdown/text/PDF extraction and structural analysis, and typed, evidence-classified
+  `UnderstandingRecord`s. See [UNDERSTANDING.md](UNDERSTANDING.md).
+- Contract, governance, fixture, adapter, ingestion, understanding, and security tests in `tests/`.
 
 ## What does not exist yet
 
-No genuine vision, audio, or document processing; no speech-to-text or text-to-speech; no
-cross-modal reasoning; no voice orchestration; no WebSocket server or streaming; no live adapters
-or BYOK; no Streamlit UI. The deterministic adapters replay scripted output for committed fixtures
-and are not evidence that any of those capabilities work.
+No model-based vision or semantic document understanding (Story 9.3 runs no model inference); no
+OCR; no audio processing; no speech-to-text or text-to-speech; no cross-modal reasoning; no voice
+orchestration; no WebSocket server or streaming; no live adapters or BYOK; no Streamlit UI. The
+Story 9.2 deterministic adapters replay scripted output for committed fixtures and are not evidence
+that any of those capabilities work.
 
 ## Next story
 
-Story 9.3 (Document + Vision Understanding) or Story 9.4 (Audio + Speech Pipeline). Both depend
-only on Story 9.2.
+Story 9.4 (Audio + Speech Pipeline), which depends only on Story 9.2. Story 9.5 (Cross-Modal
+Reasoning) needs both 9.3 and 9.4.
