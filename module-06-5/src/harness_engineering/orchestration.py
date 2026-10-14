@@ -8,8 +8,8 @@ Slice 2 adds bounded retries/backoff and a workflow-local circuit breaker.
 Slice 3 adds finite fallback, workflow deadlines, and application cancellation.
 Story 6 Slice 2 adds public boundary observation. Resuming from a restored
 prefix is not part of the public API: only the recovery coordinator invokes the
-private resume seam, after reconciling a stored checkpoint. Committed-effect
-replay prevention remains deferred.
+private resume seam, after reconciling a stored checkpoint. Story 6 Slice 3
+adds private effect execution and pre-invocation reservation seams.
 Trusted executors must terminate; graph bounds do not preempt Python callbacks.
 """
 
@@ -309,11 +309,14 @@ class RestoredProgress:
         results: Validated result for each completed action, in order.
         attempts: Attempts each completed action consumed, in the same order.
         elapsed_seconds: Workflow time already consumed before this invocation.
+        pending_attempts: Conservatively consumed attempts on verified noncommitted
+            effect work; recovery retains these as circuit-qualifying failures.
     """
 
     results: tuple[StepResult, ...]
     attempts: tuple[int, ...]
     elapsed_seconds: float
+    pending_attempts: int = 0
 
 
 BoundaryObserver = Callable[[BoundarySnapshot], None]
@@ -324,6 +327,8 @@ class _GraphState(TypedDict):
     request: LifecycleInput
     controls: RunControls
     observer: BoundaryObserver | None
+    effect_executor: "StepExecutor | None"
+    effect_work: frozenset[str]
 
 
 StepExecutor = Callable[[ExecutableSubtask, LifecycleInput], StepResult]
@@ -486,8 +491,13 @@ class LifecycleRuntime:
         return self._invoke(request, LifecycleState(), 0.0, observer)
 
     def _resume_reconciled(
-        self, request: LifecycleInput, *, observer: BoundaryObserver,
+        self,
+        request: LifecycleInput,
+        *,
+        observer: BoundaryObserver,
         restored: RestoredProgress,
+        effect_executor: StepExecutor | None = None,
+        effect_work: frozenset[str] = frozenset(),
     ) -> LifecycleState:
         """Resume after a reconciled completed prefix; private to recovery.
 
@@ -508,11 +518,41 @@ class LifecycleRuntime:
         elapsed = restored.elapsed_seconds
         if type(elapsed) is not float or not isfinite(elapsed) or elapsed < 0:
             raise ContractValidationError("Restored elapsed time must be finite and non-negative.")
-        return self._invoke(request, self._restored(restored), elapsed, observer)
+        return self._invoke(
+            request,
+            self._restored(restored),
+            elapsed,
+            observer,
+            effect_executor,
+            effect_work,
+        )
+
+    def _run_checkpointed_effects(
+        self,
+        request: LifecycleInput,
+        *,
+        observer: BoundaryObserver,
+        effect_executor: StepExecutor,
+        effect_work: frozenset[str],
+    ) -> LifecycleState:
+        """Private fresh invocation seam for the store-backed effect coordinator."""
+        return self._invoke(request, LifecycleState(), 0.0, observer, effect_executor, effect_work)
+
+    def _recovery_guard(self, consumed_seconds: float) -> None:
+        """Check current trusted cancellation and deadline before verification."""
+        now = checked_time(self._clock)
+        reason = self._control_reason({"controls": RunControls(now - consumed_seconds, now)})
+        if reason is not None:
+            raise ContractValidationError(f"Effect recovery blocked by {reason.value}.")
 
     def _invoke(
-        self, request: LifecycleInput, lifecycle: LifecycleState, consumed_seconds: float,
+        self,
+        request: LifecycleInput,
+        lifecycle: LifecycleState,
+        consumed_seconds: float,
         observer: BoundaryObserver | None,
+        effect_executor: StepExecutor | None = None,
+        effect_work: frozenset[str] = frozenset(),
     ) -> LifecycleState:
         try:
             checked = LifecycleInput.model_validate(request)
@@ -520,10 +560,17 @@ class LifecycleRuntime:
             raise ContractValidationError("Lifecycle input accepts bounded text only.") from exc
         now = checked_time(self._clock)
         output = self._graph.invoke(
-            {"lifecycle": lifecycle, "request": checked,
-             "controls": RunControls(now - consumed_seconds, now), "observer": observer},
-            config={"recursion_limit": (2 + 2 * self._retry_policy.max_retries)
-                    * len(self._tasks) + 3},
+            {
+                "lifecycle": lifecycle,
+                "request": checked,
+                "controls": RunControls(now - consumed_seconds, now),
+                "observer": observer,
+                "effect_executor": effect_executor,
+                "effect_work": effect_work,
+            },
+            config={
+                "recursion_limit": (2 + 2 * self._retry_policy.max_retries) * len(self._tasks) + 3
+            },
         )
         result = self._checked(output)
         if result.phase not in {LifecyclePhase.COMPLETED, LifecyclePhase.SAFE_STOP}:
@@ -549,12 +596,27 @@ class LifecycleRuntime:
                 history += [LifecyclePhase.EXECUTING, LifecyclePhase.RETRY_PENDING]
                 delays.append(policy.delay(retry_number))
             history += [LifecyclePhase.EXECUTING, LifecyclePhase.STEP_COMPLETED]
+        pending = restored.pending_attempts
+        if (
+            type(pending) is not int
+            or not 0 <= pending < min(policy.max_retries + 1, policy.failure_threshold)
+            or (pending and len(results) >= len(self._tasks))
+        ):
+            raise ContractValidationError("No trusted retry/circuit capacity for pending attempts.")
+        for retry_number in range(1, pending + 1):
+            history += [LifecyclePhase.EXECUTING, LifecyclePhase.RETRY_PENDING]
+            delays.append(policy.delay(retry_number))
         try:
             lifecycle = LifecycleState(
-                phase=history[-1], completed_task_ids=self._task_ids[:len(results)],
-                results=results, step_count=len(results),
-                attempt_count=attempts[-1] if attempts else 0, total_attempts=sum(attempts),
-                backoff_delays=tuple(delays), history=tuple(history),
+                phase=history[-1],
+                completed_task_ids=self._task_ids[: len(results)],
+                results=results,
+                step_count=len(results),
+                attempt_count=pending or (attempts[-1] if attempts else 0),
+                total_attempts=sum(attempts) + pending,
+                circuit=CircuitState(consecutive_failures=pending),
+                backoff_delays=tuple(delays),
+                history=tuple(history),
             )
         except ValidationError as exc:
             raise ContractValidationError("Restored prefix is not a valid lifecycle.") from exc
@@ -691,6 +753,9 @@ class LifecycleRuntime:
 
     def _schedule(self, state: _GraphState) -> dict[str, LifecycleState]:
         value = self._checked(state)
+        if value.phase is LifecyclePhase.RETRY_PENDING:
+            # Reconciled pending attempts enter the existing backoff/control node.
+            return self._retry(state)
         if value.phase not in {LifecyclePhase.PENDING, LifecyclePhase.STEP_COMPLETED}:
             raise ContractValidationError("Scheduling requires pending or just-completed state.")
         if value.phase is LifecyclePhase.STEP_COMPLETED:
@@ -724,9 +789,31 @@ class LifecycleRuntime:
             raise ContractValidationError("No application-authorized attempts remain.")
         counters = {"attempt_count": value.attempt_count + 1,
                     "total_attempts": value.total_attempts + 1}
+        effectful = task.task_id in state.get("effect_work", frozenset())
+        if effectful:
+            # Persist a conservative attempt reservation before any external call.
+            # Observer errors occur outside the step-error classification boundary.
+            self._observe(state, value)
+            reason = self._control_reason(state)
+            if reason is not None:
+                return {
+                    "lifecycle": self._move(
+                        value,
+                        LifecyclePhase.SAFE_STOP,
+                        stop_reason=reason,
+                        blocked_execution=True,
+                    )
+                }
         try:
-            binding = (self._fallback_step if task.task_id in value.fallback_task_ids
-                       else self._execute_step)
+            binding = (
+                state["effect_executor"]
+                if effectful
+                else (
+                    self._fallback_step
+                    if task.task_id in value.fallback_task_ids
+                    else self._execute_step
+                )
+            )
             result = StepResult.model_validate(binding(task, state["request"]))
         except TransientStepError as exc:
             circuit = value.circuit.failed(policy.failure_threshold)

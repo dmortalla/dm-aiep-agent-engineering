@@ -1,8 +1,9 @@
 """Application-owned data snapshots and local SQLite storage, without resume authority.
 
 Snapshot counters describe consumed resources, never configured limits. Work IDs
-are inert references, not graph routes. Approval/effect slots must remain empty
-until later application-owned verification contracts are implemented.
+are inert references, not graph routes. Approval slots remain empty. Version 1
+keeps empty effect slots; version 2
+records inert effect identities and reservations for application verification.
 """
 
 import json
@@ -10,7 +11,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -71,7 +72,7 @@ class CompletedWork(SnapshotData):
     result: Annotated[str, Field(max_length=4096, strict=True)]
 
 
-class Checkpoint(SnapshotData):
+class _CheckpointData(SnapshotData):
     """Versioned snapshot, validated data only; never usable as runtime authority.
 
     Every field is required, including empty reserved slots. Sequence is a
@@ -88,13 +89,12 @@ class Checkpoint(SnapshotData):
     retry_state: Annotated[tuple[RetrySnapshot, ...], Field(max_length=100)]
     cancelled: bool
     approval_records: tuple[()]
-    committed_effects: tuple[()]
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> Self:
         """Reject unsupported versions and inconsistent or duplicate work references."""
-        if self.schema_version != SCHEMA_VERSION or self.state_version != STATE_VERSION:
-            raise ValueError("Unsupported checkpoint schema/state version.")
+        if self.schema_version != SCHEMA_VERSION:
+            raise ValueError("Unsupported checkpoint schema version.")
         completed = [item.work_id for item in self.completed_work]
         work = completed + list(self.pending_work)
         retries = [item.work_id for item in self.retry_state]
@@ -103,6 +103,82 @@ class Checkpoint(SnapshotData):
         if len(set(retries)) != len(retries) or not set(retries).issubset(work):
             raise ValueError("Retry references must be unique and refer to recorded work.")
         return self
+
+
+class EffectIdentity(SnapshotData):
+    """Inert identity derived from exact trusted application effect inputs."""
+
+    application: Reference
+    workflow: CheckpointIdentity
+    work_id: Reference
+    key: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", strict=True)]
+
+
+class CommittedEffect(SnapshotData):
+    """Historical commitment claim; contains neither authority nor result text."""
+
+    identity: EffectIdentity
+
+
+class Checkpoint(_CheckpointData):
+    """Original version 1 contract, retaining empty effect placeholders."""
+
+    committed_effects: tuple[()]
+
+    @model_validator(mode="after")
+    def validate_version(self) -> Self:
+        """Never reinterpret legacy checkpoints as effect recovery evidence."""
+        if self.state_version != STATE_VERSION:
+            raise ValueError("Unsupported checkpoint state version.")
+        return self
+
+
+class EffectCheckpoint(_CheckpointData):
+    """Explicit version 2 effect reservations and lifecycle boundary evidence."""
+
+    effect_bindings: Annotated[tuple[EffectIdentity, ...], Field(max_length=100)]
+    committed_effects: Annotated[tuple[CommittedEffect, ...], Field(max_length=100)]
+    boundary: Literal["attempt_reserved", "retry_pending", "step_completed", "safe_stop"]
+    stop_reason: Literal[
+        "step_failure", "retries_exhausted", "circuit_open", "preferred_unavailable",
+        "deadline_exhausted", "cancelled",
+    ] | None
+
+    @model_validator(mode="after")
+    def validate_effect_state(self) -> Self:
+        """Require exact identity binding, unique claims, and coherent boundaries."""
+        if self.state_version != 2:
+            raise ValueError("Unsupported effect checkpoint state version.")
+        work = {item.work_id for item in self.completed_work} | set(self.pending_work)
+        bindings = {item.work_id: item for item in self.effect_bindings}
+        if len(bindings) != len(self.effect_bindings) or not set(bindings).issubset(work):
+            raise ValueError("Effect bindings must be unique recorded work references.")
+        if any(item.workflow != self.identity for item in self.effect_bindings):
+            raise ValueError("Effect binding workflow conflicts with checkpoint identity.")
+        committed = [item.identity.work_id for item in self.committed_effects]
+        if len(set(committed)) != len(committed) or any(
+            bindings.get(item.identity.work_id) != item.identity for item in self.committed_effects
+        ):
+            raise ValueError("Committed effects must match unique declared bindings.")
+        if (self.boundary == "safe_stop") != (self.stop_reason is not None):
+            raise ValueError("Only safe-stop boundaries carry a stop reason.")
+        if self.cancelled != (self.stop_reason == "cancelled"):
+            raise ValueError("Cancellation must match the safe-stop reason.")
+        if self.boundary == "attempt_reserved":
+            attempts = {item.work_id: item.attempts for item in self.retry_state}
+            if (not self.pending_work or self.pending_work[0] not in bindings
+                    or attempts.get(self.pending_work[0], 0) < 1):
+                raise ValueError("Attempt reservation needs a consumed pending attempt.")
+        return self
+
+
+StoredCheckpoint = Checkpoint | EffectCheckpoint
+
+
+def validate_checkpoint(checkpoint: StoredCheckpoint) -> StoredCheckpoint:
+    """Revalidate the exact supported Python contract, rejecting forged instances."""
+    model = EffectCheckpoint if type(checkpoint) is EffectCheckpoint else Checkpoint
+    return model.model_validate(checkpoint)
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -114,14 +190,19 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _decode(payload: str) -> Checkpoint:
+def _decode(payload: str) -> StoredCheckpoint:
     if type(payload) is not str or len(payload) > MAX_PAYLOAD_BYTES:
         raise PersistenceError("Checkpoint payload must be bounded UTF-8 JSON text.")
     try:
         if len(payload.encode("utf-8")) > MAX_PAYLOAD_BYTES:
             raise ValueError("Checkpoint exceeds payload byte limit.")
-        json.loads(payload, object_pairs_hook=_unique_object)
-        return Checkpoint.model_validate_json(payload)
+        data = json.loads(payload, object_pairs_hook=_unique_object)
+        model = (
+            EffectCheckpoint
+            if isinstance(data, dict) and data.get("state_version") == 2
+            else Checkpoint
+        )
+        return model.model_validate_json(payload)
     except (ValueError, RecursionError) as exc:
         raise PersistenceError("Malformed or unsupported checkpoint payload.") from exc
 
@@ -198,7 +279,7 @@ class SQLiteCheckpointStore:
             raise PersistenceError("Conflicting or mismatched workflow/thread binding.")
         return bool(rows)
 
-    def save(self, checkpoint: Checkpoint) -> None:
+    def save(self, checkpoint: StoredCheckpoint) -> None:
         """Atomically append a validated snapshot; reject overwrite or sequence regression.
 
         Args:
@@ -208,7 +289,7 @@ class SQLiteCheckpointStore:
             PersistenceError: For invalid data, identity/sequence conflict, or SQL failure.
         """
         try:
-            checked = Checkpoint.model_validate(checkpoint)
+            checked = validate_checkpoint(checkpoint)
         except ValidationError as exc:
             raise PersistenceError("Invalid checkpoint for save.") from exc
         payload = json.dumps(
@@ -243,7 +324,9 @@ class SQLiteCheckpointStore:
                 (workflow, checked.sequence, thread, payload),
             )
 
-    def load(self, identity: CheckpointIdentity, *, sequence: int | None = None) -> Checkpoint:
+    def load(
+        self, identity: CheckpointIdentity, *, sequence: int | None = None
+    ) -> StoredCheckpoint:
         """Load an exact sequence or the greatest stored sequence, failing closed.
 
         Args:
