@@ -17,16 +17,19 @@ from module10_ai.http_boundary import HttpBoundary, error_response, record_failu
 from module10_ai.http_config import HttpConfig
 from module10_ai.http_schemas import ErrorOutput, HealthOutput, InferenceInput, InferenceOutput
 from module10_ai.service import InferenceService
+from module10_ai.telemetry import Telemetry
 
 
 def create_app(
     config: HttpConfig | None = None,
     service: InferenceService | None = None,
     execution_config: ExecutionConfig | None = None,
+    telemetry: Telemetry | None = None,
 ) -> FastAPI:
     """Construct an isolated, no-key deterministic HTTP application.
 
     Args:
+        telemetry: Optional trusted provider-neutral telemetry instance.
         config: Trusted validated HTTP limits, or secure defaults.
         execution_config: Trusted process-local queue/cache limits.
         service: Accepted application service; trusted injection supports failure testing.
@@ -49,7 +52,10 @@ def create_app(
     if not isinstance(execution, InferenceService):
         raise ConfigurationError("Application requires InferenceService.")
 
-    queued = LocalExecution(execution, execution_config)
+    observer = Telemetry() if telemetry is None else telemetry
+    if type(observer) is not Telemetry:
+        raise ConfigurationError("Application requires Telemetry.")
+    queued = LocalExecution(execution, execution_config, telemetry=observer)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -72,7 +78,8 @@ def create_app(
     )
     app.state.ready = False
     app.state.execution = queued
-    app.add_middleware(HttpBoundary, config=settings)
+    app.state.telemetry = observer
+    app.add_middleware(HttpBoundary, config=settings, telemetry=observer)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -103,6 +110,7 @@ def create_app(
     async def readiness() -> HealthOutput | JSONResponse:
         """Report constructed deterministic service lifecycle readiness only."""
         if not app.state.ready or not queued.accepting:
+            observer.event("readiness.failed", status="failure")
             return JSONResponse(HealthOutput(status="not-ready").model_dump(), status_code=503)
         return HealthOutput(status="ready")
 
@@ -180,7 +188,7 @@ def create_app(
                 422, "invalid_request", "Input violates the application contract.", request_id
             )
         except InferenceFailure as exc:
-            record_failure(exc, request_id)
+            record_failure(exc, observer)
             return error_response(
                 503, "inference_unavailable", "Inference could not be completed.", request_id
             )

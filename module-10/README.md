@@ -1,4 +1,4 @@
-# Module 10 deterministic inference service — Stories 10.2–10.5
+# Module 10 deterministic inference service — Stories 10.2–10.6
 
 This standalone Python 3.12 package supplies a framework-independent inference
 core and a FastAPI HTTP boundary. Deterministic inference performs no external
@@ -124,8 +124,8 @@ All errors use fixed `code`, `message`, `request_id` fields. Validation is 422;
 malformed JSON/encoding is sanitized 400 or 422. Domain caller errors map to 422,
 expected inference failures to 503, unexpected defects to 500. No exception text,
 traceback, file paths, raw input, secret values or validation locations are returned.
-Failure diagnostics log only bounded correlation, exception/cause types, and
-function names/line numbers; original service exception chaining remains intact.
+Failure diagnostics emit only a correlation digest and fixed operational
+categories; original service exception chaining remains intact internally.
 No response grants privileged authority. `nosniff` is set on responses.
 
 No authentication, CORS allowance, or trusted-host policy is invented for this story.
@@ -200,8 +200,9 @@ without fragile timing/speedup thresholds. See [Story 10.4 evidence](docs/STORY_
 
 ## Story 10.5 local container workflow
 
-Container build/runtime acceptance passes locally; independent acceptance remains
-pending. See [Story 10.5](docs/STORY_10_5.md) for actual evidence and limitations.
+Story 10.5 is independently accepted at
+`1a010ca82bb88b90f2358af0bf7417f62d192d39` (local container integration / deterministic).
+See [Story 10.5](docs/STORY_10_5.md) for actual evidence and limitations.
 From `module-10/`, with a healthy Linux Docker engine:
 
 ```powershell
@@ -259,3 +260,40 @@ pins. Base security patch/digest review remains necessary before deployment.
 Azure deployment, Azure Container Apps orchestration, Azure Monitor, load balancing,
 distributed queue/cache, CI/CD, production SLA evidence, and overall C-026/C-027
 completion remain deferred to later stories.
+
+
+## Story 10.6 provider-neutral observability
+
+Application events emit bounded JSON to stderr through a dedicated standard-library
+logger. Uvicorn lifecycle logs retain their existing format. No dependency, cloud
+exporter, credential, environment parser or public metrics endpoint is added.
+`create_app(telemetry=Telemetry(...))` accepts a trusted synchronous event sink;
+`Telemetry(None)` disables event emission while retaining bounded local metrics.
+Invalid recorder/sink configuration is rejected. Sinks must return promptly;
+blocking exporters must later supply their own bounded buffering and timeouts.
+
+From `module-10/`, reproduce cold/warm queue/cache evidence:
+
+```powershell
+.venv/Scripts/python.exe scripts/observability_demo.py
+.venv/Scripts/python.exe -m pytest tests/test_telemetry.py
+```
+
+The helper prints at most 32 captured events and a metrics snapshot, uses no
+network or keys, and retains no payloads in telemetry. Tests separately exercise
+HTTP success/rejection/failure, timeout, backpressure, cancellation, malicious
+metadata and sink failures. In an embedded app, use
+`app.state.telemetry.snapshot()` for an internal detached metrics snapshot.
+No metrics are served over HTTP in this unauthenticated application.
+
+HTTP request IDs and public responses retain their accepted behavior. To find a
+request in events, compute `module10_ai.telemetry.correlation_id(request_id)`;
+raw caller IDs are never logged, even when they satisfy the public syntax check.
+The digest is correlation metadata, not identity or authorization. It is not
+anonymization or secret detection. Do not put secrets in request IDs.
+
+See [Story 10.6](docs/STORY_10_6.md) for schema, fixed metrics, trust boundaries,
+failure isolation, adapter contract and limitations. Evidence is local and
+deterministic, not production traffic, SLA validation or Azure Monitor delivery.
+Streamlit remains Story 10.7; Azure deployment/Container Apps/Monitor, load
+balancing, distributed queue/cache, CI/CD and overall C-026/C-027 remain deferred.

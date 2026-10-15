@@ -107,6 +107,7 @@ def main() -> None:
         assert status == 200 and body["evidence"] == "deterministic"
         assert body["word_count"] == 4 and body["keywords"] == ["beta", "alpha", "gamma"]
         facts["inference"] = "passed/deterministic"
+        successful_request_id = body["request_id"]
         status, body = request(base, "/api/v1/inference", b'{"text":"","keyword_limit":true}')
         assert status == 422 and set(body) == {"code", "message", "request_id"}
         facts["invalid_request"] = "passed/422"
@@ -118,6 +119,18 @@ def main() -> None:
         assert not state["Running"] and state["ExitCode"] == 0 and not state["OOMKilled"]
         logs = docker("logs", name)  # Uvicorn lifecycle logs use stderr.
         assert "Application shutdown complete" in logs
+        records = [json.loads(line) for line in logs.splitlines() if line.startswith('{')]
+        assert {record["event"] for record in records} >= {
+            "http.completed", "queue.admitted", "job.completed", "cache.miss",
+            "inference.completed",
+        }
+        http_records = [record for record in records if record["event"] == "http.completed"]
+        assert sum(record["status"] == "success" for record in http_records) == 1
+        assert sum(record["status"] == "failure" for record in http_records) == 2
+        assert all("correlation_id" in record for record in http_records)
+        assert successful_request_id not in logs
+        assert "Beta alpha beta gamma" not in logs
+        facts["structured_telemetry"] = "passed/correlated/minimized"
         facts["stop"] = {"exit_code": state["ExitCode"], "running": state["Running"]}
         del logs
     finally:

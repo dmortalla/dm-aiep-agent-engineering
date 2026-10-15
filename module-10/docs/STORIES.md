@@ -26,12 +26,16 @@ Evidence is process-local and deterministic; distributed scaling and full C-027 
 ## Story 10.5 - Containerized AI Workflow
 Build and validate the hardened non-root Docker deployment unit.
 
-Implemented with passing local Docker build/runtime acceptance; independent
-acceptance remains pending. Evidence is local container integration only.
-See [Story 10.5 status](STORY_10_5.md). No Story 10.6 work has begun.
+Independently accepted at `1a010ca82bb88b90f2358af0bf7417f62d192d39`.
+Evidence is local container integration / deterministic only.
+See [Story 10.5 status](STORY_10_5.md).
 
 ## Story 10.6 - Observability and Operational Telemetry
 Implement structured logging, correlation, latency and failure instrumentation, queue/cache telemetry, and redaction.
+
+Implemented; pending independent acceptance. See [Story 10.6 evidence](STORY_10_6.md).
+Application-side local deterministic evidence only; actual Azure Monitor delivery
+and overall production-grade completion remain deferred.
 
 ## Story 10.7 - Streamlit Production-System Console
 Expose real backend results, operational status, deterministic workflows, async behavior, performance evidence, and optional live mode.

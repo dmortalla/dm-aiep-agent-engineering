@@ -10,7 +10,9 @@ from threading import Lock
 from typing import Protocol
 
 from module10_ai.contracts import InferenceRequest, InferenceResult
+from module10_ai.errors import ConfigurationError
 from module10_ai.execution_config import ExecutionConfig
+from module10_ai.telemetry import Telemetry
 
 
 def cache_key(request: InferenceRequest) -> str:
@@ -59,10 +61,14 @@ class LocalInferenceCache:
     """Thread-safe TTL cache with LRU eviction, never durable or distributed."""
 
     def __init__(
-        self, config: ExecutionConfig, clock: Callable[[], float] = time.monotonic
+        self, config: ExecutionConfig, clock: Callable[[], float] = time.monotonic,
+        telemetry: Telemetry | None = None,
     ) -> None:
         """Bind validated capacity/TTL and a monotonic clock for deterministic tests."""
         config.__post_init__()
+        self.telemetry = Telemetry() if telemetry is None else telemetry
+        if type(self.telemetry) is not Telemetry:
+            raise ConfigurationError("Cache requires Telemetry.")
         self._capacity = config.cache_capacity
         self._ttl = config.cache_ttl_seconds
         self._clock = clock
@@ -76,7 +82,7 @@ class LocalInferenceCache:
             del self._entries[key]
             self._expirations += 1
 
-    def get(self, key: str) -> InferenceResult | None:
+    def _get(self, key: str) -> InferenceResult | None:
         """Read and promote an unexpired entry under one lock."""
         with self._lock:
             self._expire()
@@ -88,7 +94,7 @@ class LocalInferenceCache:
             self._entries.move_to_end(key)
             return entry[1]
 
-    def put(self, key: str, result: InferenceResult) -> None:
+    def _put(self, key: str, result: InferenceResult) -> None:
         """Validate and insert, refreshing TTL and evicting least recently used entries."""
         result.__post_init__()
         with self._lock:
@@ -103,11 +109,42 @@ class LocalInferenceCache:
         """Remove an entry without exposing whether it contained sensitive data."""
         with self._lock:
             self._entries.pop(key, None)
+        self._publish()
 
-    def stats(self) -> CacheStats:
+    def _stats(self) -> CacheStats:
         """Expire stale entries and snapshot bounded aggregate counters."""
         with self._lock:
             self._expire()
             return CacheStats(
                 self._hits, self._misses, self._expirations, self._evictions, len(self._entries)
             )
+
+    def get(self, key: str) -> InferenceResult | None:
+        """Read cache and emit a payload-free outcome outside the cache lock."""
+        result = self._get(key)
+        self.telemetry.event("cache.miss" if result is None else "cache.hit")
+        self._publish()
+        return result
+
+    def put(self, key: str, result: InferenceResult) -> None:
+        """Store a result and publish bounded aggregate occupancy."""
+        self._put(key, result)
+        self._publish()
+
+    def stats(self) -> CacheStats:
+        """Snapshot and publish cache occupancy and cumulative maintenance counts."""
+        stats = self._stats()
+        self._publish(stats)
+        return stats
+
+    def _publish(self, stats: CacheStats | None = None) -> None:
+        if stats is None:
+            with self._lock:
+                stats = CacheStats(
+                    self._hits, self._misses, self._expirations, self._evictions, len(self._entries)
+                )
+        current = stats
+        self.telemetry.gauge("cache.entries", current.entries)
+        # Cumulative gauges avoid duplicate increments under concurrent readers.
+        self.telemetry.gauge("cache.expirations", current.expirations)
+        self.telemetry.gauge("cache.evictions", current.evictions)

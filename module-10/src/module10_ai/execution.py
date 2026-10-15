@@ -1,6 +1,7 @@
 """Bounded cooperative workers and ephemeral job handles for deterministic inference."""
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
@@ -11,6 +12,7 @@ from module10_ai.contracts import EvidenceClass, InferenceRequest, InferenceResu
 from module10_ai.errors import ConfigurationError, ContractError, InferenceFailure
 from module10_ai.execution_config import ExecutionConfig
 from module10_ai.service import InferenceService
+from module10_ai.telemetry import CORRELATION, Telemetry, failure_category
 
 
 class QueueUnavailable(RuntimeError):
@@ -41,6 +43,7 @@ class Job:
     """Opaque process-local handle, never authorization or a durable job record."""
 
     id: str = field(default_factory=lambda: uuid4().hex)
+    _correlation: str | None = field(default=None, repr=False)
     _owner: object | None = field(default=None, repr=False)
     _state: JobState = field(default=JobState.QUEUED, repr=False)
     _done: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
@@ -103,6 +106,7 @@ class LocalExecution:
         service: InferenceService,
         config: ExecutionConfig | None = None,
         cache: InferenceCache | None = None,
+        telemetry: Telemetry | None = None,
     ) -> None:
         """Bind trusted service/configuration; instances cannot restart after shutdown."""
         self.config = ExecutionConfig() if config is None else config
@@ -110,7 +114,12 @@ class LocalExecution:
             raise ConfigurationError("Execution requires ExecutionConfig.")
         self.config.__post_init__()
         self._service = service
-        self.cache = LocalInferenceCache(self.config) if cache is None else cache
+        self.telemetry = Telemetry() if telemetry is None else telemetry
+        if type(self.telemetry) is not Telemetry:
+            raise ConfigurationError("Execution requires Telemetry.")
+        self.cache = (
+            LocalInferenceCache(self.config, telemetry=self.telemetry) if cache is None else cache
+        )
         self._queue: asyncio.Queue[tuple[Job, InferenceRequest]] = asyncio.Queue(
             self.config.queue_capacity
         )
@@ -118,6 +127,12 @@ class LocalExecution:
         self._workers: list[asyncio.Task[None]] = []
         self._started = self._closed = False
         self._submitted = self._rejected = 0
+
+    def _occupancy(self) -> None:
+        stats = self.stats()
+        self.telemetry.gauge("queue.pending", stats.pending_slots)
+        self.telemetry.gauge("workers.active", stats.running)
+        self.telemetry.gauge("workers.configured", stats.workers)
 
     @property
     def accepting(self) -> bool:
@@ -147,6 +162,7 @@ class LocalExecution:
                 asyncio.create_task(self._worker()) for _ in range(self.config.max_workers)
             ]
             self._started = True
+            self._occupancy()
 
     def submit(self, request: InferenceRequest) -> Job:
         """Validate input and enqueue without waiting or spawning per-submission tasks.
@@ -160,11 +176,14 @@ class LocalExecution:
         self._service.validate_request(request)
         if not self.accepting or self._queue.full():
             self._rejected += 1
+            self.telemetry.event("queue.rejected", status="rejected")
             raise QueueUnavailable("Execution capacity is unavailable.")
-        job = Job(_owner=self)
+        job = Job(_owner=self, _correlation=CORRELATION.get())
         self._queue.put_nowait((job, request))
         self._active[job.id] = job
         self._submitted += 1
+        self.telemetry.event("queue.admitted", job_id=job.id)
+        self._occupancy()
         return job
 
     async def cancel(self, job: Job) -> None:
@@ -208,17 +227,34 @@ class LocalExecution:
             except ContractError as exc:
                 raise InferenceFailure("Cache returned an invalid inference result.") from exc
             return result
-        result = await self._service.infer(request)
+        begin = time.monotonic()
+        status, category = "success", "none"
+        try:
+            result = await self._service.infer(request)
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except Exception as exc:
+            status, category = "failure", failure_category(exc)
+            raise
+        finally:
+            self.telemetry.event(
+                "inference.completed", status=status, category=category,
+                duration=time.monotonic() - begin,
+            )
         self.cache.put(key, result)
         return result
 
     async def _worker(self) -> None:
         while True:
             job, request = await self._queue.get()
+            token = CORRELATION.set(job._correlation)
+            begin = time.monotonic()
             try:
                 if job.state is JobState.CANCELLED:
                     continue
                 job._state = JobState.RUNNING
+                self._occupancy()
                 job._task = asyncio.create_task(self._execute(request))
                 deadline = asyncio.timeout(self.config.job_timeout_seconds)
                 try:
@@ -246,6 +282,18 @@ class LocalExecution:
                 job._done.set()
                 self._active.pop(job.id, None)
                 self._queue.task_done()
+                status = {
+                    JobState.SUCCEEDED: "success", JobState.FAILED: "failure",
+                    JobState.TIMED_OUT: "timeout", JobState.CANCELLED: "cancelled",
+                }[job.state]
+                self.telemetry.event(
+                    "job.completed", status=status, job_id=job.id,
+                    category=("deadline" if job.state is JobState.TIMED_OUT else
+                              failure_category(job._failure) if job._failure else "none"),
+                    duration=time.monotonic() - begin,
+                )
+                self._occupancy()
+                CORRELATION.reset(token)
 
     async def close(self) -> None:
         """Cancel workers/running work, drain queued work, and leave no owned tasks."""
@@ -259,3 +307,7 @@ class LocalExecution:
             job._done.set()
             self._active.pop(job.id, None)
             self._queue.task_done()
+            token = CORRELATION.set(job._correlation)
+            self.telemetry.event("job.completed", status="cancelled", job_id=job.id)
+            CORRELATION.reset(token)
+        self._occupancy()

@@ -73,7 +73,7 @@ telemetry evidence has been added. Full requirement acceptance remains pending.
 No durable/distributed queue, distributed cache, C-004 orchestration, C-008 load
 balancing, cloud performance, or production deployment is established here.
 
-## Story 10.5 — local container integration; pending independent acceptance
+## Story 10.5 — local container integration; independently accepted
 
 | Requirement | Implementation | Evidence status |
 |---|---|---|
@@ -81,7 +81,25 @@ balancing, cloud performance, or production deployment is established here.
 | C-003, C-013, C-014 (partial only) | Direct Uvicorn startup, readiness probe, non-root execution, read-only source, no embedded application credentials | Effective UID 10001, separate liveness/readiness and Docker health, deterministic HTTP inference, safe invalid/malformed requests, targeted runtime content/permission checks, SIGTERM exit 0 and cleanup |
 | E-001, E-005, E-007, E-009 | Module-only context, deterministic defaults, classified facts, separate integration gate | 160 tests and native gates pass; LOCAL CONTAINER INTEGRATION evidence with deterministic inference; no live-provider/cloud success claimed |
 
-See `STORY_10_5.md`. No broader deliverable is completed solely from local Docker evidence.
+Human-supplied independent acceptance applies to commit
+`1a010ca82bb88b90f2358af0bf7417f62d192d39`. See `STORY_10_5.md` for historical
+implementation evidence. No broader deliverable is completed solely from local Docker evidence.
 Azure deployment, Azure Container Apps orchestration, Azure Monitor, load balancing,
 distributed queue/cache, CI/CD, production SLA evidence and overall C-026/C-027
 completion remain deferred. Full-module Definition of Done stays unchanged.
+
+
+## Concrete Story 10.6 evidence — pending independent acceptance
+
+| Requirement | Implementation | Evidence and limit |
+|---|---|---|
+| C-011 (application side) | `telemetry.py` JSON sink, fixed event/status schema, internal snapshots | `test_telemetry.py`, local demo and container telemetry checks; no external pipeline delivery claim |
+| C-013 (local operational foundation) | HTTP/worker monotonic durations, outcomes, readiness and occupancy | Backpressure, timeout, cancellation, failure and failure-isolation tests; no production reliability/SLA claim |
+| C-014, E-008 | Field allowlist, correlation digests, fixed failure categories, no bodies/stacks/exception text | Adversarial headers/IDs/prompts/exception tests; telemetry grants no authority; secret detection is not claimed |
+| E-001, E-003, E-005, E-007 | Standard-library boundary beneath HTTP/UI/cloud; module-local deterministic demo | No new runtime dependencies or cross-module coupling; local deterministic evidence |
+| E-009, E-011, E-012 | Typed interfaces, fail-fast gates and tested telemetry failure boundaries | Exact gate results and ordered completion assessment in `STORY_10_6.md` |
+| C-025 | Future adapter to event sink and aggregate snapshot | **DEFERRED**: actual Azure Monitor integration requires later real Azure evidence |
+
+C-026/C-027 overall completion remains deferred. Azure deployment, Container Apps,
+load balancing, distributed queue/cache, CI/CD and production traffic/SLA evidence
+are deferred. The unified Streamlit reviewer UI belongs to Story 10.7.

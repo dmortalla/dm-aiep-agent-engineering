@@ -1,17 +1,15 @@
 """Pure ASGI request bounds, correlation, and final sanitized failure boundary."""
 
 import asyncio
-import logging
 import re
-import traceback
+import time
 from uuid import uuid4
 
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from module10_ai.http_config import HttpConfig
-
-LOGGER = logging.getLogger(__name__)
+from module10_ai.telemetry import CORRELATION, Telemetry, correlation_id, failure_category
 
 
 def error_response(status: int, code: str, message: str, request_id: str) -> JSONResponse:
@@ -21,27 +19,54 @@ def error_response(status: int, code: str, message: str, request_id: str) -> JSO
     )
 
 
-def record_failure(exc: Exception, request_id: str) -> None:
-    """Retain bounded causal diagnostics without exception text, paths, or locals."""
-    frames = traceback.extract_tb(exc.__traceback__)[-16:]
-    LOGGER.error(
-        "HTTP failure request_id=%s exception_type=%s cause_type=%s frames=%s",
-        request_id,
-        type(exc).__name__,
-        type(exc.__cause__).__name__,
-        [(frame.name[:64], frame.lineno) for frame in frames],
-    )
+def record_failure(exc: Exception, telemetry: Telemetry) -> None:
+    """Emit a fixed classification; raw IDs and exception internals are excluded."""
+    telemetry.event("application.failure", status="failure", category=failure_category(exc))
 
 
 class HttpBoundary:
     """Bound raw input before FastAPI buffers or validates it."""
 
-    def __init__(self, app: ASGIApp, config: HttpConfig) -> None:
+    def __init__(self, app: ASGIApp, config: HttpConfig, telemetry: Telemetry) -> None:
         """Bind the downstream application and validated HTTP settings."""
         self.app = app
         self.config = config
+        self.telemetry = telemetry
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Measure the complete HTTP boundary including framing/validation rejection."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        token = CORRELATION.set(None)
+        begin = time.monotonic()
+        status = "cancelled"
+
+        async def observed_send(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = "success" if message["status"] < 400 else "failure"
+                if message["status"] in (408, 504):
+                    status = "timeout"
+            await send(message)
+
+        try:
+            await self._serve(scope, receive, observed_send)
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except Exception:
+            status = "failure"
+            raise
+        finally:
+            # Successful health probes remain quiet; failed readiness is actionable.
+            if scope["path"] not in ("/health/live", "/health/ready") or status != "success":
+                self.telemetry.event(
+                    "http.completed", status=status, duration=time.monotonic() - begin
+                )
+            CORRELATION.reset(token)
+
+    async def _serve(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Validate framing, bound body reads, and preserve caller cancellation."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -56,6 +81,7 @@ class HttpBoundary:
         ):
             request_id = ids[0].decode("ascii")
         scope.setdefault("state", {})["request_id"] = request_id
+        CORRELATION.set(correlation_id(request_id))
         started = False
 
         async def safe_send(message: Message) -> None:
@@ -138,7 +164,7 @@ class HttpBoundary:
         except Exception as exc:
             # Deliberately exclude BaseException/CancelledError. Never log payloads,
             # exception messages, filenames, or traceback locals containing secrets.
-            record_failure(exc, request_id)
+            record_failure(exc, self.telemetry)
             if started:
                 raise
             await reject(500, "internal_error", "An internal service error occurred.")
