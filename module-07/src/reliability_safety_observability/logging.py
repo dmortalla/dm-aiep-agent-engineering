@@ -164,4 +164,9 @@ def log_event(
         "trace_id": str(trace_id),
         "fields": _redact(fields or {}),
     }
-    logger.info(json.dumps(record, sort_keys=True))
+    try:
+        logger.info(json.dumps(record, sort_keys=True))
+    except Exception:
+        # Optional observation boundary: sink failures cannot change core semantics.
+        # Never recursively log a sink error or propagate its secret-bearing text.
+        return
