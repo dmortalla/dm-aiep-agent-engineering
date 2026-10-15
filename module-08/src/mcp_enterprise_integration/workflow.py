@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -21,6 +22,8 @@ from mcp_enterprise_integration.internal_system import (
     RequestedAction,
 )
 from mcp_enterprise_integration.openai_mcp import OpenAiMcpIntegration
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _validated[Model: BaseModel](model: type[Model], data: Any) -> Model:
@@ -119,50 +122,63 @@ class EnterpriseWorkflow:
 
     async def _run(self, request: PolicyRequest) -> WorkflowResult:
         stages: list[WorkflowStage] = []
-        # Sequential SDK lifecycles preserve SDK-owned task/session cleanup.
-        async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
-            response = await sdk.invoke_authorized_tool(
-                principal_role=request.requester_role, name="get_customer",
-                arguments={"customer_id": request.customer_id},
-            )
-            envelope = _validated(_CustomerEnvelope, response.structured_content)
-            customer = _validated(CustomerRecord, envelope.result.model_dump())
-            if customer.customer_id != request.customer_id:
-                raise ContractValidationError("Customer result does not match workflow identity.")
-            stages.append(self._stage(ClientFramework.OPENAI, response.authorization))
-
-        async with GoogleAdkMcpIntegration(self._endpoint, policy=self._policy) as sdk:
-            response = await sdk.invoke_authorized_tool(
-                principal_role=request.requester_role, name="get_account_status",
-                arguments={"customer_id": customer.customer_id},
-            )
-            account = _validated(AccountStatus, response.structured_content)
-            if account.customer_id != customer.customer_id or not 0 <= account.open_cases <= 10000:
-                raise ContractValidationError(
-                    "Account result violates workflow identity or bounds."
+        stage = "openai_customer"
+        try:
+            # Sequential SDK lifecycles preserve SDK-owned task/session cleanup.
+            async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
+                response = await sdk.invoke_authorized_tool(
+                    principal_role=request.requester_role, name="get_customer",
+                    arguments={"customer_id": request.customer_id},
                 )
-            stages.append(self._stage(ClientFramework.GOOGLE_ADK, response.authorization))
+                envelope = _validated(_CustomerEnvelope, response.structured_content)
+                customer = _validated(CustomerRecord, envelope.result.model_dump())
+                if customer.customer_id != request.customer_id:
+                    raise ContractValidationError(
+                        "Customer result does not match workflow identity."
+                    )
+                stages.append(self._stage(ClientFramework.OPENAI, response.authorization))
 
-        context = _validated(PolicyRequest, {
-            "customer_id": account.customer_id, "requester_role": request.requester_role,
-            "action": request.action, "account_status": customer.account_status,
-        })
-        async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
-            response = await sdk.invoke_authorized_tool(
-                principal_role=request.requester_role, name="evaluate_enterprise_policy",
-                arguments=context.model_dump(mode="json"),
-            )
-            # Decode only the two declared enum fields; do not coerce other data.
-            try:
-                decoded = dict(response.structured_content)
-                decoded["action"] = RequestedAction(decoded["action"])
-                decoded["decision"] = PolicyDecision(decoded["decision"])
-            except (KeyError, ValueError, TypeError) as exc:
-                raise ContractValidationError("Invalid PolicyResult workflow context.") from exc
-            decision = _validated(PolicyResult, decoded)
-            if decision.customer_id != customer.customer_id or decision.action != request.action:
-                raise ContractValidationError("Policy result does not match workflow context.")
-            stages.append(self._stage(ClientFramework.OPENAI, response.authorization))
+            stage = "google_adk_account"
+            async with GoogleAdkMcpIntegration(self._endpoint, policy=self._policy) as sdk:
+                response = await sdk.invoke_authorized_tool(
+                    principal_role=request.requester_role, name="get_account_status",
+                    arguments={"customer_id": customer.customer_id},
+                )
+                account = _validated(AccountStatus, response.structured_content)
+                if (account.customer_id != customer.customer_id
+                        or not 0 <= account.open_cases <= 10000):
+                    raise ContractValidationError(
+                        "Account result violates workflow identity or bounds."
+                    )
+                stages.append(self._stage(ClientFramework.GOOGLE_ADK, response.authorization))
+
+            stage = "openai_policy"
+            context = _validated(PolicyRequest, {
+                "customer_id": account.customer_id, "requester_role": request.requester_role,
+                "action": request.action, "account_status": customer.account_status,
+            })
+            async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
+                response = await sdk.invoke_authorized_tool(
+                    principal_role=request.requester_role, name="evaluate_enterprise_policy",
+                    arguments=context.model_dump(mode="json"),
+                )
+                # Decode only the two declared enum fields; do not coerce other data.
+                try:
+                    decoded = dict(response.structured_content)
+                    decoded["action"] = RequestedAction(decoded["action"])
+                    decoded["decision"] = PolicyDecision(decoded["decision"])
+                except (KeyError, ValueError, TypeError) as exc:
+                    raise ContractValidationError("Invalid PolicyResult workflow context.") from exc
+                decision = _validated(PolicyResult, decoded)
+                if (decision.customer_id != customer.customer_id
+                        or decision.action != request.action):
+                    raise ContractValidationError("Policy result does not match workflow context.")
+                stages.append(self._stage(ClientFramework.OPENAI, response.authorization))
+
+        except EnterpriseIntegrationError:
+            # Stage comes only from sequential application control flow.
+            _LOGGER.error("Module 8 workflow backend failed: %s", stage)
+            raise
 
         return WorkflowResult(
             customer=customer, account=account, policy_request=context, policy_result=decision,

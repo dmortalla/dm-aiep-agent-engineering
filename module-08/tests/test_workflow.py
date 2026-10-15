@@ -1,5 +1,7 @@
 """Real shared-plane acceptance and explicitly mocked boundary failures."""
 
+import asyncio
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -9,9 +11,14 @@ from google.adk.runners import Runner as AdkRunner
 from test_mcp_client import enterprise_api_url as enterprise_api_url
 from test_mcp_client import mcp_endpoint as endpoint_fixture
 
+from mcp_enterprise_integration import reviewer
 from mcp_enterprise_integration.capability_policy import CapabilityPolicy
 from mcp_enterprise_integration.database import CustomerRepository
-from mcp_enterprise_integration.errors import AuthorizationError, ContractValidationError
+from mcp_enterprise_integration.errors import (
+    AuthorizationError,
+    ContractValidationError,
+    EnterpriseIntegrationError,
+)
 from mcp_enterprise_integration.google_adk_mcp import GoogleAdkMcpIntegration
 from mcp_enterprise_integration.internal_system import RequestedAction
 from mcp_enterprise_integration.openai_mcp import OpenAiMcpIntegration
@@ -36,7 +43,9 @@ def forbid_models(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("role,decision", [("account_manager", "allow"), ("support_agent", "deny")])
-async def test_shared_plane_workflow(mcp_endpoint: str, role: str, decision: str) -> None:
+async def test_shared_plane_workflow(
+    mcp_endpoint: str, role: str, decision: str, caplog: pytest.LogCaptureFixture,
+) -> None:
     result = await EnterpriseWorkflow(mcp_endpoint).run(
         customer_id="CUST-001", principal_role=role, action=RequestedAction.ACCOUNT_CHANGE,
     )
@@ -54,6 +63,8 @@ async def test_shared_plane_workflow(mcp_endpoint: str, role: str, decision: str
     assert all(stage.evidence.evidence_class == "local-integration" for stage in result.stages)
     assert not any(stage.evidence.live_provider_executed for stage in result.stages)
     assert WorkflowResult.model_validate_json(result.model_dump_json()) == result
+    assert not [record for record in caplog.records
+                if record.name == "mcp_enterprise_integration.workflow"]
 
 
 @pytest.mark.anyio
@@ -170,3 +181,61 @@ async def test_invalid_input_never_connects(monkeypatch: pytest.MonkeyPatch) -> 
             customer_id="x" * 65, principal_role="account_manager",
         )
     connect.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("through_reviewer", [False, True])
+@pytest.mark.parametrize("stage,integration,tool", [
+    ("openai_customer", OpenAiMcpIntegration, "get_customer"),
+    ("google_adk_account", GoogleAdkMcpIntegration, "get_account_status"),
+    ("openai_policy", OpenAiMcpIntegration, "evaluate_enterprise_policy"),
+])
+async def test_safe_stage_failure_diagnostic(
+    mcp_endpoint: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    stage: str, integration: type, tool: str, through_reviewer: bool,
+) -> None:
+    """Inject SDK failures; attribute fixed stages without exposing business data."""
+    sensitive_payload = {"customer": "private customer", "tool": "private MCP payload"}
+    failure = EnterpriseIntegrationError("sensitive backend detail", sensitive_payload)
+    original = integration.invoke_authorized_tool
+
+    async def fail_stage(self: object, **kwargs: object) -> object:
+        if kwargs["name"] == tool:
+            raise failure
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(integration, "invoke_authorized_tool", fail_stage)
+    workflow = EnterpriseWorkflow(mcp_endpoint)
+    with caplog.at_level("ERROR"):
+        if through_reviewer:
+            async def execute(endpoint: str, database: Path, scenario: str) -> object:
+                return await workflow.run(customer_id="CUST-001", principal_role="account_manager")
+
+            monkeypatch.setattr(reviewer, "_execute", execute)
+            monkeypatch.setattr(
+                reviewer, "_local_plane", lambda database: nullcontext(mcp_endpoint),
+            )
+            with pytest.raises(reviewer.ReviewerError) as caught:
+                await asyncio.to_thread(reviewer.run_reviewer_demo)
+            assert str(caught.value) == (
+                "Backend execution failed. Retry or ask the maintainer to inspect it."
+            )
+            assert caught.value.__cause__ is failure
+        else:
+            with pytest.raises(EnterpriseIntegrationError) as caught:
+                await workflow.run(customer_id="CUST-001", principal_role="account_manager")
+            assert caught.value is failure
+
+    records = [record for record in caplog.records
+               if record.name in {"mcp_enterprise_integration.workflow", reviewer.__name__}]
+    expected = [f"Module 8 workflow backend failed: {stage}"]
+    if through_reviewer:
+        expected.append("Module 8 reviewer backend failed: EnterpriseIntegrationError")
+    assert [record.getMessage() for record in records] == expected
+    assert records[0].args == (stage,)
+    assert all(record.exc_info is None and record.stack_info is None for record in records)
+    for sensitive in (
+        "sensitive backend detail", "private customer", "private MCP payload",
+        "CUST-001", "Northstar Logistics", "gold", mcp_endpoint,
+    ):
+        assert sensitive not in caplog.text
