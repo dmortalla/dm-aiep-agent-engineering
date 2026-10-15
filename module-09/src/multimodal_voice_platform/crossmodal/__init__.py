@@ -53,6 +53,7 @@ from multimodal_voice_platform.crossmodal.service import (
     CrossModalWorkflow,
     ModalitySubmission,
     ReasoningBinding,
+    collect_reasoning_output,
 )
 
 __all__ = [
@@ -84,6 +85,7 @@ __all__ = [
     "ReasoningProviderTimeoutError",
     "ReasoningProviderUnavailableError",
     "build_context",
+    "collect_reasoning_output",
     "conclude",
     "observe_speech",
     "observe_text",

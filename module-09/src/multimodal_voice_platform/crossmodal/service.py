@@ -329,7 +329,7 @@ class CrossModalWorkflow:
             run.context = context.stats
             run.finish()
             run.begin(CrossModalStage.REASONING)
-            text = await _collect(
+            text = await collect_reasoning_output(
                 provider, request, descriptor, session.budget.request_timeout_s, self.limits
             )
             run.finish()
@@ -558,14 +558,33 @@ class CrossModalWorkflow:
         return f"xmr-{self._runs:06d}"
 
 
-async def _collect(
+async def collect_reasoning_output(
     provider: ReasoningPort,
     request: ReasoningRequest,
     descriptor: ProviderDescriptor,
     timeout_s: float,
     limits: CrossModalLimits,
 ) -> str:
-    """Collect the provider's chunk stream under the timeout and output bounds."""
+    """Collect a reasoning provider's chunk stream under the timeout and output bounds.
+
+    Shared by the cross-modal workflow (Story 9.5) and the voice assistant (Story 9.6), so every
+    reasoning call is bounded and attributed the same way.
+
+    Args:
+        provider: The bound reasoning adapter.
+        request: The validated reasoning request.
+        descriptor: The adapter's descriptor; every chunk must carry it.
+        timeout_s: Request timeout from the application-owned session budget.
+        limits: Output chunk and character bounds.
+
+    Returns:
+        The concatenated chunk text, which is still untrusted and unparsed.
+
+    Raises:
+        ReasoningOutputError: If a chunk is misattributed, streams after the final chunk, or the
+            output exceeds its bounds or never ends with a final chunk.
+        ReasoningProviderTimeoutError: If the provider exceeds the request timeout.
+    """
     stream = provider.stream_reason(request)
     pieces: list[str] = []
     total = 0

@@ -5,7 +5,10 @@ Ten stories deliver Module 9. Story 9.1 is complete (design only). Story 9.2 is 
 and document extraction and structural analysis; no model inference). Story 9.4 is complete (local
 audio processing; STT and TTS pipelines with fixture-playback STT and tone-sequence TTS; no speech
 recognition or synthesis). Story 9.5 is complete (cross-modal workflow with rule-based deterministic
-reasoning; not model inference). Stories 9.6 to 9.10 are not started.
+reasoning; not model inference). Story 9.6 is complete (synchronous voice-assistant orchestration
+with bounded multi-turn conversation state; fixture-playback STT, rule-based reasoning, and
+tone-sequence TTS; no speech recognition, speech synthesis, model inference, or streaming). Stories
+9.7 to 9.10 are not started.
 
 | Story | Title | Scope | Status |
 |---|---|---|---|
@@ -14,7 +17,7 @@ reasoning; not model inference). Stories 9.6 to 9.10 are not started.
 | 9.3 | Document + Vision Understanding | Validated image and document processing; structured understanding | Complete (local extraction and structural analysis only; no model inference; see [UNDERSTANDING.md](UNDERSTANDING.md)) |
 | 9.4 | Audio + Speech Pipeline | Audio processing; STT; TTS | Complete (local WAV processing and STT/TTS pipelines; no speech recognition or synthesis; see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)) |
 | 9.5 | Cross-Modal Reasoning Workflow | Combine processed modalities into a single reasoning context; genuine multimodal reasoning result | Complete (rule-based deterministic cross-modal reasoning; not model inference; see [CROSS_MODAL.md](CROSS_MODAL.md)) |
-| 9.6 | Voice-Enabled AI Assistant | Conversation state; STT -> reasoning -> TTS orchestration | Not started |
+| 9.6 | Voice-Enabled AI Assistant | Conversation state; STT -> reasoning -> TTS orchestration | Complete (synchronous voice orchestration and bounded multi-turn state; deterministic STT, reasoning, and TTS; no streaming; see [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)) |
 | 9.7 | Real-Time WebSocket Streaming | Typed streaming protocol; partial/final events; lifecycle handling; error handling; genuine WebSocket execution | Not started |
 | 9.8 | Secure Opt-In Live Providers | Ephemeral BYOK configuration; live provider adapters; redaction; budgets; timeouts | Not started |
 | 9.9 | Unified Streamlit Reviewer Experience | Voice assistant; multimodal workflow; streaming evidence; metrics and evidence presentation; concise built-in guidance on how reviewers use and test the workflows and what results demonstrate | Not started |

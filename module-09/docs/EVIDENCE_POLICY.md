@@ -107,3 +107,27 @@ class.
 Records name their reasoning kind (`deterministic_rule_inference` or
 `provider_contract_test_double`) and reject `model_inference`. This evidence partially supports
 SRC-005, SRC-015, and ENG-006. See [CROSS_MODAL.md](CROSS_MODAL.md).
+
+## Story 9.6 classification
+
+Story 9.6 evidence is **`automated_test`**: the suite runs the committed conversation fixtures,
+generated audio, and scripted test doubles through the real voice-assistant orchestrator, across
+multiple turns and sessions, with sockets blocked and no credentials. Turns are synchronous; nothing
+is streamed. `VoiceTurnRecord` can emit
+`deterministic_demo` records for reviewer runs and rejects every other class; turns that use any
+test-double provider may only be `automated_test`.
+
+| Behavior | Evidence it provides |
+|---|---|
+| Voice orchestration and transaction semantics | Genuine application-level orchestration evidence |
+| Bounded multi-turn conversation state | Genuine state evidence; later turns demonstrably depend on it |
+| Fixture-playback transcript | Deterministic fixture evidence; not speech recognition |
+| Rule-based conversation reasoning | Deterministic rule-based reasoning; not model inference |
+| Tone-sequence output audio | Deterministic audio generation; not speech synthesis |
+| Stage and end-to-end timings | Local measurements of deterministic adapters; not production latency or real-time streaming |
+| External STT, reasoning, or TTS provider | None yet; would be `live_integration` (Story 9.8) |
+
+Records state `speech_recognition_performed`, `speech_synthesis_performed`,
+`model_inference_performed`, `live_provider_called`, and `streaming_performed` as `False`. This
+evidence partially supports SRC-008, SRC-009, SRC-013, SRC-014, SRC-017, ENG-006, and ENG-007. See
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md).

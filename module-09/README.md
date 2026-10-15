@@ -36,8 +36,18 @@ closed vocabulary that judges claims from one modality against measurements from
 conflicts without resolving them, and cites every statement and measurement it uses. It is not model
 inference. Story 9.5 evidence is `automated_test`. See [docs/CROSS_MODAL.md](docs/CROSS_MODAL.md).
 
+**Story 9.6 (Voice-Enabled AI Assistant) is complete.** It adds the application-level voice
+assistant: bounded, multi-turn conversations whose turns run validated audio through local audio
+processing, speech-to-text, a bounded conversational context, reasoning, text-to-speech, and
+generated-audio validation, then commit to session state atomically. Later turns can recall what
+earlier turns established. The default adapters are fixture playback, which is not speech
+recognition; rule-based conversation reasoning over two fixed phrasings, which is not model
+inference; and tone-sequence audio, which is not speech synthesis. Turns are synchronous; nothing
+is streamed. Story 9.6 evidence is `automated_test`. See
+[docs/VOICE_ASSISTANT.md](docs/VOICE_ASSISTANT.md).
+
 No model-based vision, semantic document, speech recognition, speech synthesis, model-based
-reasoning, voice orchestration, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+reasoning, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -53,6 +63,7 @@ reasoning, voice orchestration, streaming, live-provider, or UI capability is im
 | [UNDERSTANDING.md](docs/UNDERSTANDING.md) | Story 9.3 ingestion, local vision and document adapters, understanding records |
 | [AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md) | Story 9.4 audio processing, speech-to-text and text-to-speech pipelines, speech records |
 | [CROSS_MODAL.md](docs/CROSS_MODAL.md) | Story 9.5 cross-modal workflow, observations, bounded context, deterministic reasoning rules, records |
+| [VOICE_ASSISTANT.md](docs/VOICE_ASSISTANT.md) | Story 9.6 voice orchestration, conversation state and bounds, transaction semantics, conversation rules, records |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |

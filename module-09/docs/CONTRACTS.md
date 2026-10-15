@@ -11,7 +11,9 @@ None of them change these contracts (see
 and [AUDIO_SPEECH.md](AUDIO_SPEECH.md)).
 Story 9.5 adds `reasoning.py`, the structured contract carried over the unchanged reasoning port, and
 implements the port with a deterministic rule-based adapter (see [CROSS_MODAL.md](CROSS_MODAL.md)).
-No live provider or transport exists yet.
+Story 9.6 adds `conversation.py`, the structured reply contract carried over the same reasoning
+port for voice turns, and implements the port with a deterministic conversation adapter (see
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). No live provider or transport exists yet.
 
 | Module | Boundary | Key types | ADRs |
 |---|---|---|---|
@@ -23,6 +25,7 @@ No live provider or transport exists yet.
 | `evidence.py` | Evidence | `EvidenceClass`, `EvidenceRecord` | 009 |
 | `errors.py` | Safe errors | `ErrorCode`, `SafeError`, `Module9Error`, `StreamProtocolError` | 005, 007 |
 | `reasoning.py` | Structured reasoning I/O (Story 9.5) | `ObservationView`, `ObservedFact`, `Statement`, `FactOrigin`, `CrossModalFinding`, `FindingKind`, `ReasonerOutput` | 003, 006, 007 |
+| `conversation.py` | Structured voice reply (Story 9.6) | `AssistantReply`, `ReplyAct`, `ReplyActKind` | 003, 007 |
 
 ## Modality contract
 
@@ -154,6 +157,24 @@ directions:
   references with exact quotes, fact IDs, or shared terms.
 - Every model is frozen with `extra="forbid"`. Whether citations exist in a given context is checked
   by the application core, never assumed.
+
+## Voice reply contract (Story 9.6)
+
+A voice turn sends one `ReasoningPart` (the current turn's `ObservationView`, whose statements are
+the transcript) and the bounded conversation history in `ReasoningRequest.history`. The adapter
+streams back one `AssistantReply`: `schema_version` 1, the reply text to speak (at most 1,000
+characters), and one to eight `ReplyAct`s. Each act cites a statement ID and an exact quote; its
+kind fixes which other citations it carries:
+
+| Kind | Name and value | History citation |
+|---|---|---|
+| `remembered` | Both | None |
+| `recalled` | Both | `history_index` and `history_quote` |
+| `not_recalled` | Name only | None |
+| `heard` | Neither | None |
+
+Every model is frozen with `extra="forbid"`. Whether citations exist in the turn and its history is
+checked by the application core (`voice.reply`), never assumed.
 
 ## Streaming protocol
 

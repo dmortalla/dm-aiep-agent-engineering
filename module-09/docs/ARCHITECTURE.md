@@ -18,7 +18,11 @@ service and records (`speech/`) (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Story 
 multimodal orchestration, modality routing, and cross-modal reasoning core (`crossmodal/`), the
 structured reasoning contract (`contracts/reasoning.py`), and a deterministic rule-based
 `ReasoningPort` adapter (`adapters/reasoning/`), which is not model inference (see
-[CROSS_MODAL.md](CROSS_MODAL.md)). No other runtime component below is implemented yet.
+[CROSS_MODAL.md](CROSS_MODAL.md)). Story 9.6 adds conversation/session management and voice
+orchestration (`voice/`), the structured reply contract (`contracts/conversation.py`), and a
+deterministic rule-based conversation `ReasoningPort` adapter (`adapters/reasoning/conversation.py`),
+which is not model inference; its turns are synchronous and stream nothing (see
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). No other runtime component below is implemented yet.
 
 ## Goal
 
@@ -112,6 +116,12 @@ model output are data. See [SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md).
 
 ## Voice turn (target flow, Story 9.6/9.7)
 
+Story 9.6 implements the orchestrator side of this flow synchronously: `VoiceAssistant.run_turn`
+runs STT, reasoning over the transcript and bounded history, and TTS, then commits the exchange and
+returns one `VoiceTurnRecord` with per-stage and end-to-end timings. The WebSocket gateway and the
+streamed events below (`transcript_partial`, `response_delta`, `audio_ready`, `metric`) are Story
+9.7.
+
 ```mermaid
 sequenceDiagram
     participant UI as Streamlit
@@ -185,6 +195,10 @@ module-09/
     contracts/reasoning.py               Story 9.5: structured reasoning I/O contract
     adapters/reasoning/                  Story 9.5: deterministic rule-based reasoning adapter
     crossmodal/                          Story 9.5: cross-modal workflow, context, records
+    contracts/conversation.py            Story 9.6: structured voice reply contract
+    adapters/reasoning/conversation.py   Story 9.6: deterministic conversation reasoning adapter
+    voice/                               Story 9.6: voice orchestrator, conversation state, records
+      fixture_data/                      committed conversation fixtures + manifest
     (adapters/live/, interface/, ui/)    later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance

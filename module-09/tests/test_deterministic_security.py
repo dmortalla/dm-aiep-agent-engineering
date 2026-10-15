@@ -155,10 +155,14 @@ def test_later_story_capabilities_are_not_implemented() -> None:
         "ingestion",
         "speech",
         "understanding",
+        "voice",
     }
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
     assert adapters == {"deterministic", "local", "reasoning", "speech"}
-    reasoning_adapter = SRC / "adapters" / "reasoning" / "rule_reasoner.py"
+    reasoning_adapters = {
+        SRC / "adapters" / "reasoning" / "rule_reasoner.py",
+        SRC / "adapters" / "reasoning" / "conversation.py",
+    }
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
     for path in SRC.rglob("*.py"):
         tree = ast.parse(path.read_text("utf-8"))
@@ -168,7 +172,7 @@ def test_later_story_capabilities_are_not_implemented() -> None:
                 and node.name == "stream_reason"
                 and "contracts" not in path.parts
             ):
-                assert path == reasoning_adapter, f"{path}: only the reasoning adapter reasons"
+                assert path in reasoning_adapters, f"{path}: only reasoning adapters reason"
             if isinstance(node, ast.Import | ast.ImportFrom):
                 module = getattr(node, "module", None) or ""
                 names = {module, *(alias.name for alias in node.names)}
