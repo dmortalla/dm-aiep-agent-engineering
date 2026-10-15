@@ -129,33 +129,43 @@ def _local_plane(database: Path) -> Iterator[str]:
 async def _execute(endpoint: str, database: Path, scenario: str) -> ReviewerResult:
     policy = CapabilityPolicy()
     async with asyncio.timeout(60):
-        async with EnterpriseMcpClient(endpoint).connect() as session:
-            capabilities = await session.discover_tools()
-            connection = session.connection_info
-            allowed, payload = await session.invoke_authorized_tool(
-                principal_role="viewer",
-                name="get_customer",
-                arguments={"customer_id": "CUST-001"},
-                policy=policy,
-            )
-            customer = CustomerRecord.model_validate(payload["result"], strict=True)
-            denied = False
-            try:
-                await session.invoke_authorized_tool(
+        stage: str | None = "mcp_connect"
+        try:
+            async with EnterpriseMcpClient(endpoint).connect() as session:
+                stage = "mcp_discovery"
+                capabilities = await session.discover_tools()
+                connection = session.connection_info
+                stage = "viewer_customer"
+                allowed, payload = await session.invoke_authorized_tool(
                     principal_role="viewer",
-                    name="evaluate_enterprise_policy",
-                    arguments={
-                        "customer_id": "CUST-001",
-                        "requester_role": "viewer",
-                        "action": "view_account",
-                        "account_status": "active",
-                    },
+                    name="get_customer",
+                    arguments={"customer_id": "CUST-001"},
                     policy=policy,
                 )
-            except AuthorizationError:
-                denied = True
-            if not denied:
-                raise ReviewerError("Expected authorization denial was absent. Stop review.")
+                customer = CustomerRecord.model_validate(payload["result"], strict=True)
+                stage = "viewer_policy_denial"
+                denied = False
+                try:
+                    await session.invoke_authorized_tool(
+                        principal_role="viewer",
+                        name="evaluate_enterprise_policy",
+                        arguments={
+                            "customer_id": "CUST-001",
+                            "requester_role": "viewer",
+                            "action": "view_account",
+                            "account_status": "active",
+                        },
+                        policy=policy,
+                    )
+                except AuthorizationError:
+                    denied = True
+                if not denied:
+                    raise ReviewerError("Expected authorization denial was absent. Stop review.")
+                stage = None  # Preflight succeeded; cleanup is not a preflight operation.
+        except EnterpriseIntegrationError:
+            if stage is not None:
+                _LOGGER.error("Module 8 reviewer preflight backend failed: %s", stage)
+            raise
         role = "account_manager" if scenario == "Manager review" else "support_agent"
         workflow = await EnterpriseWorkflow(endpoint).run(
             customer_id="CUST-001",

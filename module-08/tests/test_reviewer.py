@@ -1,7 +1,11 @@
 """Real reviewer execution and safe presentation failure verification."""
 
+import asyncio
 import socket
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +14,8 @@ from google.adk.runners import Runner as AdkRunner
 from streamlit.testing.v1 import AppTest
 
 from mcp_enterprise_integration import reviewer
+from mcp_enterprise_integration.database import CustomerRecord
+from mcp_enterprise_integration.errors import EnterpriseIntegrationError
 from mcp_enterprise_integration.mcp_client import EnterpriseMcpSession
 
 
@@ -168,3 +174,152 @@ def test_reviewer_logs_safe_backend_exception_type(monkeypatch, caplog) -> None:
 
     assert "Module 8 reviewer backend failed: EnterpriseIntegrationError" in caplog.text
     assert "sensitive backend detail" not in caplog.text
+
+
+@pytest.fixture
+def preflight_seam(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Mock transport only; retain strict customer validation and real denial policy."""
+    customer = CustomerRecord(
+        customer_id="CUST-001", name="private customer record", region="private region",
+        segment="private segment", account_status="active",
+    )
+    seam = SimpleNamespace(
+        failure_stage=None, failure=None, customer=customer,
+        endpoint="http://127.0.0.1:54321/mcp", connection=object(),
+        capabilities=("get_customer", "evaluate_enterprise_policy"),
+    )
+
+    async def discover() -> tuple[str, ...]:
+        if seam.failure_stage == "mcp_discovery":
+            raise seam.failure
+        return seam.capabilities
+
+    async def invoke(
+        *, principal_role: str, name: str, arguments: dict, policy: reviewer.CapabilityPolicy,
+    ) -> tuple[reviewer.CapabilityAuthorization, dict[str, object]]:
+        stage = "viewer_customer" if name == "get_customer" else "viewer_policy_denial"
+        if seam.failure_stage == stage:
+            raise seam.failure
+        authorization = policy.authorize(
+            principal_role=principal_role, capability=name,
+            discovered_capabilities=seam.capabilities,
+        )  # The expected policy denial is genuine application-owned behavior.
+        return authorization, {"result": customer.model_dump()}
+
+    session = SimpleNamespace(
+        discover_tools=discover, invoke_authorized_tool=invoke, connection_info=seam.connection,
+    )
+
+    @asynccontextmanager
+    async def connect() -> AsyncIterator[SimpleNamespace]:
+        if seam.failure_stage == "mcp_connect":
+            raise seam.failure
+        yield session
+        if seam.failure_stage == "cleanup":
+            raise seam.failure
+
+    monkeypatch.setattr(
+        reviewer, "EnterpriseMcpClient", lambda endpoint: SimpleNamespace(connect=connect),
+    )
+    monkeypatch.setattr(reviewer, "_local_plane", lambda database: nullcontext(seam.endpoint))
+    monkeypatch.setattr(reviewer.CustomerRepository, "get_customer", lambda *args: customer)
+    seam.workflow = AsyncMock(return_value=SimpleNamespace(customer=customer))
+    monkeypatch.setattr(
+        reviewer, "EnterpriseWorkflow", lambda endpoint: SimpleNamespace(run=seam.workflow),
+    )
+    return seam
+
+
+@pytest.mark.parametrize("through_reviewer", [False, True])
+@pytest.mark.parametrize("stage", [
+    "mcp_connect", "mcp_discovery", "viewer_customer", "viewer_policy_denial",
+])
+def test_preflight_failure_logs_only_fixed_stage(
+    preflight_seam: SimpleNamespace, caplog: pytest.LogCaptureFixture,
+    stage: str, through_reviewer: bool,
+) -> None:
+    """Attribute entry and operation failures without disclosing untrusted diagnostics."""
+    seam = preflight_seam
+    failure = EnterpriseIntegrationError(
+        "secret message /private/files Traceback injected", {"payload": "private MCP output",
+        "customer": seam.customer.model_dump(), "endpoint": seam.endpoint},
+    )
+    seam.failure_stage, seam.failure = stage, failure
+    with caplog.at_level("ERROR", logger=reviewer.__name__):
+        if through_reviewer:
+            with pytest.raises(reviewer.ReviewerError) as caught:
+                reviewer.run_reviewer_demo()
+            assert str(caught.value) == (
+                "Backend execution failed. Retry or ask the maintainer to inspect it."
+            )
+            assert caught.value.__cause__ is failure
+        else:
+            with pytest.raises(EnterpriseIntegrationError) as caught:
+                asyncio.run(reviewer._execute(seam.endpoint, Path("unused.db"), "Manager review"))
+            assert caught.value is failure
+    records = [record for record in caplog.records if record.name == reviewer.__name__]
+    expected = [f"Module 8 reviewer preflight backend failed: {stage}"]
+    if through_reviewer:
+        expected.append("Module 8 reviewer backend failed: EnterpriseIntegrationError")
+    assert [record.getMessage() for record in records] == expected
+    assert records[0].args == (stage,)
+    assert all(record.exc_info is None and record.stack_info is None for record in records)
+    for sensitive in ("secret message", "/private/files", "Traceback", "private MCP output",
+                      "CUST-001", "private customer record", "private region", "private segment",
+                      seam.endpoint, "54321", "unused.db"):
+        assert sensitive not in caplog.text
+    seam.workflow.assert_not_awaited()
+
+
+def test_preflight_client_construction_failure_is_connect(
+    preflight_seam: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The fixed stage precedes client construction as well as async context entry."""
+    failure = EnterpriseIntegrationError("sensitive initialization detail")
+
+    def fail(endpoint: str) -> None:
+        raise failure
+
+    monkeypatch.setattr(reviewer, "EnterpriseMcpClient", fail)
+    with caplog.at_level("ERROR"), pytest.raises(EnterpriseIntegrationError) as caught:
+        asyncio.run(reviewer._execute(preflight_seam.endpoint, Path("unused.db"), "Manager review"))
+    assert caught.value is failure
+    assert [record.getMessage() for record in caplog.records] == [
+        "Module 8 reviewer preflight backend failed: mcp_connect",
+    ]
+
+
+def test_expected_denial_is_success_without_failure_diagnostic(
+    preflight_seam: SimpleNamespace, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Mocked transport success preserves reviewer results and evidence classification."""
+    with caplog.at_level("ERROR"):
+        result = reviewer.run_reviewer_demo()
+    assert result.denied and result.allowed.allowed
+    assert result.customer == result.direct_customer == result.workflow.customer
+    assert result.connection is preflight_seam.connection
+    assert result.capabilities == preflight_seam.capabilities
+    assert result.discovery_evidence.evidence_class == "local-integration"
+    assert not result.discovery_evidence.live_provider_executed
+    assert not result.discovery_evidence.deployment_executed
+    assert not caplog.records
+    preflight_seam.workflow.assert_awaited_once()
+
+
+@pytest.mark.parametrize("outside", ["cleanup", "workflow"])
+def test_completed_preflight_does_not_misattribute_later_failures(
+    preflight_seam: SimpleNamespace, caplog: pytest.LogCaptureFixture, outside: str,
+) -> None:
+    """The preflight diagnostic does not take ownership of cleanup or workflow errors."""
+    failure = EnterpriseIntegrationError("sensitive outside-preflight failure")
+    if outside == "cleanup":
+        preflight_seam.failure_stage, preflight_seam.failure = outside, failure
+    else:
+        preflight_seam.workflow.side_effect = failure
+    with caplog.at_level("ERROR"), pytest.raises(reviewer.ReviewerError) as caught:
+        reviewer.run_reviewer_demo()
+    assert caught.value.__cause__ is failure
+    assert [record.getMessage() for record in caplog.records] == [
+        "Module 8 reviewer backend failed: EnterpriseIntegrationError",
+    ]
