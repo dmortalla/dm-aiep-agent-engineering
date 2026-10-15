@@ -103,3 +103,23 @@ completion remain deferred. Full-module Definition of Done stays unchanged.
 C-026/C-027 overall completion remains deferred. Azure deployment, Container Apps,
 load balancing, distributed queue/cache, CI/CD and production traffic/SLA evidence
 are deferred. The unified Streamlit reviewer UI belongs to Story 10.7.
+
+
+## Concrete Story 10.7 evidence
+
+Story 10.6 independent acceptance was supplied by the human for
+`dabccead1b19e693f60f7fd7feef72dce9a0acb7` (local deterministic/container only).
+
+| Requirement | Implementation | Evidence and limit |
+|---|---|---|
+| E-002 | `ui/app.py`, optional reviewer dependency group | Native AppTest and launched browser review; local Streamlit only |
+| E-003 | Framework-independent `reviewer.exercise` calls accepted service/queue/cache/telemetry | Real cold/warm jobs, authoritative contract validation; no algorithm duplication |
+| E-004 | Results, cache counters, queue outcomes, correlated events, readiness and evidence tabs | Reviewer-visible deterministic working results; no cloud completion claim |
+| E-005, E-007 | Default no-key operation, explicit local and recorded container labels | No provider calls; planned Azure targets visibly deferred |
+| E-008, E-012, C-014 (presentation) | Bounded native inputs, domain validation, safe output primitives and fixed errors | Invalid-input, defect minimization, capacity/deadline and rerun tests |
+| E-001, E-009, E-011 | Module-local packaging, typed adapter, native gates | Story 10.7 verification record; Docker dependency separation regression |
+
+Existing queue/cache/telemetry course evidence gains a presentation surface only.
+CI/CD, Azure Container Apps deployment, Azure Monitor delivery, production load
+balancing, distributed queue/cache, production traffic/SLA, live providers/E-006,
+and final C-026/C-027 acceptance remain deferred. Story 10.8 is not implemented.

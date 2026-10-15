@@ -51,3 +51,12 @@ Exercise reliability, security, deployment checklist, incident response, rollbac
 
 ## Story 10.11 - Independent Acceptance and Release
 Prove complete source-to-requirement-to-implementation-to-test-to-UI-to-deployment traceability and release only verified claims.
+
+
+### Story 10.7 implementation status
+
+Implemented local deterministic console; independent acceptance pending.
+See [Story 10.7](STORY_10_7.md) for architecture, verification and limitations.
+Live provider integration is deferred: no provider or API-key workflow is invented.
+Story 10.8 has not begun. Story 10.6 is independently accepted by the human at
+`dabccead1b19e693f60f7fd7feef72dce9a0acb7`; its earlier pending notes are historical.

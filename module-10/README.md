@@ -297,3 +297,40 @@ failure isolation, adapter contract and limitations. Evidence is local and
 deterministic, not production traffic, SLA validation or Azure Monitor delivery.
 Streamlit remains Story 10.7; Azure deployment/Container Apps/Monitor, load
 balancing, distributed queue/cache, CI/CD and overall C-026/C-027 remain deferred.
+
+
+## Story 10.7 reviewer console
+
+From `module-10/`:
+
+```powershell
+uv sync --locked --group reviewer --python 3.12
+.venv/Scripts/python.exe -m streamlit run ui/app.py --server.address 127.0.0.1 --server.port 8517 --server.headless true --browser.gatherUsageStats false --client.showErrorDetails none
+```
+
+Use **Run cold + warm jobs**, then inspect **Operations** and **Evidence & limits**.
+The example returns four words and beta/alpha/gamma. Two real sequential jobs
+produce a miss followed by a hit. Each submission owns a fresh bounded local
+queue/cache and closes its workers before returning; reruns redisplay the last
+report without repeating execution. Reports and user-derived keywords remain in
+session memory until replaced or the session ends. Do not enter sensitive data.
+No Docker process, HTTP listener, credentials or external provider is required.
+
+The framework-independent `module10_ai.reviewer.exercise` calls the accepted
+`InferenceRequest`, `InferenceService`, `LocalExecution` and `Telemetry` interfaces.
+It reuses authoritative validation, execution, cache and telemetry behavior.
+Streamlit renders data and retains only the last detached report. It does not
+own business state or grant infrastructure authority. This is a local application
+exercise, not an HTTP/container health probe. Worker readiness is observed during
+the exercise; workers are intentionally closed afterward.
+
+Streamlit 1.66.0 is locked in the optional `reviewer` dependency group. Install it
+explicitly for UI tests. The production Docker build still uses `--no-dev` with
+no reviewer group, so it installs only the existing FastAPI dependencies.
+
+Run formal gates in order: `python -m ruff check .`, `python -m pytest`,
+`python -m compileall -q src tests scripts ui`, reviewer smoke, then Docker
+regression when packaging/source changes. See [Story 10.7](docs/STORY_10_7.md).
+Local deterministic UI evidence does not establish CI/CD, Azure Container Apps,
+Azure Monitor, production load balancing, distributed queue/cache, production
+traffic/SLA, live providers, or final C-026/C-027 completion. E-006 remains deferred.
