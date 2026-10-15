@@ -12,6 +12,18 @@ DISCOVERED = (
 )
 
 
+@pytest.mark.parametrize("role", ["viewer", "support_agent", "account_manager"])
+@pytest.mark.parametrize("capability", DISCOVERED)
+def test_explicit_empty_grants_deny_all(role: str, capability: str) -> None:
+    """An application revoking every grant must never restore default authority."""
+    with pytest.raises(AuthorizationError, match="no application capability grants"):
+        CapabilityPolicy({}).authorize(
+            principal_role=role,
+            capability=capability,
+            discovered_capabilities=DISCOVERED,
+        )
+
+
 def test_discovery_does_not_grant_execution_authority() -> None:
     """Deny a discovered capability absent from the caller allowlist."""
     policy = CapabilityPolicy()

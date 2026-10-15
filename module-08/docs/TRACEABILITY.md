@@ -2,9 +2,15 @@
 
 ## Status
 
-PLANNED - derived from the approved and frozen requirements and architecture.
+VERIFIED FOR INDEPENDENT ACCEPTANCE - 23/23 source requirements and 10/10
+engineering requirements supported within the local reviewer scope. No
+live-provider, deployment or unconditional production-readiness claim is made.
 
 Every frozen requirement maps to implementation stories and expected verification/reviewer evidence.
+
+The matrix below preserves the approved story allocation. The completed audit
+following it records actual implementation and verification rather than relying
+on the planning allocation as proof.
 
 | Requirement | Stories | Expected Verification / Reviewer Evidence |
 |---|---|---|
@@ -41,6 +47,53 @@ Every frozen requirement maps to implementation stories and expected verificatio
 | ENG-008 | S2,S3,S4,S5,S6,S7,S8,S9,S10 | Security/failure-path verification |
 | ENG-009 | S1,S2,S3,S4,S5,S6,S7,S8,S9,S10 | Static review and failure-path tests |
 | ENG-010 | S1,S10 | Isolation verification |
+
+## Completed implementation audit
+
+Paths below are module-relative. Test names identify maintainable verification;
+`tests/test_reviewer.py::test_real_reviewer_console` additionally executes and
+renders both scenarios through real local services. All rows are verified in
+that bounded scope; conceptual requirements use appropriately classified
+explanations, not fabricated runtime implementations.
+
+| Requirement | Actual implementation / explanation | Verification / reviewer evidence |
+|---|---|---|
+| REQ-OBJ-001 | `workflow.py`, `reviewer.py`, `console.py` under `src/mcp_enterprise_integration/` | `test_workflow.py::test_shared_plane_workflow`; complete console result |
+| REQ-MCP-001 | `mcp_server.py`, `mcp_client.py`; console topology guide | `test_mcp_client.py::test_client_initializes_real_mcp_session`; negotiated metadata |
+| REQ-MCP-002 | Official SDK client/server | `test_mcp_client.py`; real Streamable HTTP discovery/invocation |
+| REQ-MCP-003 | `reviewer.py` direct lookup comparison; README explanation | `test_workflow.py::test_direct_versus_mcp_comparison`; console comparison result |
+| REQ-INFRA-001 | Three `server.tool()` registrations | `test_mcp_server.py::test_mcp_discovers_three_enterprise_tools`; inventory |
+| REQ-INFRA-002 | Typed workflow request/result exchange | `test_workflow.py::test_shared_plane_workflow`; displayed policy request |
+| REQ-INFRA-003 | MCP Streamable HTTP app and consumers | `test_mcp_client.py`; three displayed transport records |
+| REQ-INFRA-004 | Genuine `list_tools` discovery | `test_mcp_server.py::test_mcp_discovery_exposes_typed_contracts`; console inventory |
+| REQ-ENT-001 | `database.py` parameterized SQLite queries | `test_database.py`, MCP client database test; actual customer table |
+| REQ-ENT-002 | `enterprise_api.py` bounded local HTTP request | `test_enterprise_api.py`, SDK API tests; actual account table |
+| REQ-ENT-003 | `internal_system.py` callable policy evaluation | `test_internal_system.py`, SDK policy tests; actual decision and rule |
+| REQ-INT-001 | Console guide, README, Story 8 conceptual explanation | Static review: OS building blocks grounded in actual capabilities, context and policy; no OS implementation claim |
+| REQ-INT-002 | Independent OpenAI/ADK consumers of one MCP plane | `test_workflow.py::test_shared_plane_workflow`; three SDK stages |
+| REQ-INT-003 | Independently addressed local MCP/HTTP services | Real client/SDK tests; console guide explains distributed loopback scope |
+| REQ-INT-004 | Implemented MCP; complementary A2A distinction | README, console guide and Story 8; no A2A implementation claim |
+| REQ-TECH-001 | Official MCP server, client, discovery and transport | `test_mcp_server.py`, `test_mcp_client.py`; actual protocol metadata |
+| REQ-TECH-002 | `openai_mcp.py` Agent and SDK MCP tool calls | `test_openai_mcp.py`; first/third workflow stages, no model runner |
+| REQ-TECH-003 | `google_adk_mcp.py` Agent, McpToolset and tool execution | `test_google_adk_mcp.py`; second workflow stage, no model runner |
+| REQ-LAB-001 | `create_enterprise_mcp_server` | Server/client tests and console-started genuine server |
+| REQ-LAB-002 | SDK agents configured with shared MCP tools | Both SDK test files and reviewer enterprise results |
+| REQ-LAB-003 | `EnterpriseWorkflow` | `test_workflow.py`, both reviewer scenarios |
+| REQ-DEL-001 | Frozen architecture implemented as shared MCP capability plane | Architecture/ADR inspection plus real discovery and transport tests |
+| REQ-DEL-002 | SQLite/API/internal policy integrated through both SDKs | Real workflow and console enterprise tables |
+| ENG-001 | Thin `console.py`, application `reviewer.py`, README | `test_reviewer.py`; prior human Story 9 UI acceptance supplied for Story 10 |
+| ENG-002 | Strict workflow envelopes, bounds, identity correlation and extra-field rejection | Domain/API/ADK tests and `test_workflow.py` corruption tests (mocked injection) |
+| ENG-003 | `CapabilityPolicy`; original application role retained across stages | Unknown-role, forged-argument and workflow authority tests; empty-map regression |
+| ENG-004 | Explicit discovery then independent allowlist check | MCP client and ADK denial-before-execution tests; console denial |
+| ENG-005 | API size/time limits; SDK deadlines; 45s workflow; 60s reviewer; two demo slots | Bounds tests, `test_busy_console_rejects_without_startup`; source review of limits, not a load/SLA certification |
+| ENG-006 | Neither SDK model runner used; no live mode | Workflow runner guards and reviewer no-key/external-connection guards |
+| ENG-007 | `ExecutionEvidence` taxonomy and checked execution flags | `test_evidence_contracts.py`; reviewer evidence assertions and visible classification |
+| ENG-008 | Expected validation, denial, transport, cleanup and safe UI failure tests | Existing domain/backend/client/SDK/workflow/reviewer suites; nine empty-map cases |
+| ENG-009 | Typed public interfaces, docstrings and chained failure boundaries | Source review plus Ruff/compileall and expected failure tests; no formal type-checker claim |
+| ENG-010 | Standalone package, local project dependencies and tests | Story 10 tracked-source/import/dependency isolation inspection; no cross-module implementation imports |
+
+The ordered Definition of Done and exact final native gate results are recorded
+in [Story 10](stories/STORY-10-integrated-verification-release-evidence.md).
 
 ## Reviewer-Visible Working-Results Rule
 

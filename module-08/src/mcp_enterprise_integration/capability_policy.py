@@ -31,7 +31,7 @@ class CapabilityPolicy:
             grants: Optional role-to-capability allowlist. When omitted,
                 production-safe module defaults are used.
         """
-        source = grants or {
+        source = {
             "viewer": frozenset({"get_customer", "get_account_status"}),
             "support_agent": frozenset(
                 {
@@ -47,7 +47,7 @@ class CapabilityPolicy:
                     "evaluate_enterprise_policy",
                 }
             ),
-        }
+        } if grants is None else grants
 
         normalized = {
             role.strip().lower(): frozenset(capabilities)

@@ -2,7 +2,8 @@
 
 ## Status
 
-APPROVED-ARCHITECTURE IMPLEMENTATION PLAN - implementation has not started.
+APPROVED-ARCHITECTURE IMPLEMENTATION PLAN - Stories 1–9 accepted; Story 10
+implemented for independent final acceptance. See the Story 10 verification record.
 
 ## Planning Rule
 
