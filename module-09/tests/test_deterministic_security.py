@@ -147,18 +147,28 @@ def test_deterministic_adapters_expose_no_authority_or_execution_operations() ->
 
 def test_later_story_capabilities_are_not_implemented() -> None:
     packages = {p.name for p in SRC.iterdir() if p.is_dir() and p.name != "__pycache__"}
-    assert packages == {"adapters", "audio", "contracts", "ingestion", "speech", "understanding"}
+    assert packages == {
+        "adapters",
+        "audio",
+        "contracts",
+        "crossmodal",
+        "ingestion",
+        "speech",
+        "understanding",
+    }
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
-    assert adapters == {"deterministic", "local", "speech"}
-    later_methods = {"stream_reason"}
+    assert adapters == {"deterministic", "local", "reasoning", "speech"}
+    reasoning_adapter = SRC / "adapters" / "reasoning" / "rule_reasoner.py"
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
     for path in SRC.rglob("*.py"):
         tree = ast.parse(path.read_text("utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and "contracts" not in (
-                path.parts
+            if (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.name == "stream_reason"
+                and "contracts" not in path.parts
             ):
-                assert node.name not in later_methods, f"{path}: {node.name}"
+                assert path == reasoning_adapter, f"{path}: only the reasoning adapter reasons"
             if isinstance(node, ast.Import | ast.ImportFrom):
                 module = getattr(node, "module", None) or ""
                 names = {module, *(alias.name for alias in node.names)}

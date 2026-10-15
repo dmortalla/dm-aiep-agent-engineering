@@ -137,13 +137,46 @@ def test_story_9_3_claims_only_local_understanding(governance: dict[str, Any]) -
 
 def test_story_9_4_claims_only_the_audio_speech_pipeline(governance: dict[str, Any]) -> None:
     assert governance["story_9_4_evidence_class"] == EvidenceClass.AUTOMATED_TEST
-    assert governance["implemented_capabilities"] == [
+    assert governance["implemented_capabilities"][:3] == [
         "deterministic_multimodal_foundation",
         "local_document_vision_understanding",
         "local_audio_speech_pipeline",
     ]
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
-    partial = {"ENG-001", "SRC-002", "SRC-003", "SRC-004", "SRC-006", "SRC-007", "ENG-006"}
+    for rid in ("SRC-003", "SRC-006", "SRC-007", "ENG-006"):
+        assert statuses[rid] == "partially-implemented", rid
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories["9.4"] == "complete-audio-speech-pipeline"
+    audio_doc = " ".join(_doc("AUDIO_SPEECH.md").lower().split())
+    for phrase in ("not speech recognition", "not speech synthesis", "fixture playback"):
+        assert phrase in audio_doc, phrase
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
+        text = " ".join(_doc(name).lower().split())
+        assert "not speech recognition" in text and "not speech synthesis" in text, name
+
+
+def test_story_9_5_claims_only_deterministic_cross_modal_reasoning(
+    governance: dict[str, Any],
+) -> None:
+    assert governance["story_9_5_evidence_class"] == EvidenceClass.AUTOMATED_TEST
+    assert governance["implemented_capabilities"] == [
+        "deterministic_multimodal_foundation",
+        "local_document_vision_understanding",
+        "local_audio_speech_pipeline",
+        "deterministic_cross_modal_reasoning_workflow",
+    ]
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    partial = {
+        "ENG-001",
+        "SRC-002",
+        "SRC-003",
+        "SRC-004",
+        "SRC-005",
+        "SRC-006",
+        "SRC-007",
+        "SRC-015",
+        "ENG-006",
+    }
     assert {rid for rid, status in statuses.items() if status != "designed"} == partial
     assert {statuses[rid] for rid in partial} == {"partially-implemented"}
     stories = {story["id"]: story["status"] for story in governance["stories"]}
@@ -151,13 +184,15 @@ def test_story_9_4_claims_only_the_audio_speech_pipeline(governance: dict[str, A
     assert stories.pop("9.2") == "complete-deterministic-foundation"
     assert stories.pop("9.3") == "complete-local-understanding"
     assert stories.pop("9.4") == "complete-audio-speech-pipeline"
+    assert stories.pop("9.5") == "complete-cross-modal-reasoning"
     assert set(stories.values()) == {"not-started"}
-    audio_doc = " ".join(_doc("AUDIO_SPEECH.md").lower().split())
-    for phrase in ("not speech recognition", "not speech synthesis", "fixture playback"):
-        assert phrase in audio_doc, phrase
+    cross_doc = " ".join(_doc("CROSS_MODAL.md").lower().split())
+    phrases = ("not model inference", "rule-based", "closed vocabulary", "partially implemented")
+    for phrase in phrases:
+        assert phrase in cross_doc, phrase
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
         text = " ".join(_doc(name).lower().split())
-        assert "not speech recognition" in text and "not speech synthesis" in text, name
+        assert "not model inference" in text, name
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

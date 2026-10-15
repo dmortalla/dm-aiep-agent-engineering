@@ -88,3 +88,22 @@ Each class of Story 9.4 behavior is kept distinct:
 Records name their processing kinds and reject `speech_recognition` and `speech_synthesis`. This
 evidence partially supports SRC-003, SRC-006, SRC-007, and ENG-006. See
 [AUDIO_SPEECH.md](AUDIO_SPEECH.md).
+
+## Story 9.5 classification
+
+Story 9.5 evidence is **`automated_test`**: the suite runs generated and committed inputs from two
+to four modalities through the real cross-modal workflow, with sockets blocked and no credentials.
+`CrossModalRecord` can emit `deterministic_demo` records for reviewer runs and rejects every other
+class.
+
+| Behavior | Evidence it provides |
+|---|---|
+| Local image, document, and audio processing | Actual local processing evidence |
+| Fixture-playback transcript | Deterministic fixture evidence; not speech recognition |
+| Rule-based cross-modal inference | Genuine deterministic cross-modal reasoning evidence; not model inference |
+| Reasoning provider-contract test doubles | Provider-contract evidence only (`automated_test`) |
+| External reasoning model | None yet; would be `live_integration` (Story 9.8) |
+
+Records name their reasoning kind (`deterministic_rule_inference` or
+`provider_contract_test_double`) and reject `model_inference`. This evidence partially supports
+SRC-005, SRC-015, and ENG-006. See [CROSS_MODAL.md](CROSS_MODAL.md).

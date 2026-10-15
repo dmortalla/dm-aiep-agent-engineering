@@ -28,8 +28,16 @@ the transcript is Story 9.2 fixture playback, which is not speech recognition, a
 audio is a deterministic tone sequence, which is not speech synthesis. There is no model
 inference. Story 9.4 evidence is `automated_test`. See [docs/AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md).
 
-No model-based vision, semantic document, speech recognition, speech synthesis, cross-modal,
-voice orchestration, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+**Story 9.5 (Cross-Modal Reasoning Workflow) is complete.** It adds the application-level
+multimodal workflow: inputs from two to four modalities are processed through the Story 9.3 and 9.4
+paths, normalized into typed observations, combined into one bounded reasoning context, and related
+through the `ReasoningPort`. The default reasoner is rule-based deterministic reasoning over a
+closed vocabulary that judges claims from one modality against measurements from another, reports
+conflicts without resolving them, and cites every statement and measurement it uses. It is not model
+inference. Story 9.5 evidence is `automated_test`. See [docs/CROSS_MODAL.md](docs/CROSS_MODAL.md).
+
+No model-based vision, semantic document, speech recognition, speech synthesis, model-based
+reasoning, voice orchestration, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -44,6 +52,7 @@ voice orchestration, streaming, live-provider, or UI capability is implemented y
 | [DETERMINISTIC_FOUNDATION.md](docs/DETERMINISTIC_FOUNDATION.md) | Story 9.2 fixtures, deterministic adapters, run records |
 | [UNDERSTANDING.md](docs/UNDERSTANDING.md) | Story 9.3 ingestion, local vision and document adapters, understanding records |
 | [AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md) | Story 9.4 audio processing, speech-to-text and text-to-speech pipelines, speech records |
+| [CROSS_MODAL.md](docs/CROSS_MODAL.md) | Story 9.5 cross-modal workflow, observations, bounded context, deterministic reasoning rules, records |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |

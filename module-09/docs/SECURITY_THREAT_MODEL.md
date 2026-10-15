@@ -8,7 +8,9 @@ Controls marked "9.2" are enforced by the deterministic foundation and its tests
 "9.3" are enforced at runtime on the image and document path (`ingestion/`, `adapters/local/`,
 `understanding/`) and its tests (see [UNDERSTANDING.md](UNDERSTANDING.md)). Controls marked "9.4"
 are enforced at runtime on the audio and speech path (`audio/`, `adapters/speech/`, `speech/`) and
-its tests (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Every other control is
+its tests (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Controls marked "9.5" are enforced at runtime
+on the cross-modal reasoning path (`contracts/reasoning.py`, `adapters/reasoning/`, `crossmodal/`)
+and its tests (see [CROSS_MODAL.md](CROSS_MODAL.md)). Every other control is
 planned for the listed story and is **not implemented yet**.
 
 ## Assets
@@ -48,7 +50,7 @@ planned for the listed story and is **not implemented yet**.
 
 | ID | Invariant | Control | Enforced now | Stories |
 |---|---|---|---|---|
-| SEC-001 | Untrusted multimodal input separation | `TrustLevel` on every `ModalityInput` | Contract; 9.3 (image/document runtime path); 9.4 (audio input and synthesis text) | 9.1, 9.3, 9.4, 9.5 |
+| SEC-001 | Untrusted multimodal input separation | `TrustLevel` on every `ModalityInput` | Contract; 9.3 (image/document runtime path); 9.4 (audio input and synthesis text); 9.5 (every observation and reasoning part untrusted, with origin labels) | 9.1, 9.3, 9.4, 9.5 |
 | SEC-002 | MIME/type validation | Per-modality media type allowlist | Contract; 9.3 (ingestion and adapter re-check); 9.4 (audio ingestion and analysis re-check) | 9.1, 9.3, 9.4 |
 | SEC-003 | Extension/content consistency | Extension must match media type; magic-byte check at ingestion | Contract (extension); 9.3 (image/document magic bytes and UTF-8 checks); 9.4 (audio signatures and strict RIFF/WAVE parsing) | 9.1, 9.3, 9.4 |
 | SEC-004 | Safe filename/path handling | Safe `display_name`; opaque `content_ref` | Contract; 9.3 (decoders read in-memory buffers only) | 9.1, 9.3 |
@@ -56,13 +58,13 @@ planned for the listed story and is **not implemented yet**.
 | SEC-006 | Audio-duration limits | Audio requires `duration_ms` within ceiling | Contract; 9.4 (duration measured from the WAV header and checked before decoding; synthesis duration checked before rendering) | 9.1, 9.4 |
 | SEC-007 | Bounded document processing | Page and size ceilings | Contract; 9.3 (page budget before PDF extraction; section and character caps) | 9.1, 9.3 |
 | SEC-008 | Malformed/unsupported input rejection | `extra="forbid"`; unknown types and events rejected | Contract; 9.3 (malformed, encrypted, and text-less inputs rejected safely); 9.4 (malformed, truncated, pathological, and unsupported audio rejected) | 9.1, 9.3, 9.4, 9.7 |
-| SEC-009 | Prompt-injection containment | Content as data in reasoning context | Planned | 9.5, 9.10 |
+| SEC-009 | Prompt-injection containment | Content as data in reasoning context | 9.5 (each observation is a JSON-encoded part beside a fixed task; document, transcript, and forged-findings injections tested as inert data) | 9.5, 9.10 |
 | SEC-010 | No arbitrary command execution | No shell/eval path; governance test scans source | Contract (test) | 9.1, 9.10 |
-| SEC-011 | No authority from model/provider/content output | Fixed untrusted trust on results | Contract; 9.3 (embedded document instructions tested as inert data); 9.4 (injected transcripts and synthesis text tested as inert data) | 9.1, 9.4, 9.5, 9.8 |
-| SEC-012 | Provider/network trust boundaries | Only live adapters reach the network | Deterministic adapters (9.2: no network imports; socket-blocked test); 9.3 local adapters (same checks); 9.4 audio and speech code (same checks); 9.8 (live) | 9.2, 9.3, 9.4, 9.8 |
+| SEC-011 | No authority from model/provider/content output | Fixed untrusted trust on results | Contract; 9.3 (embedded document instructions tested as inert data); 9.4 (injected transcripts and synthesis text tested as inert data); 9.5 (reasoning output citation-checked; conclusion derived by the workflow) | 9.1, 9.4, 9.5, 9.8 |
+| SEC-012 | Provider/network trust boundaries | Only live adapters reach the network | Deterministic adapters (9.2: no network imports; socket-blocked test); 9.3 local adapters (same checks); 9.4 audio and speech code (same checks); 9.5 cross-modal code (same checks); 9.8 (live) | 9.2, 9.3, 9.4, 9.8 |
 | SEC-013 | Outbound provider allowlisting | `SessionConfig.allowed_live_providers` allowlist (empty by default, so live fails closed) | Contract (allowlist); 9.8 (endpoints) | 9.1, 9.8 |
 | SEC-014 | Bounded payloads | Text, delta, transcript, event size bounds | Contract | 9.1, 9.7 |
-| SEC-015 | Timeout behavior | Timeout ceilings in `ResourceBudget` | Contract (bounds); 9.3 (local decoding bounded by `request_timeout_s`); 9.4 (audio decoding and every speech provider call bounded by `request_timeout_s`); 9.8 (enforcement) | 9.1, 9.3, 9.4, 9.8, 9.10 |
+| SEC-015 | Timeout behavior | Timeout ceilings in `ResourceBudget` | Contract (bounds); 9.3 (local decoding bounded by `request_timeout_s`); 9.4 (audio decoding and every speech provider call bounded by `request_timeout_s`); 9.5 (reasoning call bounded by `request_timeout_s`); 9.8 (enforcement) | 9.1, 9.3, 9.4, 9.8, 9.10 |
 | SEC-016 | Bounded retry behavior | `max_retries` ceiling of 3 | Contract (bounds) | 9.1, 9.8 |
 | SEC-017 | No uncontrolled retry loops | Retries consume provider-call budget | Contract (bounds); 9.8 (enforcement) | 9.1, 9.8, 9.10 |
 | SEC-018 | Secret redaction | `SecretStr`, excluded from dumps and repr | Contract | 9.1, 9.8 |

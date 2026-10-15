@@ -14,8 +14,11 @@ ingestion boundary (`ingestion/`), local processing adapters for the vision and 
 (`adapters/local/`), and the understanding service and records (`understanding/`) (see
 [UNDERSTANDING.md](UNDERSTANDING.md)). Story 9.4 adds audio ingestion and processing (`audio/`), a
 deterministic tone-sequence `TextToSpeechPort` adapter (`adapters/speech/`), and the speech pipeline
-service and records (`speech/`) (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). No other runtime component
-below is implemented yet.
+service and records (`speech/`) (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Story 9.5 adds the
+multimodal orchestration, modality routing, and cross-modal reasoning core (`crossmodal/`), the
+structured reasoning contract (`contracts/reasoning.py`), and a deterministic rule-based
+`ReasoningPort` adapter (`adapters/reasoning/`), which is not model inference (see
+[CROSS_MODAL.md](CROSS_MODAL.md)). No other runtime component below is implemented yet.
 
 ## Goal
 
@@ -149,7 +152,9 @@ flowchart LR
     RSN --> OUT["Structured result + evidence"]
 ```
 
-Modality-specific processing always precedes cross-modal reasoning (ADR-009-006).
+Modality-specific processing always precedes cross-modal reasoning (ADR-009-006). Story 9.5
+implements this flow with `CrossModalWorkflow`; the reasoning context is one JSON-encoded
+`ObservationView` per input, and the reasoning output is citation-checked before it is recorded.
 
 ## Execution modes
 
@@ -177,7 +182,10 @@ module-09/
     audio/                               Story 9.4: audio ingestion, PCM WAV parsing, signal analysis
     adapters/speech/                     Story 9.4: deterministic tone-sequence TTS adapter
     speech/                              Story 9.4: speech pipeline service and records
-    (core/, adapters/live/, interface/, ui/)  later stories; not created yet
+    contracts/reasoning.py               Story 9.5: structured reasoning I/O contract
+    adapters/reasoning/                  Story 9.5: deterministic rule-based reasoning adapter
+    crossmodal/                          Story 9.5: cross-modal workflow, context, records
+    (adapters/live/, interface/, ui/)    later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
 ```

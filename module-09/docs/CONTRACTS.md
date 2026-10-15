@@ -9,6 +9,8 @@ deterministic tone-sequence adapter and drives both speech ports through the spe
 None of them change these contracts (see
 [DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md), [UNDERSTANDING.md](UNDERSTANDING.md),
 and [AUDIO_SPEECH.md](AUDIO_SPEECH.md)).
+Story 9.5 adds `reasoning.py`, the structured contract carried over the unchanged reasoning port, and
+implements the port with a deterministic rule-based adapter (see [CROSS_MODAL.md](CROSS_MODAL.md)).
 No live provider or transport exists yet.
 
 | Module | Boundary | Key types | ADRs |
@@ -20,6 +22,7 @@ No live provider or transport exists yet.
 | `streaming.py` | WebSocket protocol | `StreamEventType`, nine event models, `parse_stream_event` | 005 |
 | `evidence.py` | Evidence | `EvidenceClass`, `EvidenceRecord` | 009 |
 | `errors.py` | Safe errors | `ErrorCode`, `SafeError`, `Module9Error`, `StreamProtocolError` | 005, 007 |
+| `reasoning.py` | Structured reasoning I/O (Story 9.5) | `ObservationView`, `ObservedFact`, `Statement`, `FactOrigin`, `CrossModalFinding`, `FindingKind`, `ReasonerOutput` | 003, 006, 007 |
 
 ## Modality contract
 
@@ -134,6 +137,23 @@ classDiagram
 - `ReasoningRequest.task` is application-authored. `parts` and `history` are untrusted data.
   Parts, history, and output tokens are bounded.
 - Ports expose no tool execution.
+
+## Structured reasoning contract (Story 9.5)
+
+`ReasoningPort` streams text, so cross-modal reasoning carries structured JSON over it in both
+directions:
+
+- Each `ReasoningPart.content` is one canonical `ObservationView`: observation ID, modality, input
+  ID, source, trust, facts, and statements. Facts are `local_measurement` or `local_extraction`
+  only; statement origins must fit the modality (`user_provided` text, `local_extraction` document
+  text, `fixture_playback` or `provider_contract_test_double` transcripts); `model_inference` is
+  never accepted; text observations are `untrusted_external`, all others `untrusted_model_output`.
+- The adapter streams one `ReasonerOutput`: `schema_version` 1 and at most 64 `CrossModalFinding`s.
+  Each finding has a kind (`corroborated`, `contradicted`, `claim_conflict`, `claim_agreement`,
+  `unverified_claim`, `shared_concepts`) and must carry the citations its kind requires: claim
+  references with exact quotes, fact IDs, or shared terms.
+- Every model is frozen with `extra="forbid"`. Whether citations exist in a given context is checked
+  by the application core, never assumed.
 
 ## Streaming protocol
 

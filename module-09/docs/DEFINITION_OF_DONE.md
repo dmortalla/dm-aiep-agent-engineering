@@ -6,8 +6,12 @@ where the item itself is about documentation or traceability.
 
 Current state: Story 9.1 complete (design only), Story 9.2 complete (deterministic foundation),
 Story 9.3 complete (local document and vision understanding, no model inference), and Story 9.4
-complete (audio and speech pipeline; no speech recognition or synthesis). No item below is
-satisfied yet. Story 9.4 contributes automated evidence toward "Audio processing works",
+complete (audio and speech pipeline; no speech recognition or synthesis), and Story 9.5 complete
+(cross-modal workflow with rule-based deterministic reasoning; not model inference). No item below
+is satisfied yet. Story 9.5 contributes automated evidence toward "Cross-modal reasoning works" and
+"The multimodal workflow is demonstrable"; both stay unchecked because the reasoning covers only a
+closed vocabulary with no model-based reasoning (9.8) and reviewer-visible results (9.9) do not
+exist yet. Story 9.4 contributes automated evidence toward "Audio processing works",
 "Speech-to-text works", and "Text-to-speech works"; all three stay unchecked because only PCM WAV
 is decodable, the STT adapter is fixture playback, the TTS adapter generates tones, and
 reviewer-visible results (9.9) do not exist yet. Story 9.3 contributes automated evidence toward "Vision processing works" and

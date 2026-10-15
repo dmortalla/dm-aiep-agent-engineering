@@ -12,7 +12,10 @@ analysis and document extraction, with no model inference (see [UNDERSTANDING.md
 Story 9.4 partially implements SRC-003, SRC-006, SRC-007, and ENG-006 with validated local PCM WAV
 processing and speech-to-text and text-to-speech pipelines whose deterministic adapters are fixture
 playback (not speech recognition) and tone generation (not speech synthesis) (see
-[AUDIO_SPEECH.md](AUDIO_SPEECH.md)). No requirement is fully satisfied. Every other requirement is designed only.
+[AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Story 9.5 partially implements SRC-005, SRC-015, and ENG-006 with
+a cross-modal workflow whose default reasoner is rule-based deterministic reasoning over a closed
+vocabulary, which is not model inference (see [CROSS_MODAL.md](CROSS_MODAL.md)). No requirement is
+fully satisfied. Every other requirement is designed only.
 
 ## Source-derived requirements
 

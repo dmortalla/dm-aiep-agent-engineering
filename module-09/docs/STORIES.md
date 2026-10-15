@@ -4,7 +4,8 @@ Ten stories deliver Module 9. Story 9.1 is complete (design only). Story 9.2 is 
 (deterministic fixture playback only; no genuine inference). Story 9.3 is complete (local image
 and document extraction and structural analysis; no model inference). Story 9.4 is complete (local
 audio processing; STT and TTS pipelines with fixture-playback STT and tone-sequence TTS; no speech
-recognition or synthesis). Stories 9.5 to 9.10 are not started.
+recognition or synthesis). Story 9.5 is complete (cross-modal workflow with rule-based deterministic
+reasoning; not model inference). Stories 9.6 to 9.10 are not started.
 
 | Story | Title | Scope | Status |
 |---|---|---|---|
@@ -12,7 +13,7 @@ recognition or synthesis). Stories 9.5 to 9.10 are not started.
 | 9.2 | Deterministic Multimodal Foundation | Reproducible text, image, audio, and document fixtures; deterministic provider implementations; no-key execution | Complete (deterministic foundation only; see [DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)) |
 | 9.3 | Document + Vision Understanding | Validated image and document processing; structured understanding | Complete (local extraction and structural analysis only; no model inference; see [UNDERSTANDING.md](UNDERSTANDING.md)) |
 | 9.4 | Audio + Speech Pipeline | Audio processing; STT; TTS | Complete (local WAV processing and STT/TTS pipelines; no speech recognition or synthesis; see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)) |
-| 9.5 | Cross-Modal Reasoning Workflow | Combine processed modalities into a single reasoning context; genuine multimodal reasoning result | Not started |
+| 9.5 | Cross-Modal Reasoning Workflow | Combine processed modalities into a single reasoning context; genuine multimodal reasoning result | Complete (rule-based deterministic cross-modal reasoning; not model inference; see [CROSS_MODAL.md](CROSS_MODAL.md)) |
 | 9.6 | Voice-Enabled AI Assistant | Conversation state; STT -> reasoning -> TTS orchestration | Not started |
 | 9.7 | Real-Time WebSocket Streaming | Typed streaming protocol; partial/final events; lifecycle handling; error handling; genuine WebSocket execution | Not started |
 | 9.8 | Secure Opt-In Live Providers | Ephemeral BYOK configuration; live provider adapters; redaction; budgets; timeouts | Not started |

@@ -6,7 +6,7 @@ and to the evidence that must exist before it counts as satisfied. The machine-r
 keep the two in sync.
 
 **Current status: every row is designed, not implemented, except ENG-001, SRC-002, SRC-003,
-SRC-004, SRC-006, SRC-007, and ENG-006, which are partially implemented.** Story 9.1 contributes architecture and contract design
+SRC-004, SRC-005, SRC-006, SRC-007, SRC-015, and ENG-006, which are partially implemented.** Story 9.1 contributes architecture and contract design
 only, which is `design_documentation` evidence. Story 9.2 contributes the deterministic foundation
 for ENG-001 (`automated_test` evidence). Deterministic fixture playback is not evidence for any SRC
 requirement. Story 9.3 contributes `automated_test` evidence of validated ingestion, local image
@@ -14,8 +14,11 @@ analysis, and local document extraction and structural analysis, with no model i
 [UNDERSTANDING.md](UNDERSTANDING.md)). Story 9.4 contributes `automated_test` evidence of validated
 local audio processing and of the speech-to-text and text-to-speech port pipelines; its default
 STT adapter is fixture playback, which is not speech recognition, and its TTS adapter generates
-tone sequences, which is not speech synthesis (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Planned
-evidence is never completed evidence.
+tone sequences, which is not speech synthesis (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Story 9.5
+contributes `automated_test` evidence of a cross-modal workflow that relates observations from two
+to four modalities in one bounded context; its default reasoner is rule-based deterministic
+reasoning over a closed vocabulary, which is not model inference (see
+[CROSS_MODAL.md](CROSS_MODAL.md)). Planned evidence is never completed evidence.
 
 ## Source-derived requirements
 
@@ -25,7 +28,7 @@ evidence is never completed evidence.
 | SRC-002 Vision models (partially implemented: 9.3 local pixel analysis, no vision model) | 9.3, 9.8 | `VisionPort`, `Modality.IMAGE` | automated_test + deterministic_demo; live_integration for live vision |
 | SRC-003 Audio processing (partially implemented: 9.4 PCM WAV decoding and measurement; MP3/WebM not decodable) | 9.4 | `Modality.AUDIO`, audio limits | automated_test + deterministic_demo |
 | SRC-004 Document understanding (partially implemented: 9.3 local extraction and structure, no semantic understanding) | 9.3 | `DocumentUnderstandingPort`, `Modality.DOCUMENT` | automated_test + deterministic_demo |
-| SRC-005 Cross-modal reasoning | 9.5 | `ReasoningPort`, `ReasoningRequest.inputs` | automated_test + deterministic_demo |
+| SRC-005 Cross-modal reasoning (partially implemented: 9.5 rule-based deterministic reasoning over a closed vocabulary; no model-based reasoning) | 9.5 | `ReasoningPort`, `ReasoningRequest.parts`, `contracts/reasoning.py` | automated_test + deterministic_demo |
 | SRC-006 Speech-to-text (partially implemented: 9.4 pipeline and port; fixture-playback STT, no speech recognition) | 9.4, 9.8 | `SpeechToTextPort`, `transcript_partial/final` | automated_test + deterministic_demo; live_integration for live STT |
 | SRC-007 Text-to-speech (partially implemented: 9.4 port and tone-sequence adapter, no speech synthesis) | 9.4, 9.8 | `TextToSpeechPort`, `audio_ready` | automated_test + deterministic_demo; live_integration for live TTS |
 | SRC-008 Real-time conversations | 9.6, 9.7 | `SessionConfig`, `ConversationTurn`, stream events | WebSocket multi-turn acceptance test |
@@ -35,7 +38,7 @@ evidence is never completed evidence.
 | SRC-012 Low-latency pipelines | 9.7, 9.10 | `LatencyStage`, `metric` event | Measured stage latencies, reviewer-visible |
 | SRC-013 Voice interaction systems | 9.6, 9.9 | Voice controls in presentation layer | deterministic_demo in Streamlit |
 | SRC-014 Lab: voice-enabled assistant | 9.6, 9.9 | Voice assistant workflow | deterministic_demo in Streamlit |
-| SRC-015 Lab: multimodal AI workflow | 9.5, 9.9 | Multimodal workflow | deterministic_demo in Streamlit |
+| SRC-015 Lab: multimodal AI workflow (partially implemented: 9.5 application workflow; no Streamlit demo) | 9.5, 9.9 | `CrossModalWorkflow` | deterministic_demo in Streamlit |
 | SRC-016 Lab: real-time streaming system | 9.7, 9.9 | WebSocket streaming workflow | deterministic_demo with visible stream events |
 | SRC-017 Deliverable: voice-enabled AI assistant | 9.6, 9.9, 9.10 | Voice assistant | Production acceptance evidence |
 | SRC-018 Deliverable: multimodal AI platform | 9.5, 9.9, 9.10 | Multimodal platform | Production acceptance evidence |
@@ -49,7 +52,7 @@ evidence is never completed evidence.
 | ENG-003 Streamlit presentation layer | 9.9 | ADR-009-002 |
 | ENG-004 Logic outside Streamlit | 9.1, 9.2, 9.9 | ADR-009-002, `multimodal_voice_platform` package |
 | ENG-005 Reviewer-visible working results | 9.9, 9.10 | ADR-009-009 |
-| ENG-006 Untrusted content never grants authority (partially implemented: 9.3 image and document path; 9.4 audio, transcript, and synthesis-text path) | 9.1, 9.3, 9.4, 9.5, 9.10 | ADR-009-007, `TrustLevel` |
+| ENG-006 Untrusted content never grants authority (partially implemented: 9.3 image and document path; 9.4 audio, transcript, and synthesis-text path; 9.5 reasoning context and reasoning output) | 9.1, 9.3, 9.4, 9.5, 9.10 | ADR-009-007, `TrustLevel` |
 | ENG-007 Bounded cost and latency | 9.1, 9.8, 9.10 | ADR-009-008, `ResourceBudget` |
 | ENG-008 Observability without secrets | 9.7, 9.10 | `metric` event, `SafeError` |
 | ENG-009 Accurate evidence classification | 9.1, 9.9, 9.10 | `EvidenceClass`, `EvidenceRecord` |
@@ -63,4 +66,5 @@ evidence is never completed evidence.
 - Additive engineering requirements traced: 12 of 12.
 - Requirements fully implemented: 0. Partially implemented: ENG-001 (Story 9.2 deterministic
   foundation); SRC-002, SRC-004, and ENG-006 (Story 9.3 local understanding); SRC-003, SRC-006,
-  SRC-007, and ENG-006 (Story 9.4 audio and speech pipeline). Story 9.1 is design only.
+  SRC-007, and ENG-006 (Story 9.4 audio and speech pipeline); SRC-005, SRC-015, and ENG-006 (Story
+  9.5 cross-modal workflow). Story 9.1 is design only.
