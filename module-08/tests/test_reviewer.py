@@ -145,3 +145,26 @@ def test_busy_console_rejects_without_startup() -> None:
     finally:
         reviewer._DEMO_SLOTS.release()
         reviewer._DEMO_SLOTS.release()
+
+
+def test_reviewer_logs_safe_backend_exception_type(monkeypatch, caplog) -> None:
+    """Log only the backend exception class while preserving the safe reviewer error."""
+    from mcp_enterprise_integration import reviewer
+    from mcp_enterprise_integration.errors import EnterpriseIntegrationError
+
+    def fail_execute(*args, **kwargs):
+        raise EnterpriseIntegrationError("sensitive backend detail")
+
+    monkeypatch.setattr(reviewer.asyncio, "run", fail_execute)
+    with caplog.at_level("ERROR", logger=reviewer.__name__):
+        try:
+            reviewer.run_reviewer_demo("Manager review")
+        except reviewer.ReviewerError as exc:
+            assert str(exc) == (
+                "Backend execution failed. Retry or ask the maintainer to inspect it."
+            )
+        else:
+            raise AssertionError("Expected ReviewerError")
+
+    assert "Module 8 reviewer backend failed: EnterpriseIntegrationError" in caplog.text
+    assert "sensitive backend detail" not in caplog.text

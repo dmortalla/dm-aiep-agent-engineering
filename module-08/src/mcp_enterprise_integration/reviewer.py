@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import socket
 import threading
 import time
@@ -24,6 +25,7 @@ from mcp_enterprise_integration.mcp_client import EnterpriseMcpClient, McpConnec
 from mcp_enterprise_integration.mcp_server import create_enterprise_mcp_server
 from mcp_enterprise_integration.workflow import EnterpriseWorkflow, WorkflowResult
 
+_LOGGER = logging.getLogger(__name__)
 _DEMO_SLOTS = threading.BoundedSemaphore(2)
 
 
@@ -204,6 +206,10 @@ def run_reviewer_demo(scenario: str = "Manager review") -> ReviewerResult:
     except ReviewerError:
         raise
     except EnterpriseIntegrationError as exc:
+        _LOGGER.error(
+            "Module 8 reviewer backend failed: %s",
+            type(exc).__name__,
+        )
         raise ReviewerError(
             "Backend execution failed. Retry or ask the maintainer to inspect it."
         ) from exc
