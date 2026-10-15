@@ -1,4 +1,4 @@
-# Module 10 deterministic inference service — Stories 10.2–10.4
+# Module 10 deterministic inference service — Stories 10.2–10.5
 
 This standalone Python 3.12 package supplies a framework-independent inference
 core and a FastAPI HTTP boundary. Deterministic inference performs no external
@@ -197,3 +197,65 @@ Reproduce local deterministic performance evidence:
 The test reports actual batch elapsed times, runtime calls, hits, and peak
 concurrency. Acceptance uses resource invariants and avoided repeated calls,
 without fragile timing/speedup thresholds. See [Story 10.4 evidence](docs/STORY_10_4.md).
+
+## Story 10.5 local container workflow
+
+Container build/runtime acceptance passes locally; independent acceptance remains
+pending. See [Story 10.5](docs/STORY_10_5.md) for actual evidence and limitations.
+From `module-10/`, with a healthy Linux Docker engine:
+
+```powershell
+docker build --tag module10-ai:story105 .
+docker run --detach --name module10-story105 --read-only --cap-drop=ALL --security-opt=no-new-privileges --memory=256m --cpus=1 --pids-limit=64 --publish 127.0.0.1:8000:8000 module10-ai:story105
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/inference -ContentType application/json -Body '{"text":"Beta alpha beta gamma","keyword_limit":3}'
+docker stop --time 15 module10-story105
+docker rm module10-story105
+```
+
+Use an unused container name and host port if these are already occupied. Port
+8000 is the sole declared container port; publish to loopback for local review.
+The image requires no secrets and runs deterministic lexical inference only.
+Dedicated UID/GID 10001 owns no application files; source and runtime environment
+are root-owned and read-only. The service needs no writable application paths.
+Uvicorn runs directly as PID 1 with one process, no reload and no access log.
+SIGTERM permits the accepted lifespan/worker cleanup; the command bounds graceful
+request draining to ten seconds. Default Python/Uvicorn lifecycle logs remain.
+
+Docker HEALTHCHECK probes `/health/ready` using Python's standard library.
+`/health/live` checks HTTP process liveness separately. Readiness represents the
+accepted deterministic service/worker lifecycle, not cloud capacity or an SLA.
+Existing application bounds remain unchanged. They currently use trusted typed
+factory configuration, not application environment variables; this story adds
+no environment parser. Uvicorn's existing runtime environment settings remain
+available via `docker run --env` where not overridden by explicit CLI options.
+Future live credentials must be injected at runtime; no live provider is enabled.
+
+Run explicit integration acceptance separately from ordinary pytest:
+
+```powershell
+.venv/Scripts/python.exe scripts/container_acceptance.py
+```
+
+It uses a unique image/container name and an ephemeral loopback host port, builds
+from this module only, exercises read-only execution, effective UID, image/content
+checks, Docker health, both HTTP health routes, deterministic inference, invalid
+and malformed requests, and graceful stop. It removes only its own container in
+`finally`, retaining its uniquely tagged image for review. JSON facts print to
+stdout; store temporary captures under parent `TECHADEMY/EVIDENCE`, never here.
+Failed assertions/CLI calls exit nonzero; partial facts do not mean acceptance.
+No Compose, external service, cloud cost or global Docker pruning is involved.
+
+Application dependencies are selected and hash-verified from `uv.lock` with
+`uv sync --locked --no-dev --no-install-project`. The pure Python application
+source is copied explicitly and loaded via `PYTHONPATH`, avoiding an unpinned
+isolated Hatchling build. No editable install or build backend is needed in the
+image. The builder's uv/cache/manifests and local tests/docs never enter runtime.
+Python 3.12.14 slim Bookworm and uv 0.12.5 use explicit version tags. Tags may be
+republished; bit-identical image rebuilds are not claimed without reviewed digest
+pins. Base security patch/digest review remains necessary before deployment.
+
+Azure deployment, Azure Container Apps orchestration, Azure Monitor, load balancing,
+distributed queue/cache, CI/CD, production SLA evidence, and overall C-026/C-027
+completion remain deferred to later stories.

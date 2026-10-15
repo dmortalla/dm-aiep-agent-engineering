@@ -72,3 +72,16 @@ telemetry evidence has been added. Full requirement acceptance remains pending.
 
 No durable/distributed queue, distributed cache, C-004 orchestration, C-008 load
 balancing, cloud performance, or production deployment is established here.
+
+## Story 10.5 — local container integration; pending independent acceptance
+
+| Requirement | Implementation | Evidence status |
+|---|---|---|
+| C-002, C-020, C-023 | Multi-stage Dockerfile, allowlisted context, repeatable container acceptance command | Four fast artifact contracts and actual local image build/container acceptance pass |
+| C-003, C-013, C-014 (partial only) | Direct Uvicorn startup, readiness probe, non-root execution, read-only source, no embedded application credentials | Effective UID 10001, separate liveness/readiness and Docker health, deterministic HTTP inference, safe invalid/malformed requests, targeted runtime content/permission checks, SIGTERM exit 0 and cleanup |
+| E-001, E-005, E-007, E-009 | Module-only context, deterministic defaults, classified facts, separate integration gate | 160 tests and native gates pass; LOCAL CONTAINER INTEGRATION evidence with deterministic inference; no live-provider/cloud success claimed |
+
+See `STORY_10_5.md`. No broader deliverable is completed solely from local Docker evidence.
+Azure deployment, Azure Container Apps orchestration, Azure Monitor, load balancing,
+distributed queue/cache, CI/CD, production SLA evidence and overall C-026/C-027
+completion remain deferred. Full-module Definition of Done stays unchanged.

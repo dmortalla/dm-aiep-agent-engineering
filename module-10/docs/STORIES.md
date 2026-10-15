@@ -26,6 +26,10 @@ Evidence is process-local and deterministic; distributed scaling and full C-027 
 ## Story 10.5 - Containerized AI Workflow
 Build and validate the hardened non-root Docker deployment unit.
 
+Implemented with passing local Docker build/runtime acceptance; independent
+acceptance remains pending. Evidence is local container integration only.
+See [Story 10.5 status](STORY_10_5.md). No Story 10.6 work has begun.
+
 ## Story 10.6 - Observability and Operational Telemetry
 Implement structured logging, correlation, latency and failure instrumentation, queue/cache telemetry, and redaction.
 

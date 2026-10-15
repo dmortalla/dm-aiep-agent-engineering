@@ -1,0 +1,9 @@
+# Allowlist: credentials, tests, docs, caches, environments and metadata stay out.
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/module10_ai/
+!src/module10_ai/*.py
+!Dockerfile
+!.dockerignore
