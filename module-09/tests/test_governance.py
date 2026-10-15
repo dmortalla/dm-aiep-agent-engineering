@@ -119,24 +119,45 @@ def test_story_9_2_claims_only_the_deterministic_foundation(governance: dict[str
 
 def test_story_9_3_claims_only_local_understanding(governance: dict[str, Any]) -> None:
     assert governance["story_9_3_evidence_class"] == EvidenceClass.AUTOMATED_TEST
-    assert governance["implemented_capabilities"] == [
+    assert governance["implemented_capabilities"][:2] == [
         "deterministic_multimodal_foundation",
         "local_document_vision_understanding",
     ]
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
-    partial = {"ENG-001", "SRC-002", "SRC-004", "ENG-006"}
+    for rid in ("SRC-002", "SRC-004", "ENG-006"):
+        assert statuses[rid] == "partially-implemented", rid
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories["9.3"] == "complete-local-understanding"
+    understanding_doc = " ".join(_doc("UNDERSTANDING.md").lower().split())
+    assert "no model inference" in understanding_doc
+    assert "not semantic" in understanding_doc
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
+        assert "no model inference" in " ".join(_doc(name).lower().split()), name
+
+
+def test_story_9_4_claims_only_the_audio_speech_pipeline(governance: dict[str, Any]) -> None:
+    assert governance["story_9_4_evidence_class"] == EvidenceClass.AUTOMATED_TEST
+    assert governance["implemented_capabilities"] == [
+        "deterministic_multimodal_foundation",
+        "local_document_vision_understanding",
+        "local_audio_speech_pipeline",
+    ]
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    partial = {"ENG-001", "SRC-002", "SRC-003", "SRC-004", "SRC-006", "SRC-007", "ENG-006"}
     assert {rid for rid, status in statuses.items() if status != "designed"} == partial
     assert {statuses[rid] for rid in partial} == {"partially-implemented"}
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories.pop("9.1") == "complete-design-only"
     assert stories.pop("9.2") == "complete-deterministic-foundation"
     assert stories.pop("9.3") == "complete-local-understanding"
+    assert stories.pop("9.4") == "complete-audio-speech-pipeline"
     assert set(stories.values()) == {"not-started"}
-    understanding_doc = " ".join(_doc("UNDERSTANDING.md").lower().split())
-    assert "no model inference" in understanding_doc
-    assert "not semantic" in understanding_doc
+    audio_doc = " ".join(_doc("AUDIO_SPEECH.md").lower().split())
+    for phrase in ("not speech recognition", "not speech synthesis", "fixture playback"):
+        assert phrase in audio_doc, phrase
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
-        assert "no model inference" in " ".join(_doc(name).lower().split()), name
+        text = " ".join(_doc(name).lower().split())
+        assert "not speech recognition" in text and "not speech synthesis" in text, name
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

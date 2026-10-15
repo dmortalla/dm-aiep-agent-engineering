@@ -21,8 +21,15 @@ analysis of PNG, JPEG, and WebP images, and extraction and structural analysis o
 text, and PDF documents. There is no model inference, so this is not semantic understanding. Story
 9.3 evidence is `automated_test`. See [docs/UNDERSTANDING.md](docs/UNDERSTANDING.md).
 
-No model-based vision, semantic document, speech, cross-modal, voice, streaming, live-provider, or UI
-capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+**Story 9.4 (Audio + Speech Pipeline) is complete.** It adds validated, bounded local audio
+processing (strict PCM WAV parsing, decoding, and signal measurement with the standard library)
+and speech-to-text and text-to-speech pipelines through the provider ports. In deterministic mode
+the transcript is Story 9.2 fixture playback, which is not speech recognition, and the generated
+audio is a deterministic tone sequence, which is not speech synthesis. There is no model
+inference. Story 9.4 evidence is `automated_test`. See [docs/AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md).
+
+No model-based vision, semantic document, speech recognition, speech synthesis, cross-modal,
+voice orchestration, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -36,6 +43,7 @@ capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.
 | [CONTRACTS.md](docs/CONTRACTS.md) | Modality, session, provider, streaming, evidence contracts |
 | [DETERMINISTIC_FOUNDATION.md](docs/DETERMINISTIC_FOUNDATION.md) | Story 9.2 fixtures, deterministic adapters, run records |
 | [UNDERSTANDING.md](docs/UNDERSTANDING.md) | Story 9.3 ingestion, local vision and document adapters, understanding records |
+| [AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md) | Story 9.4 audio processing, speech-to-text and text-to-speech pipelines, speech records |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |

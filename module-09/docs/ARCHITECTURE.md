@@ -12,7 +12,10 @@ deterministic fixture-playback adapters for the vision, document, and speech-to-
 [DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md)). Story 9.3 adds the image and document
 ingestion boundary (`ingestion/`), local processing adapters for the vision and document ports
 (`adapters/local/`), and the understanding service and records (`understanding/`) (see
-[UNDERSTANDING.md](UNDERSTANDING.md)). No other runtime component below is implemented yet.
+[UNDERSTANDING.md](UNDERSTANDING.md)). Story 9.4 adds audio ingestion and processing (`audio/`), a
+deterministic tone-sequence `TextToSpeechPort` adapter (`adapters/speech/`), and the speech pipeline
+service and records (`speech/`) (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). No other runtime component
+below is implemented yet.
 
 ## Goal
 
@@ -171,6 +174,9 @@ module-09/
     ingestion/                           Story 9.3: magic-byte/UTF-8 validation and staging
     adapters/local/                      Story 9.3: local image analysis, document extraction
     understanding/                       Story 9.3: understanding service and records
+    audio/                               Story 9.4: audio ingestion, PCM WAV parsing, signal analysis
+    adapters/speech/                     Story 9.4: deterministic tone-sequence TTS adapter
+    speech/                              Story 9.4: speech pipeline service and records
     (core/, adapters/live/, interface/, ui/)  later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
@@ -185,6 +191,6 @@ These are implementation choices left to the owning story. They must fit the fro
 | WebSocket server framework and hosting process | 9.7 |
 | Deterministic fixture formats and generation | 9.2 (decided: stdlib-generated PNG/WAV, plain text, Markdown; SHA-256 manifest) |
 | Image/document parsing libraries and magic-byte checks | 9.3 (decided: Pillow for PNG/JPEG/WebP, pypdf for PDF, stdlib Markdown/text parsing, stdlib magic-byte sniffing) |
-| Audio decoding library and sample formats | 9.4 |
+| Audio decoding library and sample formats | 9.4 (decided: standard library only; integer PCM WAV at 8/16/24/32 bits; MP3/WebM recognized but not decoded) |
 | Specific live providers and models | 9.8 |
 | Deployment target and packaging | 9.10 |

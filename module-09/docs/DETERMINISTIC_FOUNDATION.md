@@ -49,7 +49,9 @@ Every result carries a `ProviderDescriptor` with `mode=deterministic` and is cla
 
 Deterministic `TextToSpeechPort` and `ReasoningPort` adapters are not part of Story 9.2. No Story 9.2
 fixture is an input to those ports, and their deterministic behavior belongs with the stories that
-own TTS (9.4) and cross-modal reasoning (9.5).
+own TTS (9.4) and cross-modal reasoning (9.5). Story 9.4 adds a deterministic tone-sequence
+`TextToSpeechPort` adapter, which is procedural audio generation rather than fixture playback (see
+[AUDIO_SPEECH.md](AUDIO_SPEECH.md)).
 
 ## Running a fixture
 

@@ -4,8 +4,11 @@ Story 9.1 defines typed contracts in `src/multimodal_voice_platform/contracts/`.
 Pydantic v2 models (frozen, `extra="forbid"`) and `typing.Protocol` ports. They define shapes and
 invariants only. Story 9.2 implements the vision, document, and speech-to-text ports with
 deterministic fixture-playback adapters, and Story 9.3 implements the vision and document ports
-with local processing adapters, without changing these contracts (see
-[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md) and [UNDERSTANDING.md](UNDERSTANDING.md)).
+with local processing adapters. Story 9.4 implements the text-to-speech port with a
+deterministic tone-sequence adapter and drives both speech ports through the speech pipeline.
+None of them change these contracts (see
+[DETERMINISTIC_FOUNDATION.md](DETERMINISTIC_FOUNDATION.md), [UNDERSTANDING.md](UNDERSTANDING.md),
+and [AUDIO_SPEECH.md](AUDIO_SPEECH.md)).
 No live provider or transport exists yet.
 
 | Module | Boundary | Key types | ADRs |
@@ -75,7 +78,8 @@ Media type allowlist:
 
 Content sniffing for image and document input is implemented by Story 9.3 in `ingestion/`: magic
 bytes for PNG, JPEG, WebP, and PDF, and strict UTF-8 text checks for Markdown and plain text. Audio
-sniffing is planned for Story 9.4.
+sniffing is implemented by Story 9.4 in `audio/`: signatures for WAV, MP3, and WebM, of which only
+integer PCM WAV is decoded.
 
 ## Session contract
 

@@ -67,3 +67,24 @@ name their processing kinds (`local_extraction`, `local_structural_analysis`) an
 `fixture_playback` and `model_inference`. This evidence partially supports SRC-002, SRC-004, and
 ENG-006. It is not evidence of model-based vision, semantic document understanding, live
 integration, or reviewer-visible results. See [UNDERSTANDING.md](UNDERSTANDING.md).
+
+## Story 9.4 classification
+
+Story 9.4 evidence is **`automated_test`**: the suite runs generated WAV files, the committed audio
+fixture, and generated tone audio through validated audio processing and the speech-to-text and
+text-to-speech pipelines, with sockets blocked and no credentials. `SpeechRecord` can emit
+`deterministic_demo` records for reviewer runs and rejects every other class.
+
+Each class of Story 9.4 behavior is kept distinct:
+
+| Behavior | Evidence it provides |
+|---|---|
+| WAV decoding and signal measurement | Real local audio processing |
+| Fixture-playback transcript | Deterministic pipeline evidence; not speech recognition |
+| Tone-sequence audio | Real deterministic audio generation; not speech synthesis |
+| Provider-contract test doubles | Port-boundary and failure-handling evidence only (`automated_test`) |
+| External STT or TTS provider | None yet; would be `live_integration` (Story 9.8) |
+
+Records name their processing kinds and reject `speech_recognition` and `speech_synthesis`. This
+evidence partially supports SRC-003, SRC-006, SRC-007, and ENG-006. See
+[AUDIO_SPEECH.md](AUDIO_SPEECH.md).

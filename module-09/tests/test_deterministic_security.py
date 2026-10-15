@@ -147,10 +147,10 @@ def test_deterministic_adapters_expose_no_authority_or_execution_operations() ->
 
 def test_later_story_capabilities_are_not_implemented() -> None:
     packages = {p.name for p in SRC.iterdir() if p.is_dir() and p.name != "__pycache__"}
-    assert packages == {"adapters", "contracts", "ingestion", "understanding"}
+    assert packages == {"adapters", "audio", "contracts", "ingestion", "speech", "understanding"}
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
-    assert adapters == {"deterministic", "local"}
-    later_methods = {"synthesize", "stream_reason"}
+    assert adapters == {"deterministic", "local", "speech"}
+    later_methods = {"stream_reason"}
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
     for path in SRC.rglob("*.py"):
         tree = ast.parse(path.read_text("utf-8"))
