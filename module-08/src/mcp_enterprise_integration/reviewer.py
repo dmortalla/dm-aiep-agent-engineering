@@ -161,7 +161,8 @@ async def _execute(endpoint: str, database: Path, scenario: str) -> ReviewerResu
                     denied = True
                 if not denied:
                     raise ReviewerError("Expected authorization denial was absent. Stop review.")
-                stage = None  # Preflight succeeded; cleanup is not a preflight operation.
+                stage = "mcp_cleanup"
+            stage = None  # Preflight ownership ends only after successful context exit.
         except EnterpriseIntegrationError:
             if stage is not None:
                 _LOGGER.error("Module 8 reviewer preflight backend failed: %s", stage)

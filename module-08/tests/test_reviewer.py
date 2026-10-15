@@ -307,19 +307,49 @@ def test_expected_denial_is_success_without_failure_diagnostic(
     preflight_seam.workflow.assert_awaited_once()
 
 
+@pytest.mark.parametrize("through_reviewer", [False, True])
 @pytest.mark.parametrize("outside", ["cleanup", "workflow"])
-def test_completed_preflight_does_not_misattribute_later_failures(
+def test_completed_preflight_attributes_cleanup_only(
     preflight_seam: SimpleNamespace, caplog: pytest.LogCaptureFixture, outside: str,
+    through_reviewer: bool,
 ) -> None:
-    """The preflight diagnostic does not take ownership of cleanup or workflow errors."""
-    failure = EnterpriseIntegrationError("sensitive outside-preflight failure")
+    """Attribute context exit to cleanup; release preflight ownership before workflow."""
+    failure = EnterpriseIntegrationError(
+        "secret message /private/files Traceback injected",
+        {"payload": "private MCP output", "customer": preflight_seam.customer.model_dump(),
+         "endpoint": preflight_seam.endpoint},
+    )
     if outside == "cleanup":
         preflight_seam.failure_stage, preflight_seam.failure = outside, failure
     else:
         preflight_seam.workflow.side_effect = failure
-    with caplog.at_level("ERROR"), pytest.raises(reviewer.ReviewerError) as caught:
-        reviewer.run_reviewer_demo()
-    assert caught.value.__cause__ is failure
-    assert [record.getMessage() for record in caplog.records] == [
-        "Module 8 reviewer backend failed: EnterpriseIntegrationError",
-    ]
+    with caplog.at_level("ERROR"):
+        if through_reviewer:
+            with pytest.raises(reviewer.ReviewerError) as caught:
+                reviewer.run_reviewer_demo()
+            assert str(caught.value) == (
+                "Backend execution failed. Retry or ask the maintainer to inspect it."
+            )
+            assert caught.value.__cause__ is failure
+        else:
+            with pytest.raises(EnterpriseIntegrationError) as caught:
+                asyncio.run(reviewer._execute(
+                    preflight_seam.endpoint, Path("unused.db"), "Manager review",
+                ))
+            assert caught.value is failure
+    expected = []
+    if outside == "cleanup":
+        expected.append("Module 8 reviewer preflight backend failed: mcp_cleanup")
+        preflight_seam.workflow.assert_not_awaited()
+    else:
+        preflight_seam.workflow.assert_awaited_once()
+    if through_reviewer:
+        expected.append("Module 8 reviewer backend failed: EnterpriseIntegrationError")
+    assert [record.getMessage() for record in caplog.records] == expected
+    if outside == "cleanup":
+        assert caplog.records[0].args == ("mcp_cleanup",)
+    assert all(record.exc_info is None and record.stack_info is None for record in caplog.records)
+    for sensitive in ("secret message", "/private/files", "Traceback", "private MCP output",
+                      "CUST-001", "private customer record", "private region", "private segment",
+                      preflight_seam.endpoint, "54321", "unused.db"):
+        assert sensitive not in caplog.text
