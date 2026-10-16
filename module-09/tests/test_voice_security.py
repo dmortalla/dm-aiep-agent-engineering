@@ -295,7 +295,11 @@ def test_voice_turns_do_not_implement_streaming_or_websocket_behavior() -> None:
 
 
 def test_authoritative_voice_logic_runs_without_any_ui_layer() -> None:
-    assert not (SRC / "ui").exists() and not (SRC / "interface").exists()
+    assert not (SRC / "ui").exists()
+    for path in STORY_9_6_FILES:
+        text = path.read_text("utf-8")
+        assert "multimodal_voice_platform.interface" not in text, path
+        assert "multimodal_voice_platform.streaming" not in text, path
     voice, config = started()
     record = fixture_turn(voice, "turn-1", "voice-remember")
     reviewer_view = record.model_dump(mode="json")

@@ -19,8 +19,12 @@ implements SRC-008, SRC-009, SRC-013, SRC-014, SRC-017, ENG-006, and ENG-007 wit
 voice-assistant orchestration and bounded multi-turn conversation state; its default adapters are
 fixture playback (not speech recognition), rule-based reasoning (not model inference), and tone
 generation (not speech synthesis), and nothing is streamed (see
-[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). No requirement is fully satisfied. Every other
-requirement is designed only.
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 implements SRC-011 with a genuine WebSocket
+gateway exercised over a loopback socket, and partially implements SRC-008, SRC-010, SRC-012,
+SRC-016, ENG-006, ENG-007, and ENG-008 with incremental streaming of rule-based reply fragments
+(not model tokens), measured stage and first-response latency, and transport bounds (see
+[STREAMING.md](STREAMING.md)). SRC-011 is the only requirement fully implemented; reviewer-visible
+presentation remains Story 9.9. Every other requirement is designed only.
 
 ## Source-derived requirements
 

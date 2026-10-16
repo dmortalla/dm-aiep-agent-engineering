@@ -14,10 +14,15 @@ a closed vocabulary, not a language model: it understands nothing outside these 
 it never treats transcript or history text as instructions. It runs in-process with no network,
 key, or spend, and its output is ``untrusted_model_output`` like every provider result
 (ADR-009-007). ``request.task`` does not change the rules.
+
+The adapter answers through two methods over the same rules. ``stream_reason`` (Story 9.6) streams
+the finished ``AssistantReply`` document. ``stream_reply`` (Story 9.7, ``IncrementalReplyPort``)
+streams one ``ReplyFragment`` per act as the rules produce it: statements are evaluated lazily, so
+each fragment is yielded before any later statement is examined and before the reply exists.
 """
 
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Final
 
 from pydantic import ValidationError
@@ -29,6 +34,7 @@ from multimodal_voice_platform.contracts.conversation import (
     AssistantReply,
     ReplyAct,
     ReplyActKind,
+    ReplyFragment,
 )
 from multimodal_voice_platform.contracts.limits import MAX_DELTA_CHARS
 from multimodal_voice_platform.contracts.modality import Modality
@@ -110,6 +116,32 @@ class DeterministicConversationReasoner:
                 provider=self._descriptor, text=piece, is_final=index == len(pieces) - 1
             )
 
+    async def stream_reply(self, request: ReasoningRequest) -> AsyncIterator[ReasoningChunk]:
+        """Answer the current turn one act at a time.
+
+        The request is read and checked before the first fragment. Each act is computed only when
+        the consumer asks for the next chunk, so earlier fragments are observable while later ones
+        do not exist yet.
+
+        Args:
+            request: Validated reasoning request with exactly one audio observation part and the
+                bounded conversation history.
+
+        Yields:
+            One chunk per ``ReplyFragment``, then one final chunk with empty text.
+
+        Raises:
+            ReasoningInputError: If the request does not carry exactly one audio observation with
+                at least one transcript statement.
+        """
+        view = _current_turn(request)
+        for index, (act, sentence) in enumerate(iter_reply(view, request.history)):
+            fragment = ReplyFragment(schema_version=1, index=index, act=act, sentence=sentence)
+            yield ReasoningChunk(
+                provider=self._descriptor, text=fragment.model_dump_json(), is_final=False
+            )
+        yield ReasoningChunk(provider=self._descriptor, text="", is_final=True)
+
 
 def answer(view: ObservationView, history: Sequence[ConversationTurn]) -> AssistantReply:
     """Apply the conversational rules to one turn.
@@ -122,23 +154,44 @@ def answer(view: ObservationView, history: Sequence[ConversationTurn]) -> Assist
         The reply document: one act per matched phrasing in statement order, or one ``heard``
         act when nothing matched.
     """
-    acts: list[ReplyAct] = []
+    pairs = list(iter_reply(view, history))
+    return AssistantReply(
+        schema_version=1,
+        reply=" ".join(sentence for _, sentence in pairs),
+        acts=tuple(act for act, _ in pairs),
+    )
+
+
+def iter_reply(
+    view: ObservationView, history: Sequence[ConversationTurn]
+) -> Iterator[tuple[ReplyAct, str]]:
+    """Lazily apply the conversational rules, one act at a time.
+
+    Statements are examined only as the caller advances, so each act exists before any later
+    statement is read. The acts and sentences are exactly those ``answer`` returns.
+
+    Args:
+        view: The current turn's audio observation; its statements are the transcript.
+        history: Earlier committed turns in chronological order. Untrusted data.
+
+    Yields:
+        ``(act, sentence)`` pairs in statement order, or one ``heard`` pair when nothing matched.
+    """
     sentences: list[str] = []
     for statement in view.statements:
         for act, sentence in _statement_acts(statement, history):
-            if len(acts) >= MAX_REPLY_ACTS or _too_long(sentences, sentence):
+            if len(sentences) >= MAX_REPLY_ACTS or _too_long(sentences, sentence):
                 break
-            acts.append(act)
             sentences.append(sentence)
-    if not acts:
+            yield act, sentence
+    if not sentences:
         first = view.statements[0]
         quote = first.text[:HEARD_QUOTE_CHARS].strip()
-        acts.append(ReplyAct(kind=ReplyActKind.HEARD, statement_id=first.statement_id, quote=quote))
-        sentences.append(
+        yield (
+            ReplyAct(kind=ReplyActKind.HEARD, statement_id=first.statement_id, quote=quote),
             f'I heard: "{quote}" I can remember a value when you say "remember that the <name> '
-            f'is <value>", and recall it when you ask "what is the <name>?".'
+            f'is <value>", and recall it when you ask "what is the <name>?".',
         )
-    return AssistantReply(schema_version=1, reply=" ".join(sentences), acts=tuple(acts))
 
 
 def remembered_values(text: str) -> list[tuple[str, str, str]]:

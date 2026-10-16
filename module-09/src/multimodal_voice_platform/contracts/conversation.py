@@ -5,17 +5,28 @@
 conversation history in ``ReasoningRequest.history``. A reasoning adapter streams back one
 ``AssistantReply`` JSON document. Both directions are untrusted data.
 
+Story 9.7 adds an incremental form of the same reply: an ``IncrementalReplyPort`` adapter streams
+one ``ReplyFragment`` per reply act, each produced before the next act is computed, and ends with
+one empty final chunk. Each fragment is one act and the sentence that speaks it; the full reply is
+the fragments' sentences joined by single spaces.
+
 These models define shapes and invariants only. Whether a reply act's citations exist in the
 current observation or the history it was given is checked by the application core
 (``voice.reply``), never assumed.
 """
 
+from collections.abc import AsyncIterator
 from enum import StrEnum
-from typing import Annotated, Final, Literal, Self
+from typing import Annotated, Final, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from multimodal_voice_platform.contracts.limits import MAX_HISTORY_TURNS
+from multimodal_voice_platform.contracts.limits import MAX_DELTA_CHARS, MAX_HISTORY_TURNS
+from multimodal_voice_platform.contracts.providers import (
+    ProviderDescriptor,
+    ReasoningChunk,
+    ReasoningRequest,
+)
 from multimodal_voice_platform.contracts.reasoning import MAX_QUOTE_CHARS, StatementId
 
 MAX_REPLY_CHARS: Final = 1_000
@@ -91,3 +102,38 @@ class AssistantReply(BaseModel):
     schema_version: Literal[1]
     reply: str = Field(min_length=1, max_length=MAX_REPLY_CHARS)
     acts: tuple[ReplyAct, ...] = Field(min_length=1, max_length=MAX_REPLY_ACTS)
+
+
+class ReplyFragment(BaseModel):
+    """One act of an incrementally produced reply and the sentence that speaks it (Story 9.7).
+
+    Untrusted model output, like the whole reply. ``index`` orders fragments from zero.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1]
+    index: int = Field(ge=0, lt=MAX_REPLY_ACTS)
+    act: ReplyAct
+    sentence: str = Field(min_length=1, max_length=min(MAX_REPLY_CHARS, MAX_DELTA_CHARS))
+
+
+class IncrementalReplyPort(Protocol):
+    """Reasoning capability that produces a voice reply one act at a time (Story 9.7)."""
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        """Describe the adapter."""
+        ...
+
+    def stream_reply(self, request: ReasoningRequest) -> AsyncIterator[ReasoningChunk]:
+        """Stream reply fragments as they are produced.
+
+        Args:
+            request: Validated reasoning request for one voice turn.
+
+        Returns:
+            Async iterator of chunks: one ``ReplyFragment`` JSON document per non-final chunk,
+            then exactly one final chunk with empty text.
+        """
+        ...

@@ -46,8 +46,18 @@ inference; and tone-sequence audio, which is not speech synthesis. Turns are syn
 is streamed. Story 9.6 evidence is `automated_test`. See
 [docs/VOICE_ASSISTANT.md](docs/VOICE_ASSISTANT.md).
 
+**Story 9.7 (Real-Time WebSocket Streaming) is complete.** It adds a genuine WebSocket boundary
+(a Starlette ASGI gateway hosted by Uvicorn on loopback) and a typed streaming protocol for voice
+turns. Each turn streams `turn_accepted`, `transcript_final`, one `response_delta` per reply
+fragment while reasoning is still running, `response_complete`, `audio_ready`, `turn_complete`,
+and latency metrics including time to first response. Fragments are whole rule-based reply acts,
+not model tokens, and are produced before the reply exists rather than split from a finished
+reply. Disconnects and timeouts cancel the running turn without committing it. There is no
+authentication, live provider, or reviewer UI yet. Story 9.7 evidence is `automated_test`,
+including loopback socket-level WebSocket tests. See [docs/STREAMING.md](docs/STREAMING.md).
+
 No model-based vision, semantic document, speech recognition, speech synthesis, model-based
-reasoning, streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+reasoning, model token streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -64,6 +74,7 @@ reasoning, streaming, live-provider, or UI capability is implemented yet. See [d
 | [AUDIO_SPEECH.md](docs/AUDIO_SPEECH.md) | Story 9.4 audio processing, speech-to-text and text-to-speech pipelines, speech records |
 | [CROSS_MODAL.md](docs/CROSS_MODAL.md) | Story 9.5 cross-modal workflow, observations, bounded context, deterministic reasoning rules, records |
 | [VOICE_ASSISTANT.md](docs/VOICE_ASSISTANT.md) | Story 9.6 voice orchestration, conversation state and bounds, transaction semantics, conversation rules, records |
+| [STREAMING.md](docs/STREAMING.md) | Story 9.7 WebSocket gateway, streaming protocol, incremental streaming evidence, bounds, cancellation, latency metrics |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |
@@ -79,4 +90,10 @@ uv sync --extra dev
 uv run ruff check .
 uv run pytest
 uv run python -m compileall -q src tests
+```
+
+Run the deterministic WebSocket gateway locally on `ws://127.0.0.1:8765/ws/voice`:
+
+```bash
+uv run python -m multimodal_voice_platform.interface
 ```

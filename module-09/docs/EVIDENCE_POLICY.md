@@ -131,3 +131,23 @@ Records state `speech_recognition_performed`, `speech_synthesis_performed`,
 `model_inference_performed`, `live_provider_called`, and `streaming_performed` as `False`. This
 evidence partially supports SRC-008, SRC-009, SRC-013, SRC-014, SRC-017, ENG-006, and ENG-007. See
 [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md).
+
+## Story 9.7 classification
+
+Story 9.7 evidence is **`automated_test`**. Three kinds of test produce it, and they are kept
+distinct:
+
+| Behavior | Evidence it provides |
+|---|---|
+| Coordinator tests | Genuine incremental production: a reply fragment is observable while the reasoner is provably still running and before the reply exists |
+| In-process ASGI WebSocket tests | The real gateway application through the ASGI WebSocket interface; protocol, lifecycle, bounds, cancellation, and failure handling; no socket |
+| Loopback Uvicorn server with an independent `websockets` client | Genuine local socket-level WebSocket integration on 127.0.0.1 (handshake, framing, close codes); not external and not `live_integration` |
+| Rule-based reply fragments | Deterministic incremental streaming; not model tokens and not model inference |
+| Fixture-playback transcript, tone-sequence audio | Not speech recognition; not speech synthesis |
+| Latency metrics | Local measurements of deterministic adapters; not production or provider latency |
+| External streaming provider | None yet; would be `live_integration` (Story 9.8) |
+
+Streamed `VoiceTurnRecord`s set `streaming_performed` and must carry Story 9.7 evidence; the server
+records `deterministic_demo` for reviewer runs and tests record `automated_test`. This evidence
+implements SRC-011 and partially supports SRC-008, SRC-010, SRC-012, SRC-016, ENG-006, ENG-007, and
+ENG-008. See [STREAMING.md](STREAMING.md).

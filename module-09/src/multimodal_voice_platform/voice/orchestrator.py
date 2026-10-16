@@ -443,17 +443,7 @@ class VoiceAssistant:
         if result is None or kind is None:
             raise TranscriptRejectedError("the transcription produced no transcript")
         run.begin(VoiceStage.TRANSCRIPT_VALIDATION)
-        text = result.text
-        if len(text) > self.limits.max_transcript_chars:
-            raise TranscriptRejectedError(
-                f"the transcript exceeds the {self.limits.max_transcript_chars}-character limit"
-            )
-        try:
-            stage_text_input(config.session_id, text)
-        except IngestionError as exc:
-            raise TranscriptRejectedError(
-                "the transcript is empty or contains characters that cannot be carried safely"
-            ) from exc
+        text = validate_turn_transcript(config.session_id, result.text, self.limits)
         run.transcript = TranscriptView(text=text, processing=kind, chars=len(text))
         run.finish()
         return text
@@ -465,39 +455,8 @@ class VoiceAssistant:
         transcription = run.transcription
         if transcription is None:
             raise TranscriptRejectedError("the transcription produced no transcript")
-        observation = observe_speech(CURRENT_OBSERVATION_ID, transcription, self.observation_limits)
-        view = observation.view
-        if not view.statements:
-            raise TranscriptRejectedError("the transcript produced no statements to reason over")
-        history = self.store.history(config.session_id)
-        retained = len(self.store.snapshot(config.session_id).retained)
-        try:
-            request = ReasoningRequest(
-                session_id=config.session_id,
-                task=VOICE_ASSISTANT_TASK,
-                parts=(
-                    ReasoningPart(
-                        modality=view.modality,
-                        source_input_id=view.input_id,
-                        content=render_view(view),
-                        trust=view.trust,
-                    ),
-                ),
-                history=history,
-                max_output_tokens=config.budget.max_output_tokens,
-            )
-        except ValidationError as exc:
-            raise CrossModalLimitError("the voice turn context exceeds its limits") from exc
-        run.context = ConversationContext(
-            observation_id=view.observation_id,
-            statement_count=len(view.statements),
-            fact_count=len(view.facts),
-            history_entries=len(history),
-            history_exchanges=len(history) // 2,
-            history_chars=sum(len(entry.text) for entry in history),
-            retained_exchanges=retained,
-            max_context_turns=self.limits.max_context_turns,
-            max_context_chars=self.limits.max_context_chars,
+        request, view, run.context = build_turn_context(
+            self.store, self.limits, self.observation_limits, config, transcription
         )
         return request, view
 
@@ -597,6 +556,101 @@ class VoiceAssistant:
     def _next_id(self) -> str:
         self._runs += 1
         return f"vtr-{self._runs:06d}"
+
+
+def validate_turn_transcript(session_id: str, text: str, limits: VoiceLimits) -> str:
+    """Check that an untrusted transcript can be carried into conversation.
+
+    Shared by synchronous turns and the Story 9.7 streaming coordinator so both apply one rule.
+
+    Args:
+        session_id: The turn's session.
+        text: The transcript produced by speech-to-text. Untrusted.
+        limits: The assistant's bounds.
+
+    Returns:
+        The unchanged transcript.
+
+    Raises:
+        TranscriptRejectedError: If the transcript is oversized, empty, or contains characters that
+            cannot be carried safely.
+    """
+    if len(text) > limits.max_transcript_chars:
+        raise TranscriptRejectedError(
+            f"the transcript exceeds the {limits.max_transcript_chars}-character limit"
+        )
+    try:
+        stage_text_input(session_id, text)
+    except IngestionError as exc:
+        raise TranscriptRejectedError(
+            "the transcript is empty or contains characters that cannot be carried safely"
+        ) from exc
+    return text
+
+
+def build_turn_context(
+    store: ConversationStore,
+    limits: VoiceLimits,
+    observation_limits: CrossModalLimits,
+    config: SessionConfig,
+    transcription: SpeechRecord,
+) -> tuple[ReasoningRequest, ObservationView, ConversationContext]:
+    """Normalize the current turn and assemble its bounded reasoning request.
+
+    Shared by synchronous turns and the Story 9.7 streaming coordinator so both reason over the
+    same context: one JSON-encoded observation of the current turn beside the fixed task, and the
+    bounded history window from application-owned state.
+
+    Args:
+        store: The conversation store holding the session.
+        limits: The assistant's bounds.
+        observation_limits: Bounds for normalizing the current turn into an observation.
+        config: The session's application-owned configuration.
+        transcription: The turn's successful transcription record.
+
+    Returns:
+        The reasoning request, the current observation it carries, and what the request saw.
+
+    Raises:
+        TranscriptRejectedError: If the transcript yields no statements.
+        CrossModalLimitError: If the context exceeds its limits.
+        UnknownSessionError: If the session is no longer active.
+    """
+    observation = observe_speech(CURRENT_OBSERVATION_ID, transcription, observation_limits)
+    view = observation.view
+    if not view.statements:
+        raise TranscriptRejectedError("the transcript produced no statements to reason over")
+    history = store.history(config.session_id)
+    retained = len(store.snapshot(config.session_id).retained)
+    try:
+        request = ReasoningRequest(
+            session_id=config.session_id,
+            task=VOICE_ASSISTANT_TASK,
+            parts=(
+                ReasoningPart(
+                    modality=view.modality,
+                    source_input_id=view.input_id,
+                    content=render_view(view),
+                    trust=view.trust,
+                ),
+            ),
+            history=history,
+            max_output_tokens=config.budget.max_output_tokens,
+        )
+    except ValidationError as exc:
+        raise CrossModalLimitError("the voice turn context exceeds its limits") from exc
+    context = ConversationContext(
+        observation_id=view.observation_id,
+        statement_count=len(view.statements),
+        fact_count=len(view.facts),
+        history_entries=len(history),
+        history_exchanges=len(history) // 2,
+        history_chars=sum(len(entry.text) for entry in history),
+        retained_exchanges=retained,
+        max_context_turns=limits.max_context_turns,
+        max_context_chars=limits.max_context_chars,
+    )
+    return request, view, context
 
 
 def _check_evidence_class(evidence_class: EvidenceClass, kind: ReasoningKind) -> None:

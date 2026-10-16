@@ -156,6 +156,8 @@ def test_later_story_capabilities_are_not_implemented() -> None:
         "speech",
         "understanding",
         "voice",
+        "streaming",
+        "interface",
     }
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
     assert adapters == {"deterministic", "local", "reasoning", "speech"}
@@ -164,6 +166,12 @@ def test_later_story_capabilities_are_not_implemented() -> None:
         SRC / "adapters" / "reasoning" / "conversation.py",
     }
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
+    later_imports |= {"uvicorn"}
+    transport_owners = {
+        "starlette": SRC / "interface" / "websocket.py",
+        "uvicorn": SRC / "interface" / "server.py",
+    }
+    """Story 9.7: the WebSocket framework and server, each in exactly one interface module."""
     for path in SRC.rglob("*.py"):
         tree = ast.parse(path.read_text("utf-8"))
         for node in ast.walk(tree):
@@ -173,7 +181,14 @@ def test_later_story_capabilities_are_not_implemented() -> None:
                 and "contracts" not in path.parts
             ):
                 assert path in reasoning_adapters, f"{path}: only reasoning adapters reason"
+            if (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.name == "stream_reply"
+                and "contracts" not in path.parts
+            ):
+                assert path in reasoning_adapters, f"{path}: only reasoning adapters reason"
             if isinstance(node, ast.Import | ast.ImportFrom):
                 module = getattr(node, "module", None) or ""
                 names = {module, *(alias.name for alias in node.names)}
-                assert not {n.split(".")[0] for n in names} & later_imports, path
+                for root in {n.split(".")[0] for n in names} & later_imports:
+                    assert transport_owners.get(root) == path, f"{path}: {root}"

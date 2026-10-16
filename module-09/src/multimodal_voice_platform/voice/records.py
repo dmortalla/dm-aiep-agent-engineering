@@ -8,7 +8,9 @@ generated, validated output audio), the conversation snapshot, per-stage and end
 whether the turn committed, and the safe failure, with an ``EvidenceRecord``.
 
 ``speech_recognition_performed``, ``speech_synthesis_performed``, ``model_inference_performed``,
-``live_provider_called``, and ``streaming_performed`` are always ``False`` in Story 9.6.
+and ``live_provider_called`` are always ``False``. ``streaming_performed`` is ``False`` for Story
+9.6 synchronous turns; only a turn run by the Story 9.7 streaming coordinator sets it, and such a
+record must be Story 9.7 evidence.
 """
 
 from enum import StrEnum
@@ -171,7 +173,7 @@ class VoiceTurnRecord(BaseModel):
     speech_synthesis_performed: Literal[False] = False
     model_inference_performed: Literal[False] = False
     live_provider_called: Literal[False] = False
-    streaming_performed: Literal[False] = False
+    streaming_performed: bool = False
     timings: tuple[VoiceTiming, ...] = Field(min_length=1, max_length=len(VoiceStage))
     failed_stage: VoiceStage | None = None
     error: SafeError | None = None
@@ -295,8 +297,12 @@ class VoiceTurnRecord(BaseModel):
             raise ValueError("voice turns allow only deterministic evidence classes")
         if evidence.execution_mode is not ExecutionMode.DETERMINISTIC:
             raise ValueError("voice turns require deterministic execution mode")
-        if evidence.live_provider_executed or evidence.story != "9.6":
-            raise ValueError("voice turns are Story 9.6 evidence with no live execution")
+        story = "9.7" if self.streaming_performed else "9.6"
+        if evidence.live_provider_executed or evidence.story != story:
+            raise ValueError(
+                "synchronous turns are Story 9.6 evidence and streamed turns Story 9.7 evidence, "
+                "with no live execution"
+            )
         test_double = SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE
         doubles = [
             record.provider_processing is test_double

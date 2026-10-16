@@ -159,8 +159,11 @@ exchanges, bounds); the reasoning provider and kind; the validated reply and its
 embedded Story 9.4 synthesis record (generated audio digest, size, and duration; the bytes are held
 in memory for playback and excluded from serialization); the conversation snapshot; stage and
 end-to-end timings; the failed stage and safe error; and the evidence record.
-`speech_recognition_performed`, `speech_synthesis_performed`, `model_inference_performed`,
-`live_provider_called`, and `streaming_performed` are always `False`.
+`speech_recognition_performed`, `speech_synthesis_performed`, `model_inference_performed`, and
+`live_provider_called` are always `False`. `streaming_performed` is `False` for these synchronous
+turns; Story 9.7 sets it only on turns run by its streaming coordinator, which must carry Story 9.7
+evidence (see [STREAMING.md](STREAMING.md)). The transcript validation and context construction
+used by both are the shared `validate_turn_transcript` and `build_turn_context` helpers.
 
 ## Security
 
@@ -213,7 +216,7 @@ rejects every other class; turns with any test-double provider may only be `auto
 | SRC-017 Deliverable: voice-enabled AI assistant | Partially implemented | The deliverable's application core exists. Production acceptance evidence needs Stories 9.9 and 9.10 |
 | ENG-007 Bounded cost and latency | Partially implemented | Conversation history, context, turns, sessions, reply size, reasoning output, and provider calls per session are enforced at runtime with no retries. Live-provider budgets (9.8) and release acceptance (9.10) remain |
 | ENG-006 Untrusted content never grants authority | Partially implemented | Now enforced and tested on transcripts, conversation history, and replies too. Release acceptance (9.10) remains |
-| SRC-010, SRC-011, SRC-012, SRC-016 | Designed | Nothing is streamed and no latency claim is made; Stories 9.7 and 9.10 |
+| SRC-010, SRC-011, SRC-012, SRC-016 | Not delivered by Story 9.6 | Story 9.6 turns are synchronous and nothing is streamed by them; Story 9.7 delivers WebSocket streaming (see [STREAMING.md](STREAMING.md)) |
 
 ## Out of scope
 

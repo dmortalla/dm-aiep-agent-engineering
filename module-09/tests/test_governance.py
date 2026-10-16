@@ -24,8 +24,12 @@ ALLOWED_THIRD_PARTY = {"pydantic", "pytest", "multimodal_voice_platform"}
 RESTRICTED_THIRD_PARTY = {
     "PIL": {"adapters/local/image_analysis.py"},
     "pypdf": {"adapters/local/document_parsing.py"},
+    "starlette": {"interface/websocket.py"},
+    "uvicorn": {"interface/server.py"},
+    "websockets": set(),
 }
-"""Story 9.3 decoders, each allowed in exactly one source module (and in tests)."""
+"""Story 9.3 decoders and the Story 9.7 WebSocket framework and server, each allowed in exactly one
+source module (and in tests); the ``websockets`` client library is used by tests only."""
 FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
 FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
 
@@ -183,7 +187,7 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
     governance: dict[str, Any],
 ) -> None:
     assert governance["story_9_6_evidence_class"] == EvidenceClass.AUTOMATED_TEST
-    assert governance["implemented_capabilities"] == [
+    assert governance["implemented_capabilities"][:5] == [
         "deterministic_multimodal_foundation",
         "local_document_vision_understanding",
         "local_audio_speech_pipeline",
@@ -208,9 +212,8 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
         "ENG-006",
         "ENG-007",
     }
-    assert {rid for rid, status in statuses.items() if status != "designed"} == partial
     assert {statuses[rid] for rid in partial} == {"partially-implemented"}
-    for later in ("SRC-010", "SRC-011", "SRC-012", "SRC-016", "ENG-003", "ENG-005"):
+    for later in ("ENG-003", "ENG-005"):
         assert statuses[later] == "designed", later
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories.pop("9.1") == "complete-design-only"
@@ -219,7 +222,6 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
     assert stories.pop("9.4") == "complete-audio-speech-pipeline"
     assert stories.pop("9.5") == "complete-cross-modal-reasoning"
     assert stories.pop("9.6") == "complete-voice-assistant-orchestration"
-    assert set(stories.values()) == {"not-started"}
     voice_doc = " ".join(_doc("VOICE_ASSISTANT.md").lower().split())
     for phrase in (
         "not speech recognition",
@@ -233,6 +235,65 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
         text = " ".join(_doc(name).lower().split())
         assert "voice-assistant" in text or "voice assistant" in text, name
         assert "nothing is streamed" in text or "nothing streamed" in text, name
+
+
+def test_story_9_7_claims_only_deterministic_websocket_streaming(
+    governance: dict[str, Any],
+) -> None:
+    assert governance["story_9_7_evidence_class"] == EvidenceClass.AUTOMATED_TEST
+    assert governance["implemented_capabilities"] == [
+        "deterministic_multimodal_foundation",
+        "local_document_vision_understanding",
+        "local_audio_speech_pipeline",
+        "deterministic_cross_modal_reasoning_workflow",
+        "deterministic_voice_assistant_orchestration",
+        "deterministic_websocket_streaming",
+    ]
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    partial = {
+        "ENG-001",
+        "SRC-002",
+        "SRC-003",
+        "SRC-004",
+        "SRC-005",
+        "SRC-006",
+        "SRC-007",
+        "SRC-008",
+        "SRC-009",
+        "SRC-010",
+        "SRC-012",
+        "SRC-013",
+        "SRC-014",
+        "SRC-015",
+        "SRC-016",
+        "SRC-017",
+        "ENG-006",
+        "ENG-007",
+        "ENG-008",
+    }
+    assert {rid for rid, status in statuses.items() if status == "partially-implemented"} == partial
+    assert {rid for rid, status in statuses.items() if status == "implemented"} == {"SRC-011"}
+    assert set(statuses.values()) == {"designed", "partially-implemented", "implemented"}
+    for later in ("SRC-001", "SRC-018", "ENG-002", "ENG-003", "ENG-005", "ENG-012"):
+        assert statuses[later] == "designed", later
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories["9.7"] == "complete-websocket-streaming"
+    assert {stories[sid] for sid in ("9.8", "9.9", "9.10")} == {"not-started"}
+    streaming_doc = " ".join(_doc("STREAMING.md").lower().split())
+    for phrase in (
+        "not model tokens",
+        "not model inference",
+        "not speech recognition",
+        "not speech synthesis",
+        "partially implemented",
+        "loopback",
+        "no authentication",
+        "transcript_partial",
+    ):
+        assert phrase in streaming_doc, phrase
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
+        text = " ".join(_doc(name).lower().split())
+        assert "websocket" in text and "not model tokens" in text, name
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

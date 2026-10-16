@@ -22,7 +22,11 @@ structured reasoning contract (`contracts/reasoning.py`), and a deterministic ru
 orchestration (`voice/`), the structured reply contract (`contracts/conversation.py`), and a
 deterministic rule-based conversation `ReasoningPort` adapter (`adapters/reasoning/conversation.py`),
 which is not model inference; its turns are synchronous and stream nothing (see
-[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). No other runtime component below is implemented yet.
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 adds streaming coordination (`streaming/`), the
+WebSocket streaming gateway and its loopback server (`interface/`), client messages and turn events
+in the streaming protocol, and an incremental reply port with a lazy rule-based adapter; its reply
+fragments are not model tokens (see [STREAMING.md](STREAMING.md)). No other runtime component
+below is implemented yet.
 
 ## Goal
 
@@ -118,9 +122,10 @@ model output are data. See [SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md).
 
 Story 9.6 implements the orchestrator side of this flow synchronously: `VoiceAssistant.run_turn`
 runs STT, reasoning over the transcript and bounded history, and TTS, then commits the exchange and
-returns one `VoiceTurnRecord` with per-stage and end-to-end timings. The WebSocket gateway and the
-streamed events below (`transcript_partial`, `response_delta`, `audio_ready`, `metric`) are Story
-9.7.
+returns one `VoiceTurnRecord` with per-stage and end-to-end timings. Story 9.7 implements the
+WebSocket gateway and the streamed events below through `StreamingVoiceCoordinator`, except
+`transcript_partial`, which is not sent because fixture-playback STT produces no genuine partial
+transcript; it also adds `turn_accepted` and `turn_complete` (see [STREAMING.md](STREAMING.md)).
 
 ```mermaid
 sequenceDiagram
@@ -199,7 +204,9 @@ module-09/
     adapters/reasoning/conversation.py   Story 9.6: deterministic conversation reasoning adapter
     voice/                               Story 9.6: voice orchestrator, conversation state, records
       fixture_data/                      committed conversation fixtures + manifest
-    (adapters/live/, interface/, ui/)    later stories; not created yet
+    streaming/                           Story 9.7: streaming coordinator, limits, records
+    interface/                           Story 9.7: WebSocket gateway (Starlette), loopback server (Uvicorn)
+    (adapters/live/, ui/)                later stories; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
 ```
@@ -210,7 +217,7 @@ These are implementation choices left to the owning story. They must fit the fro
 
 | Decision | Owning story |
 |---|---|
-| WebSocket server framework and hosting process | 9.7 |
+| WebSocket server framework and hosting process | 9.7 (decided: Starlette ASGI application hosted by Uvicorn with the sans-I/O `websockets` protocol; loopback only until 9.10) |
 | Deterministic fixture formats and generation | 9.2 (decided: stdlib-generated PNG/WAV, plain text, Markdown; SHA-256 manifest) |
 | Image/document parsing libraries and magic-byte checks | 9.3 (decided: Pillow for PNG/JPEG/WebP, pypdf for PDF, stdlib Markdown/text parsing, stdlib magic-byte sniffing) |
 | Audio decoding library and sample formats | 9.4 (decided: standard library only; integer PCM WAV at 8/16/24/32 bits; MP3/WebM recognized but not decoded) |

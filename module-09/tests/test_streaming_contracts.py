@@ -27,6 +27,7 @@ def _union_types() -> set[str]:
 
 
 def test_protocol_covers_every_required_event_type() -> None:
+    """ADR-009-005 requires at least these events; Story 9.7 adds turn_accepted/turn_complete."""
     required = {
         "session_started",
         "transcript_partial",
@@ -38,8 +39,12 @@ def test_protocol_covers_every_required_event_type() -> None:
         "error",
         "session_complete",
     }
-    assert {event.value for event in StreamEventType} == required
-    assert _union_types() == required
+    assert required <= {event.value for event in StreamEventType}
+    assert {event.value for event in StreamEventType} - required == {
+        "turn_accepted",
+        "turn_complete",
+    }
+    assert _union_types() == {event.value for event in StreamEventType}
 
 
 def test_events_round_trip_through_json() -> None:

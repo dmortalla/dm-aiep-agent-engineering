@@ -33,6 +33,16 @@ class LatencyStage(StrEnum):
     FIRST_RESPONSE = "first_response"
     TEXT_TO_SPEECH = "text_to_speech"
     END_TO_END = "end_to_end"
+    SESSION_SETUP = "session_setup"
+    """Story 9.7: from WebSocket connection to ``session_started``."""
+    TURN_ACCEPTANCE = "turn_acceptance"
+    """Story 9.7: from turn receipt to admission."""
+    TRANSCRIPT_READY = "transcript_ready"
+    """Story 9.7: from turn receipt to ``transcript_final``."""
+    RESPONSE_COMPLETION = "response_completion"
+    """Story 9.7: from turn receipt to ``response_complete``."""
+    AUDIO_READY = "audio_ready"
+    """Story 9.7: from turn receipt to ``audio_ready``."""
 
 
 class ResourceBudget(BaseModel):

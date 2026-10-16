@@ -13,7 +13,10 @@ Story 9.5 adds `reasoning.py`, the structured contract carried over the unchange
 implements the port with a deterministic rule-based adapter (see [CROSS_MODAL.md](CROSS_MODAL.md)).
 Story 9.6 adds `conversation.py`, the structured reply contract carried over the same reasoning
 port for voice turns, and implements the port with a deterministic conversation adapter (see
-[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). No live provider or transport exists yet.
+[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 extends `streaming.py` within protocol version 1
+(client messages, `turn_accepted`, `turn_complete`, `turn_id`, metric `measure`, audio digest) and
+`conversation.py` (`ReplyFragment`, `IncrementalReplyPort`), and adds five latency stages (see
+[STREAMING.md](STREAMING.md)). No live provider exists yet.
 
 | Module | Boundary | Key types | ADRs |
 |---|---|---|---|
@@ -21,11 +24,11 @@ port for voice turns, and implements the port with a deterministic conversation 
 | `modality.py` | Multimodal input | `Modality`, `TrustLevel`, `InputSource`, `MEDIA_TYPES`, `ModalityInput` | 006, 007 |
 | `session.py` | Session and mode | `ExecutionMode`, `ConversationTurn`, `LiveCredential`, `SessionConfig` | 004, 007 |
 | `providers.py` | Provider ports | `ProviderPort`, request/result models, five `*Port` protocols | 003, 007 |
-| `streaming.py` | WebSocket protocol | `StreamEventType`, nine event models, `parse_stream_event` | 005 |
+| `streaming.py` | WebSocket protocol | `StreamEventType`, eleven event models, `parse_stream_event`; client messages and `parse_client_message` (Story 9.7) | 005 |
 | `evidence.py` | Evidence | `EvidenceClass`, `EvidenceRecord` | 009 |
 | `errors.py` | Safe errors | `ErrorCode`, `SafeError`, `Module9Error`, `StreamProtocolError` | 005, 007 |
 | `reasoning.py` | Structured reasoning I/O (Story 9.5) | `ObservationView`, `ObservedFact`, `Statement`, `FactOrigin`, `CrossModalFinding`, `FindingKind`, `ReasonerOutput` | 003, 006, 007 |
-| `conversation.py` | Structured voice reply (Story 9.6) | `AssistantReply`, `ReplyAct`, `ReplyActKind` | 003, 007 |
+| `conversation.py` | Structured voice reply (Story 9.6); incremental reply (Story 9.7) | `AssistantReply`, `ReplyAct`, `ReplyActKind`, `ReplyFragment`, `IncrementalReplyPort` | 003, 007 |
 
 ## Modality contract
 
@@ -178,7 +181,8 @@ checked by the application core (`voice.reply`), never assumed.
 
 ## Streaming protocol
 
-Every event carries `protocol_version`, `session_id`, `sequence`, and a `type` discriminator.
+Every event carries `protocol_version`, `session_id`, `sequence`, an optional `turn_id` (set by
+the Story 9.7 server on every turn-scoped event), and a `type` discriminator.
 
 | `type` | Payload |
 |---|---|
@@ -187,13 +191,23 @@ Every event carries `protocol_version`, `session_id`, `sequence`, and a `type` d
 | `transcript_final` | `text` (bounded) |
 | `response_delta` | `index`, `text` (1 to 4,000 chars) |
 | `response_complete` | `finish_reason`, `delta_count` |
-| `audio_ready` | `audio_ref`, `media_type` (audio allowlist), `duration_ms` |
-| `metric` | `stage` (`LatencyStage`), `duration_ms` |
+| `audio_ready` | `audio_ref`, `media_type` (audio allowlist), `duration_ms`; optional `audio_sha256`, `size_bytes` (9.7) |
+| `metric` | `stage` (`LatencyStage`), `duration_ms` (finite); `measure` (`stage`, `since_turn_received`, `since_connect`; 9.7) |
 | `error` | `error` (`SafeError`) |
 | `session_complete` | `reason` |
+| `turn_accepted` (9.7) | none |
+| `turn_complete` (9.7) | `status`, `committed`, `conversation_sequence`, `failed_stage`, `delta_count`, `evidence_class`, `execution_mode`, processing kinds; outcome invariants enforced |
 
 `parse_stream_event` rejects messages over 64 KiB, malformed JSON, unknown types, extra fields, and
 invariant violations by raising `StreamProtocolError` (chained from the validation error).
+`serialize_stream_event` refuses to produce an event over 64 KiB.
+
+Client messages (Story 9.7) are `voice_turn` (`turn_id`, `media_type`, `display_name`,
+`audio_base64`, optional `language`), `fixture_turn` (`turn_id`, `fixture_id`, optional `language`),
+and `end_session`. They carry no session, mode, budget, provider, trust, or evidence field.
+`parse_client_message` checks the size before parsing (`ClientMessageTooLargeError`) and rejects
+everything outside the union; `VoiceTurnMessage.audio_bytes` decodes canonical base64 only, within a
+byte bound.
 
 ## Budgets and latency
 
@@ -203,7 +217,8 @@ session. Every field has a hard ceiling. Retries must stay below the provider-ca
 request timeout cannot exceed the session timeout.
 
 `LatencyStage`: `ingestion`, `speech_to_text`, `vision`, `document_understanding`, `reasoning`,
-`first_response`, `text_to_speech`, `end_to_end`.
+`first_response`, `text_to_speech`, `end_to_end`, and (Story 9.7) `session_setup`,
+`turn_acceptance`, `transcript_ready`, `response_completion`, `audio_ready`.
 
 ## Evidence
 
