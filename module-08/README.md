@@ -81,3 +81,25 @@ a non-blocking presentation observation; no custom CSS or contrast compliance
 claim is introduced. See the [Story 10 audit](docs/stories/STORY-10-integrated-verification-release-evidence.md)
 for exact verification, limitations and the Definition of Done assessment, and
 the [traceability matrix](docs/TRACEABILITY.md) for all 33 requirements.
+
+## Verified Streamlit Cloud Deployment
+
+The reviewer-facing MCP Enterprise Infrastructure Console is deployed at https://dm-aiep-module-08.streamlit.app.
+
+A fresh Streamlit Cloud reboot and Manager review verified the production demonstration path:
+
+- 3 MCP capabilities discovered through the deployed integration path.
+- 3 interoperable workflow stages completed: OpenAI SDK -> Google ADK -> OpenAI SDK.
+- 0 model calls in the deterministic reviewer demonstration.
+- The allowed customer read completed through the MCP capability boundary.
+- The policy capability remained denied before unauthorized remote execution.
+- Streamable HTTP, validated context exchange, and the final enterprise decision were demonstrated.
+- Streamlit Cloud installed the Module 8 environment from module-08/uv.lock using uv-sync.
+
+### Deployment operational lesson
+
+Google ADK 2.10.0 can perform a Google mTLS/client-certificate credential probe during MCP discovery. In this credential-free loopback MCP deployment, that unnecessary probe could fall through to Google metadata credential discovery and consume the bounded discovery window before the intended MCP connection.
+
+The accepted deployment configuration sets GOOGLE_API_USE_CLIENT_CERTIFICATE=false. This disables the unnecessary client-certificate probe, removes the ambient-credential dependency, and allows the intended bounded MCP discovery path to complete. This value is deployment configuration, not secret credential material. Increasing the discovery timeout is not the accepted repair.
+
+The deployed Streamlit console remains a reviewer-facing presentation and execution layer over the production architecture; it does not fabricate success or replace the authoritative application, MCP, authorization, or workflow logic.

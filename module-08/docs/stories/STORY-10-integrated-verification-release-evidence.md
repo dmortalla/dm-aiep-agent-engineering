@@ -124,3 +124,23 @@ Story 9 commit still an ancestor. Nothing was staged, committed, tagged or pushe
 Ready for independent final acceptance and human release closeout of the local
 academic module, subject to the explicit limitations above. No live-provider or
 deployment evidence exists and no deployment approval is implied.
+
+## Verified Deployment Closeout
+
+Post-release deployment verification completed successfully in Streamlit Cloud.
+
+Verified evidence:
+
+- Full Streamlit Cloud reboot loaded the current Module 8 instrumentation.
+- Manager review completed successfully.
+- Reviewer-visible result: local enterprise execution completed and results validated.
+- Discovered capabilities: 3.
+- Workflow MCP stages: 3.
+- Model calls: 0.
+- Cloud dependencies were installed from module-08/uv.lock through uv-sync.
+- GOOGLE_API_USE_CLIENT_CERTIFICATE=false disabled an unnecessary Google client-certificate credential probe for the credential-free loopback MCP deployment.
+- The accepted repair removes the ambient-credential dependency rather than weakening the bounded discovery timeout.
+
+Evidence classification: deployed reviewer demonstration and local enterprise integration evidence. This does not claim paid-provider inference, external enterprise production traffic, multi-host deployment, or cloud-managed MCP infrastructure.
+
+The engineering release tag remains immutable; deployment-closeout documentation is post-release evidence and does not rewrite the accepted release.
