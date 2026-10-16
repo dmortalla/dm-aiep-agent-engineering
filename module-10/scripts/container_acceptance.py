@@ -36,15 +36,24 @@ def request(base: str, path: str, payload: bytes | None = None) -> tuple[int, di
         return exc.code, json.loads(exc.read(65536))
 
 
-def main() -> None:
-    """Build, exercise, inspect and remove only this uniquely named container."""
+def accept(image: str | None = None) -> dict:
+    """Exercise and clean up an owned container, optionally building a new image.
+
+    Args:
+        image: Existing image to exercise; None builds a unique local image.
+
+    Returns:
+        Successful container facts after cleanup. Failures propagate.
+    """
     docker("info")  # Fail before creating resources if the engine is unavailable.
     name = "module10-story105-" + uuid.uuid4().hex[:12]
-    image = name + ":local"
+    build = image is None
+    image = image or name + ":local"
     facts: dict = {"classification": "local-container/deterministic", "image_tag": image}
     created = False
     try:
-        docker("build", "--tag", image, str(ROOT), timeout=600)
+        if build:
+            docker("build", "--tag", image, str(ROOT), timeout=600)
         facts["build"] = "passed"
         metadata = json.loads(docker("image", "inspect", image))[0]
         facts["image_id"] = metadata["Id"]
@@ -97,6 +106,7 @@ def main() -> None:
             "assert not Path('/usr/local/bin/uv').exists(); "
             "assert importlib.util.find_spec('pytest') is None; "
             "assert importlib.util.find_spec('ruff') is None; "
+            "assert importlib.util.find_spec('streamlit') is None; "
             "import os; assert not os.access('/app/src/module10_ai/api.py', os.W_OK)"
         )
         docker("exec", name, "python", "-c", probe)
@@ -139,8 +149,9 @@ def main() -> None:
             assert not docker("ps", "--all", "--quiet", "--filter", f"name=^{name}$")
             facts["container_cleanup"] = "passed"
         print(json.dumps(facts, indent=2))
+    return facts
     # Retain the uniquely tagged image for review; never prune shared Docker resources.
 
 
 if __name__ == "__main__":
-    main()
+    accept()

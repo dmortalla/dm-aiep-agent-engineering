@@ -60,3 +60,13 @@ See [Story 10.7](STORY_10_7.md) for architecture, verification and limitations.
 Live provider integration is deferred: no provider or API-key workflow is invented.
 Story 10.8 has not begun. Story 10.6 is independently accepted by the human at
 `dabccead1b19e693f60f7fd7feef72dce9a0acb7`; its earlier pending notes are historical.
+
+
+## Story 10.8 implementation
+
+Module-local fail-fast CI/CD specification, deterministic materializer, native
+quality/container runner, bounded metadata and data-only promotion/rollback
+contract are implemented. See [CI/CD](CI_CD.md) and [Story 10.8](STORY_10_8.md).
+C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
+receive partial pipeline discipline evidence. Root workflow installation and actual
+GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.

@@ -122,4 +122,14 @@ Story 10.6 independent acceptance was supplied by the human for
 Existing queue/cache/telemetry course evidence gains a presentation surface only.
 CI/CD, Azure Container Apps deployment, Azure Monitor delivery, production load
 balancing, distributed queue/cache, production traffic/SLA, live providers/E-006,
-and final C-026/C-027 acceptance remain deferred. Story 10.8 is not implemented.
+and final C-026/C-027 acceptance remain deferred. Story 10.8 status is recorded below.
+
+
+## Story 10.8 implementation
+
+Module-local fail-fast CI/CD specification, deterministic materializer, native
+quality/container runner, bounded metadata and data-only promotion/rollback
+contract are implemented. See [CI/CD](CI_CD.md) and [Story 10.8](STORY_10_8.md).
+C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
+receive partial pipeline discipline evidence. Root workflow installation and actual
+GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.

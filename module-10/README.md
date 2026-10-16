@@ -334,3 +334,13 @@ regression when packaging/source changes. See [Story 10.7](docs/STORY_10_7.md).
 Local deterministic UI evidence does not establish CI/CD, Azure Container Apps,
 Azure Monitor, production load balancing, distributed queue/cache, production
 traffic/SLA, live providers, or final C-026/C-027 completion. E-006 remains deferred.
+
+
+## Story 10.8 implementation
+
+Module-local fail-fast CI/CD specification, deterministic materializer, native
+quality/container runner, bounded metadata and data-only promotion/rollback
+contract are implemented. See [CI/CD](docs/CI_CD.md) and [Story 10.8](docs/STORY_10_8.md).
+C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
+receive partial pipeline discipline evidence. Root workflow installation and actual
+GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.

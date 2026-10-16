@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "deployment_implemented": false,
+  "required_authority": "operator-approved protected GitHub Environment",
+  "allow_pull_request_deployment": false,
+  "allow_model_approval": false,
+  "required_candidate": ["source_commit", "source_clean", "image_id", "registry_manifest_digest", "successful_validation_run"],
+  "previous_accepted": ["source_commit", "registry_manifest_digest", "container_app_revision"],
+  "post_deployment_checks": ["liveness", "readiness", "deterministic_inference", "azure_monitor_receipt", "revision_traffic"],
+  "rollback_consideration": ["failed_health_verification", "failed_inference", "operational_regression"],
+  "rollback_authority": "operator-approved protected GitHub Environment",
+  "future_authentication": "Azure federated OIDC; configuration deferred to Story 10.9"
+}
