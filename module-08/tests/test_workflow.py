@@ -168,6 +168,35 @@ async def test_untrusted_account_context(
 
 
 @pytest.mark.anyio
+async def test_account_authorization_denial_has_safe_workflow_diagnostic(
+    mcp_endpoint: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Attribute an unexpected account-stage denial with a safe fixed label."""
+    policy = CapabilityPolicy(
+        {"account_manager": frozenset({"get_customer", "evaluate_enterprise_policy"})}
+    )
+    with caplog.at_level("ERROR"), pytest.raises(AuthorizationError) as caught:
+        await EnterpriseWorkflow(mcp_endpoint, policy=policy).run(
+            customer_id="CUST-001",
+            principal_role="account_manager",
+        )
+
+    assert type(caught.value) is AuthorizationError
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "mcp_enterprise_integration.workflow"
+    ]
+    assert [record.getMessage() for record in records] == [
+        "Module 8 workflow backend failed: google_adk_account_authorization",
+        "Module 8 workflow backend failed: google_adk_account",
+    ]
+    assert all(record.exc_info is None and record.stack_info is None for record in records)
+    for sensitive in ("CUST-001", "Northstar Logistics", "gold", mcp_endpoint):
+        assert sensitive not in caplog.text
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "stage,mutation,message",
     [

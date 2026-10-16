@@ -12,7 +12,11 @@ from mcp_enterprise_integration.capability_policy import CapabilityAuthorization
 from mcp_enterprise_integration.database import CustomerRecord
 from mcp_enterprise_integration.domain import ClientFramework, TransportKind
 from mcp_enterprise_integration.enterprise_api import AccountStatus
-from mcp_enterprise_integration.errors import ContractValidationError, EnterpriseIntegrationError
+from mcp_enterprise_integration.errors import (
+    AuthorizationError,
+    ContractValidationError,
+    EnterpriseIntegrationError,
+)
 from mcp_enterprise_integration.evidence import EvidenceClass, ExecutionEvidence
 from mcp_enterprise_integration.google_adk_mcp import GoogleAdkMcpIntegration
 from mcp_enterprise_integration.internal_system import (
@@ -155,11 +159,17 @@ class EnterpriseWorkflow:
 
             stage = "google_adk_account"
             async with GoogleAdkMcpIntegration(self._endpoint, policy=self._policy) as sdk:
-                response = await sdk.invoke_authorized_tool(
-                    principal_role=request.requester_role,
-                    name="get_account_status",
-                    arguments={"customer_id": customer.customer_id},
-                )
+                try:
+                    response = await sdk.invoke_authorized_tool(
+                        principal_role=request.requester_role,
+                        name="get_account_status",
+                        arguments={"customer_id": customer.customer_id},
+                    )
+                except AuthorizationError:
+                    _LOGGER.error(
+                        "Module 8 workflow backend failed: google_adk_account_authorization"
+                    )
+                    raise
                 try:
                     account = _validated(AccountStatus, response.structured_content)
                 except Exception:
