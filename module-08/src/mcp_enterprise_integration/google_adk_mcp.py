@@ -48,9 +48,13 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
         if not endpoint.startswith(("http://", "https://")):
             raise ValueError("MCP endpoint must use HTTP or HTTPS.")
         self._policy = policy or CapabilityPolicy()
-        self._toolset = McpToolset(connection_params=StreamableHTTPConnectionParams(
-            url=endpoint, timeout=5.0, sse_read_timeout=5.0,
-        ))
+        self._toolset = McpToolset(
+            connection_params=StreamableHTTPConnectionParams(
+                url=endpoint,
+                timeout=5.0,
+                sse_read_timeout=5.0,
+            )
+        )
         self._agent = Agent(
             name="module_08_enterprise_agent",
             instruction="Use only enterprise capabilities authorized by the application.",
@@ -73,7 +77,11 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
 
     async def __aexit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Release the SDK-owned MCP session."""
-        await self._toolset.close()
+        try:
+            await self._toolset.close()
+        except Exception:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_cleanup")
+            raise
 
     async def _get_tools(self) -> list[Any]:
         try:
@@ -93,7 +101,11 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
         return tuple(sorted(tool.name for tool in await self._get_tools()))
 
     async def invoke_authorized_tool(
-        self, *, principal_role: str, name: str, arguments: dict[str, Any],
+        self,
+        *,
+        principal_role: str,
+        name: str,
+        arguments: dict[str, Any],
     ) -> GoogleAdkMcpResult:
         """Authorize before executing a genuine ADK McpTool.
 
@@ -112,7 +124,8 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
         tools = await self._get_tools()
         try:
             authorization = self._policy.authorize(
-                principal_role=principal_role, capability=name,
+                principal_role=principal_role,
+                capability=name,
                 discovered_capabilities=tuple(tool.name for tool in tools),
             )
         except AuthorizationError:
@@ -126,11 +139,14 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
             _LOGGER.error("Module 8 Google ADK backend failed: adk_tool_selection")
             raise
         try:
-            context = ToolContext(InvocationContext(
-                invocation_id="module-08-deterministic-tool-call", agent=self._agent,
-                session_service=InMemorySessionService(),
-                session=Session(id="tool-call", app_name="module-08", user_id="application"),
-            ))
+            context = ToolContext(
+                InvocationContext(
+                    invocation_id="module-08-deterministic-tool-call",
+                    agent=self._agent,
+                    session_service=InMemorySessionService(),
+                    session=Session(id="tool-call", app_name="module-08", user_id="application"),
+                )
+            )
         except Exception:
             _LOGGER.error("Module 8 Google ADK backend failed: adk_context_setup")
             raise
