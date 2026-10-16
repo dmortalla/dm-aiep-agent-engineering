@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | Not configured |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-7 complete |
-| Implementation | Stories 1-7 complete; Story 8 next |
+| Module 6.5 phase | Architecture frozen; Stories 1-8 complete |
+| Implementation | Stories 1-8 complete; Story 9 next |
 | Release | Unreleased |
 
 ## Governance
@@ -26,11 +26,11 @@
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
 The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
-The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-7 implementation is complete; the accepted Story 7 baseline has 963 passing tests.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-8 implementation is complete; the accepted Story 8 baseline has 1,164 passing tests.
 
 ## Next recommended work
 
-Begin Story 8 - MCP Capability Boundary - from the frozen architecture and independently verified green 963-test Story 7 baseline.
+Begin Story 9 - Provider and Guardrail Adapters - from the frozen architecture and independently verified green 1,164-test Story 8 baseline.
 
 ## Module 6.5 Architecture Freeze
 
@@ -41,6 +41,6 @@ Begin Story 8 - MCP Capability Boundary - from the frozen architecture and indep
 - Source labs mapped: 6 of 6
 - Source deliverables mapped: 5 of 5
 - Named technologies assigned roles: 9 of 9
-- Implementation: Stories 1-7 complete
+- Implementation: Stories 1-8 complete
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
-- Next phase: Story 8 - MCP Capability Boundary
+- Next phase: Story 9 - Provider and Guardrail Adapters
