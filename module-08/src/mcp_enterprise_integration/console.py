@@ -127,6 +127,11 @@ def main() -> None:
         )
         render_result(st.session_state["reviewer_result"])
 
+    st.caption(
+        "Developed from Techademy AI Engineering program requirements. "
+        "Independent implementation, engineering enhancements, and deployment."
+    )
+
 
 if __name__ == "__main__":
     main()
