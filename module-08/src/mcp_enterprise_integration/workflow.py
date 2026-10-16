@@ -82,14 +82,23 @@ class EnterpriseWorkflow:
             policy: Application-owned grants used independently by both SDKs.
         """
         parsed = urlsplit(endpoint)
-        if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1"}
-                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname not in {"127.0.0.1", "::1"}
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
             raise ValueError("Workflow requires a credential-free loopback HTTP MCP endpoint.")
         self._endpoint = endpoint
         self._policy = policy if policy is not None else CapabilityPolicy()
 
     async def run(
-        self, *, customer_id: str, principal_role: str,
+        self,
+        *,
+        customer_id: str,
+        principal_role: str,
         action: RequestedAction = RequestedAction.VIEW_ACCOUNT,
     ) -> WorkflowResult:
         """Run bounded customer -> account -> policy context exchange.
@@ -108,10 +117,15 @@ class EnterpriseWorkflow:
             EnterpriseIntegrationError: If transport fails or the deadline expires.
         """
         # Reuse the bounded policy contract to validate input before connecting.
-        request = _validated(PolicyRequest, {
-            "customer_id": customer_id, "requester_role": principal_role,
-            "action": action, "account_status": "pending",
-        })
+        request = _validated(
+            PolicyRequest,
+            {
+                "customer_id": customer_id,
+                "requester_role": principal_role,
+                "action": action,
+                "account_status": "pending",
+            },
+        )
         try:
             async with asyncio.timeout(45.0):
                 return await self._run(request)
@@ -127,7 +141,8 @@ class EnterpriseWorkflow:
             # Sequential SDK lifecycles preserve SDK-owned task/session cleanup.
             async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
                 response = await sdk.invoke_authorized_tool(
-                    principal_role=request.requester_role, name="get_customer",
+                    principal_role=request.requester_role,
+                    name="get_customer",
                     arguments={"customer_id": request.customer_id},
                 )
                 envelope = _validated(_CustomerEnvelope, response.structured_content)
@@ -141,25 +156,42 @@ class EnterpriseWorkflow:
             stage = "google_adk_account"
             async with GoogleAdkMcpIntegration(self._endpoint, policy=self._policy) as sdk:
                 response = await sdk.invoke_authorized_tool(
-                    principal_role=request.requester_role, name="get_account_status",
+                    principal_role=request.requester_role,
+                    name="get_account_status",
                     arguments={"customer_id": customer.customer_id},
                 )
-                account = _validated(AccountStatus, response.structured_content)
-                if (account.customer_id != customer.customer_id
-                        or not 0 <= account.open_cases <= 10000):
-                    raise ContractValidationError(
-                        "Account result violates workflow identity or bounds."
-                    )
-                stages.append(self._stage(ClientFramework.GOOGLE_ADK, response.authorization))
+                try:
+                    account = _validated(AccountStatus, response.structured_content)
+                except Exception:
+                    _LOGGER.error("Module 8 workflow backend failed: google_adk_account_validation")
+                    raise
+                try:
+                    if (
+                        account.customer_id != customer.customer_id
+                        or not 0 <= account.open_cases <= 10000
+                    ):
+                        raise ContractValidationError(
+                            "Account result violates workflow identity or bounds."
+                        )
+                    stages.append(self._stage(ClientFramework.GOOGLE_ADK, response.authorization))
+                except Exception:
+                    _LOGGER.error("Module 8 workflow backend failed: google_adk_account_invariants")
+                    raise
 
             stage = "openai_policy"
-            context = _validated(PolicyRequest, {
-                "customer_id": account.customer_id, "requester_role": request.requester_role,
-                "action": request.action, "account_status": customer.account_status,
-            })
+            context = _validated(
+                PolicyRequest,
+                {
+                    "customer_id": account.customer_id,
+                    "requester_role": request.requester_role,
+                    "action": request.action,
+                    "account_status": customer.account_status,
+                },
+            )
             async with OpenAiMcpIntegration(self._endpoint, policy=self._policy) as sdk:
                 response = await sdk.invoke_authorized_tool(
-                    principal_role=request.requester_role, name="evaluate_enterprise_policy",
+                    principal_role=request.requester_role,
+                    name="evaluate_enterprise_policy",
                     arguments=context.model_dump(mode="json"),
                 )
                 # Decode only the two declared enum fields; do not coerce other data.
@@ -170,8 +202,10 @@ class EnterpriseWorkflow:
                 except (KeyError, ValueError, TypeError) as exc:
                     raise ContractValidationError("Invalid PolicyResult workflow context.") from exc
                 decision = _validated(PolicyResult, decoded)
-                if (decision.customer_id != customer.customer_id
-                        or decision.action != request.action):
+                if (
+                    decision.customer_id != customer.customer_id
+                    or decision.action != request.action
+                ):
                     raise ContractValidationError("Policy result does not match workflow context.")
                 stages.append(self._stage(ClientFramework.OPENAI, response.authorization))
 
@@ -181,16 +215,21 @@ class EnterpriseWorkflow:
             raise
 
         return WorkflowResult(
-            customer=customer, account=account, policy_request=context, policy_result=decision,
+            customer=customer,
+            account=account,
+            policy_request=context,
+            policy_result=decision,
             stages=tuple(stages),
         )
 
     @staticmethod
     def _stage(
-        framework: ClientFramework, authorization: CapabilityAuthorization,
+        framework: ClientFramework,
+        authorization: CapabilityAuthorization,
     ) -> WorkflowStage:
         return WorkflowStage(
-            framework=framework, authorization=authorization,
+            framework=framework,
+            authorization=authorization,
             evidence=ExecutionEvidence(
                 evidence_id=f"{framework}-{authorization.capability}",
                 evidence_class=EvidenceClass.LOCAL_INTEGRATION,
