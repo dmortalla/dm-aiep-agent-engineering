@@ -11,7 +11,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from test_mcp_client import enterprise_api_url as enterprise_api_url
 from test_mcp_client import mcp_endpoint as adk_endpoint_fixture
 
-from mcp_enterprise_integration import reviewer
+from mcp_enterprise_integration import google_adk_mcp, reviewer
 from mcp_enterprise_integration.capability_policy import CapabilityPolicy
 from mcp_enterprise_integration.errors import AuthorizationError, EnterpriseIntegrationError
 from mcp_enterprise_integration.google_adk_mcp import GoogleAdkMcpIntegration
@@ -192,13 +192,24 @@ async def test_adk_failure_boundary_preserves_exception(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("through_reviewer", [False, True])
+@pytest.mark.parametrize("boundary", ["discovery", "tool_selection", "context_setup"])
 async def test_adk_diagnostic_preserves_outer_boundaries(
     adk_endpoint: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
-    through_reviewer: bool,
+    through_reviewer: bool, boundary: str,
 ) -> None:
     """Keep the real workflow's ADK attribution and the reviewer's safe error boundary."""
-    failure = ConnectionError("sensitive exception", {"payload": "private MCP output"})
-    monkeypatch.setattr(McpToolset, "get_tools", AsyncMock(side_effect=failure))
+    failure_type = ConnectionError if boundary == "discovery" else EnterpriseIntegrationError
+    failure = failure_type("sensitive exception", {"payload": "private MCP output"})
+    if boundary == "discovery":
+        monkeypatch.setattr(McpToolset, "get_tools", AsyncMock(side_effect=failure))
+    else:
+        def fail(*args: object, **kwargs: object) -> None:
+            raise failure
+
+        if boundary == "tool_selection":
+            monkeypatch.setattr(google_adk_mcp, "next", fail, raising=False)
+        else:
+            monkeypatch.setattr(google_adk_mcp, "ToolContext", fail)
     workflow = EnterpriseWorkflow(adk_endpoint)
     if through_reviewer:
         async def execute(endpoint: str, database: Path, scenario: str) -> object:
@@ -212,12 +223,18 @@ async def test_adk_diagnostic_preserves_outer_boundaries(
             "Backend execution failed. Retry or ask the maintainer to inspect it."
         )
         assert isinstance(caught.value.__cause__, EnterpriseIntegrationError)
-        assert caught.value.__cause__.__cause__ is failure
+        if boundary == "discovery":
+            assert caught.value.__cause__.__cause__ is failure
+        else:
+            assert caught.value.__cause__ is failure
     else:
         with pytest.raises(EnterpriseIntegrationError) as caught:
             await workflow.run(customer_id="CUST-001", principal_role="account_manager")
-        assert caught.value.__cause__ is failure
-    _assert_safe_diagnostic(caplog, "adk_discovery")
+        if boundary == "discovery":
+            assert caught.value.__cause__ is failure
+        else:
+            assert caught.value is failure
+    _assert_safe_diagnostic(caplog, f"adk_{boundary}")
     records = [record for record in caplog.records if record.name in {
         "mcp_enterprise_integration.workflow", reviewer.__name__,
     }]
@@ -226,3 +243,64 @@ async def test_adk_diagnostic_preserves_outer_boundaries(
         expected.append("Module 8 reviewer backend failed: EnterpriseIntegrationError")
     assert [record.getMessage() for record in records] == expected
     assert all(record.exc_info is None and record.stack_info is None for record in records)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("boundary", [
+    "tool_selection", "ToolContext", "InvocationContext", "InMemorySessionService", "Session",
+])
+async def test_adk_selection_and_context_failures_preserve_identity(
+    adk_endpoint: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    boundary: str,
+) -> None:
+    """Diagnose selection and every context constructor without wrapping their failures."""
+    cause = ConnectionError("private MCP output")
+    failure = RuntimeError(
+        "sensitive exception /private/path Traceback secret token",
+        {"customer": "private customer", "endpoint": "http://127.0.0.1:54321/mcp"},
+    )
+    failure.__cause__ = cause
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise failure
+
+    async with GoogleAdkMcpIntegration(adk_endpoint) as integration:
+        execute = AsyncMock(side_effect=AssertionError("setup failure reached execution"))
+        monkeypatch.setattr(McpTool, "run_async", execute)
+        if boundary == "tool_selection":
+            monkeypatch.setattr(google_adk_mcp, "next", fail, raising=False)
+        else:
+            monkeypatch.setattr(google_adk_mcp, boundary, fail)
+        with pytest.raises(RuntimeError) as caught:
+            await integration.invoke_authorized_tool(
+                principal_role="viewer", name="get_customer",
+                arguments={"customer_id": "CUST-001"},
+            )
+        assert caught.value is failure
+        assert caught.value.__cause__ is cause
+        execute.assert_not_awaited()
+    stage = "adk_tool_selection" if boundary == "tool_selection" else "adk_context_setup"
+    _assert_safe_diagnostic(caplog, stage)
+
+
+@pytest.mark.anyio
+async def test_adk_selection_preserves_async_stop_iteration_behavior(
+    adk_endpoint: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Keep Python's existing coroutine conversion of a selection StopIteration."""
+    failure = StopIteration("sensitive exception")
+
+    def fail(*args: object) -> None:
+        raise failure
+
+    async with GoogleAdkMcpIntegration(adk_endpoint) as integration:
+        execute = AsyncMock(side_effect=AssertionError("missing tool reached execution"))
+        monkeypatch.setattr(McpTool, "run_async", execute)
+        monkeypatch.setattr(google_adk_mcp, "next", fail, raising=False)
+        with pytest.raises(RuntimeError, match="coroutine raised StopIteration") as caught:
+            await integration.invoke_authorized_tool(
+                principal_role="viewer", name="get_customer", arguments={},
+            )
+        assert caught.value.__cause__ is failure
+        execute.assert_not_awaited()
+    _assert_safe_diagnostic(caplog, "adk_tool_selection")

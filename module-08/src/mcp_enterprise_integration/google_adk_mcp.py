@@ -120,12 +120,20 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
         except Exception:
             _LOGGER.error("Module 8 Google ADK backend failed: adk_authorization")
             raise
-        tool = next(tool for tool in tools if tool.name == authorization.capability)
-        context = ToolContext(InvocationContext(
-            invocation_id="module-08-deterministic-tool-call", agent=self._agent,
-            session_service=InMemorySessionService(),
-            session=Session(id="tool-call", app_name="module-08", user_id="application"),
-        ))
+        try:
+            tool = next(tool for tool in tools if tool.name == authorization.capability)
+        except Exception:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_tool_selection")
+            raise
+        try:
+            context = ToolContext(InvocationContext(
+                invocation_id="module-08-deterministic-tool-call", agent=self._agent,
+                session_service=InMemorySessionService(),
+                session=Session(id="tool-call", app_name="module-08", user_id="application"),
+            ))
+        except Exception:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_context_setup")
+            raise
         try:
             async with asyncio.timeout(10.0):
                 result = await tool.run_async(args=arguments, tool_context=context)
