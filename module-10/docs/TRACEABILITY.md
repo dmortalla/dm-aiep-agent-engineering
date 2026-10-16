@@ -133,3 +133,18 @@ contract are implemented. See [CI/CD](CI_CD.md) and [Story 10.8](STORY_10_8.md).
 C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
 receive partial pipeline discipline evidence. Root workflow installation and actual
 GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.
+
+## Story 10.9 repository-side implementation
+
+| Requirement | Implementation | Evidence boundary |
+|---|---|---|
+| C-003, C-004, C-008, C-024 | Native ARM app/environment, restricted managed HTTPS ingress, HTTP activation, min 0/max 2 | Offline contract/fixture tests; genuine orchestration, ingress and scaling execution deferred |
+| C-010, C-021 | Accepted fail-fast pipeline retained; tested image ID to immutable registry manifest binding; human publication workflow | Local contract only; hosted Environment/OIDC deployment remains separately authorized |
+| C-011, C-025 | Managed environment Log Analytics connection, fixed correlated aggregate KQL and bounded receipt gate | Deterministic fixture transport/query tests; Azure Monitor receipt deferred |
+| C-012, E-010 | Basic registry, minimal Consumption compute, bounded replicas, retention/daily ingestion settings, explicit group teardown | Configuration tests and runbook; no dollar-cap, incurred-cost or completed-teardown claim |
+| C-013, C-014, E-008, E-012 | Accepted probes/graceful shutdown, /32 ingress, no registry password, approved pull-only identity, fail-closed observations, minimized errors | Adversarial/failure-path tests; human approved exactly one identity with registry-only AcrPull, no broader runtime roles/admin credentials |
+| E-001, E-003, E-005, E-007, E-009, E-011 | Standalone typed data contracts and read-only collector; accepted deterministic application unchanged | Offline/local gates; no live-provider, distributed cache/queue or final production acceptance |
+
+See [Story 10.9](STORY_10_9.md) for gates and actual evidence. Templates, fixture
+responses, synthetic revisions, capability metadata and successful local Docker
+acceptance cannot establish genuine cloud deployment or final C-026/C-027 acceptance.

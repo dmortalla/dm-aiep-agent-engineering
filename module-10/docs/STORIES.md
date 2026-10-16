@@ -70,3 +70,12 @@ contract are implemented. See [CI/CD](CI_CD.md) and [Story 10.8](STORY_10_8.md).
 C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
 receive partial pipeline discipline evidence. Root workflow installation and actual
 GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.
+
+## Story 10.9 repository implementation status
+
+Repository-side ARM contracts, immutable publication binding validation, strict
+read-only configuration/HTTP/telemetry verification and human provisioning/teardown
+runbook are implemented. Supporting identity amendment is human-approved for
+repository implementation/local commit; independent acceptance is pending. Cloud execution has not
+occurred. See [Story 10.9](STORY_10_9.md) and [operator workflow](AZURE_DEPLOYMENT.md).
+Story 10.10 has not begun; final C-026/C-027 remain unaccepted.

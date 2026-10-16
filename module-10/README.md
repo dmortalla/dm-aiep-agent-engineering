@@ -344,3 +344,16 @@ contract are implemented. See [CI/CD](docs/CI_CD.md) and [Story 10.8](docs/STORY
 C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-017
 receive partial pipeline discipline evidence. Root workflow installation and actual
 GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.
+
+## Story 10.9 repository capability
+
+Native ARM contract rendering and bounded read-only Azure verification are
+implemented for the approved South Central US Consumption architecture. See
+[operator workflow](docs/AZURE_DEPLOYMENT.md) and [Story 10.9](docs/STORY_10_9.md).
+No agent-controlled cloud mutation executor exists. Provisioning, exact tested
+image publication, server validation, cloud verification and teardown require
+the reviewed human-controlled PowerShell workflow. The supporting registry-pull
+identity footprint amendment was explicitly approved for repository implementation
+and local commit on 2026-10-16, with registry-only AcrPull and no runtime identity
+access or ACR admin credentials. Local tests/templates
+are not Azure deployment evidence; C-026/C-027 remain deferred.
