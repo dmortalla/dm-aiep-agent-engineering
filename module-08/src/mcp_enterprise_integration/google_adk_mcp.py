@@ -1,6 +1,7 @@
 """Google ADK consumption of the shared, application-authorized MCP plane."""
 
 import asyncio
+import logging
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any
@@ -13,7 +14,9 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from google.adk.tools.tool_context import ToolContext
 
 from mcp_enterprise_integration.capability_policy import CapabilityAuthorization, CapabilityPolicy
-from mcp_enterprise_integration.errors import EnterpriseIntegrationError
+from mcp_enterprise_integration.errors import AuthorizationError, EnterpriseIntegrationError
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +81,7 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
             async with asyncio.timeout(10.0):
                 return await self._toolset.get_tools()
         except Exception as exc:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_discovery")
             raise EnterpriseIntegrationError("Google ADK MCP capability discovery failed.") from exc
 
     async def discover_tools(self) -> tuple[str, ...]:
@@ -106,10 +110,16 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
             EnterpriseIntegrationError: If discovery, execution, or envelope validation fails.
         """
         tools = await self._get_tools()
-        authorization = self._policy.authorize(
-            principal_role=principal_role, capability=name,
-            discovered_capabilities=tuple(tool.name for tool in tools),
-        )
+        try:
+            authorization = self._policy.authorize(
+                principal_role=principal_role, capability=name,
+                discovered_capabilities=tuple(tool.name for tool in tools),
+            )
+        except AuthorizationError:
+            raise
+        except Exception:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_authorization")
+            raise
         tool = next(tool for tool in tools if tool.name == authorization.capability)
         context = ToolContext(InvocationContext(
             invocation_id="module-08-deterministic-tool-call", agent=self._agent,
@@ -120,6 +130,7 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
             async with asyncio.timeout(10.0):
                 result = await tool.run_async(args=arguments, tool_context=context)
         except Exception as exc:
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_tool_execution")
             raise EnterpriseIntegrationError(
                 f"Google ADK MCP invocation failed for {name!r}."
             ) from exc
@@ -128,6 +139,7 @@ class GoogleAdkMcpIntegration(AbstractAsyncContextManager["GoogleAdkMcpIntegrati
             or result.get("isError") is not False
             or not isinstance(result.get("structuredContent"), dict)
         ):
+            _LOGGER.error("Module 8 Google ADK backend failed: adk_envelope_validation")
             raise EnterpriseIntegrationError(
                 f"Google ADK MCP tool {name!r} returned an error or invalid structured content."
             )
