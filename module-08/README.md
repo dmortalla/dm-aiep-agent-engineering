@@ -150,3 +150,21 @@ Google ADK 2.10.0 can perform a Google mTLS/client-certificate credential probe 
 The accepted deployment configuration sets GOOGLE_API_USE_CLIENT_CERTIFICATE=false. This disables the unnecessary client-certificate probe, removes the ambient-credential dependency, and allows the intended bounded MCP discovery path to complete. This value is deployment configuration, not secret credential material. Increasing the discovery timeout is not the accepted repair.
 
 The deployed Streamlit console remains a reviewer-facing presentation and execution layer over the production architecture; it does not fabricate success or replace the authoritative application, MCP, authorization, or workflow logic.
+
+## Final acceptance
+
+Module 8 completed final deployed acceptance on 2026-10-17.
+
+- The Streamlit reviewer console was deployed and human-verified for readability, Techademy attribution, and reviewer guidance.
+- The deterministic Manager review completed with an allowed account-change policy decision and zero model calls.
+- The deterministic Support review completed with a denied account-change policy decision and zero model calls.
+- The opt-in BYOK interface was verified to require explicit external-provider and possible-charge consent before execution.
+- A controlled live Manager-review run exercised both OpenAI and Google ADK / Gemini through the shared MCP workflow.
+- The live run completed 4/4 bounded model calls: OpenAI exercised get_customer, and Google ADK / Gemini exercised get_account_status.
+- Both provider-driven stages were classified as live-provider; the final evaluate_enterprise_policy stage remained application-owned local-integration with zero model calls.
+- The final Manager policy decision remained llow, and provider narratives remained untrusted and non-authoritative.
+- No API credential was visible in the reviewer-facing acceptance evidence.
+- The deployed reviewer experience is available at https://dm-aiep-module-08.streamlit.app/.
+- The project accomplishment was published to LinkedIn as the final presentation closeout.
+
+These results demonstrate deployed MCP interoperability across OpenAI and Google ADK / Gemini while preserving application-owned authorization, validated enterprise context, and deterministic final policy authority.
