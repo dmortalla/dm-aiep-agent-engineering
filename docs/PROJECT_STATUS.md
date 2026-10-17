@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | Not configured |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-8 complete |
-| Implementation | Stories 1-8 complete; Story 9 next |
+| Module 6.5 phase | Architecture frozen; Stories 1-9 complete |
+| Implementation | Stories 1-9 complete; Story 10 next |
 | Release | Unreleased |
 
 ## Governance
@@ -26,11 +26,11 @@
 
 The supplied Module 6.5 Harness Engineering source image is the ultimate source of truth for module objectives, topics, labs, named tools, and deliverables.
 The Module 6.5 requirements baseline was human-approved on 2026-10-10 and contains 62 source-derived requirements plus 7 additive engineering requirements, for 69 total.
-The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-8 implementation is complete; the accepted Story 8 baseline has 1,164 passing tests.
+The Module 6.5 architecture was human-approved and frozen on 2026-10-11. Stories 1-9 implementation is complete; the accepted Story 9 baseline has 1,344 passing tests.
 
 ## Next recommended work
 
-Begin Story 9 - Provider and Guardrail Adapters - from the frozen architecture and independently verified green 1,164-test Story 8 baseline.
+Begin Story 10 - Observability, Cost Governance, and Latency SLO - from the frozen architecture and independently verified green 1,344-test Story 9 baseline.
 
 ## Module 6.5 Architecture Freeze
 
@@ -43,4 +43,4 @@ Begin Story 9 - Provider and Guardrail Adapters - from the frozen architecture a
 - Named technologies assigned roles: 9 of 9
 - Implementation: Stories 1-8 complete
 - Architecture ADR: module-06-5/docs/adr/001-module-06-5-architecture-baseline.md
-- Next phase: Story 9 - Provider and Guardrail Adapters
+- Next phase: Story 10 - Observability, Cost Governance, and Latency SLO
