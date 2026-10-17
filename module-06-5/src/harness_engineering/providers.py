@@ -1,8 +1,8 @@
-"""Story 9 Slice 1: bounded provider-neutral text boundary and deterministic fake.
+"""Story 9: bounded application-owned provider boundary and deterministic default.
 
 Trusted bootstrap binds one runtime per workflow and its finite action IDs.
-Only the local fake is executable in this slice. No SDK, key/environment lookup,
-network, automatic retry, tool routing, or authority deserialization occurs.
+The fake remains default; optional vendor bindings require explicit bootstrap.
+No automatic retry, tool routing, or authority deserialization occurs.
 Python callbacks are trusted code; timeout rejects results, not external effects.
 """
 
@@ -16,11 +16,13 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from harness_engineering.config import HarnessConfig
 from harness_engineering.domain import RuntimeBudget
 from harness_engineering.errors import (
     AuthorityViolationError,
     BudgetExceededError,
     ContractValidationError,
+    HarnessError,
 )
 from harness_engineering.lifecycle_controls import OffSwitch
 
@@ -31,6 +33,10 @@ class ProviderTimeoutError(BudgetExceededError):
 
 class ProviderOutputRejected(ContractValidationError):
     """Provider output violates the application text profile or content filter."""
+
+
+class ProviderExecutionError(HarnessError):
+    """Sanitized expected vendor failure; never an automatic retry instruction."""
 
 
 class _Data(BaseModel):
@@ -84,6 +90,7 @@ class ProviderEvent(StrEnum):
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
     DEFECT = "defect"
+    FAILED = "failed"
 
 
 class ProviderCallContext:
@@ -94,6 +101,20 @@ class ProviderCallContext:
         self._deadline = deadline
         self._off_switch = off_switch
         self._cancelled = Event()
+        self._max_output_tokens = 2_000
+        self._max_context_tokens = 12_000
+        self._live_allowed = False
+
+    @property
+    def remaining_seconds(self) -> float:
+        """Return the remaining accepted invocation time, never a fresh timeout."""
+        self.checkpoint()
+        return max(0.0, self._deadline - monotonic())
+
+    @property
+    def max_output_tokens(self) -> int:
+        """Return the application-owned per-call output limit."""
+        return self._max_output_tokens
 
     def checkpoint(self) -> None:
         """Deny cancelled or expired work without resetting consumed budgets."""
@@ -127,7 +148,7 @@ class ProviderRuntime:
     implicit. Repeated calls for a bound action share its 1 + retry limit and
     the workflow attempt limit; neither is caller-supplied at invocation.
     Do not reconstruct this runtime from generated or checkpoint data to reset
-    accounting. Recovery and vendor integrations are later slices.
+    accounting. Durable provider recovery integration remains a later concern.
     """
 
     def __init__(
@@ -135,18 +156,21 @@ class ProviderRuntime:
         *,
         budget: RuntimeBudget | None = None,
         action_ids: tuple[str, ...] = ("model",),
-        provider: FakeProvider | None = None,
+        provider: ModelProvider | None = None,
         output_filter: OutputFilter | None = None,
         off_switch: OffSwitch | None = None,
+        live_config: HarnessConfig | None = None,
     ) -> None:
-        """Snapshot trusted configuration; live adapters are unavailable in Slice 1.
+        """Snapshot trusted configuration, independently gating optional live bindings.
 
         Args:
             budget: Accepted workflow controls, which may only tighten frozen caps.
             action_ids: Finite application-owned work IDs; not model-selected routes.
-            provider: Deterministic fake only. SDK/live bindings remain deferred.
+            provider: Fake or an exact supported optional vendor adapter.
             output_filter: Optional trusted literal output rejection policy.
             off_switch: Shared one-way application cancellation source.
+            live_config: Explicit non-deterministic live opt-in with a finite monetary
+                budget matching this runtime. Never inferred from credentials.
 
         Raises:
             ContractValidationError: For invalid bootstrap or unsupported adapters.
@@ -186,8 +210,11 @@ class ProviderRuntime:
             raise ContractValidationError("Bind unique bounded application action IDs.")
         if any(type(t) is not str or not 1 <= len(t) <= 128 for t in policy.blocked_terms):
             raise ContractValidationError("Output filter terms must contain 1 to 128 characters.")
+        self._live_allowed = False
         if provider is not None and type(provider) is not FakeProvider:
-            raise ContractValidationError("Slice 1 supports only the deterministic fake provider.")
+            from harness_engineering.vendor_providers import _validate_binding
+
+            self._live_allowed = _validate_binding(provider, live_config, b)
         if off_switch is not None and type(off_switch) is not OffSwitch:
             raise ContractValidationError("Bind an application OffSwitch.")
         self._provider: ModelProvider = FakeProvider() if provider is None else provider
@@ -243,6 +270,9 @@ class ProviderRuntime:
             context = ProviderCallContext(
                 min(self._deadline, monotonic() + b.action_timeout_seconds), self._off_switch
             )
+            context._max_output_tokens = b.max_output_tokens
+            context._max_context_tokens = b.max_context_tokens
+            context._live_allowed = self._live_allowed
             context.checkpoint()
             if self._attempts >= b.max_provider_attempts:
                 raise BudgetExceededError("Workflow provider-attempt budget exhausted.")
@@ -304,6 +334,8 @@ class ProviderRuntime:
                     if isinstance(outcome, ProviderTimeoutError)
                     else ProviderEvent.REJECTED
                     if isinstance(outcome, (ContractValidationError, BudgetExceededError))
+                    else ProviderEvent.FAILED
+                    if isinstance(outcome, ProviderExecutionError)
                     else ProviderEvent.DEFECT
                 )
                 raise outcome
