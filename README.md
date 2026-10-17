@@ -1,5 +1,19 @@
 # Agentic AI Engineering Program — Agent Engineering
 
+![Python 3.12](https://img.shields.io/badge/Python-3.12-blue)
+![pytest](https://img.shields.io/badge/tests-pytest-brightgreen)
+![Ruff](https://img.shields.io/badge/code%20quality-Ruff-brightgreen)
+![Pydantic](https://img.shields.io/badge/validation-Pydantic-blueviolet)
+
+![OpenAI](https://img.shields.io/badge/LLM-OpenAI-412991)
+![Gemini](https://img.shields.io/badge/LLM-Gemini-4285F4)
+![Google ADK](https://img.shields.io/badge/Agents-Google%20ADK-4285F4)
+![MCP](https://img.shields.io/badge/Protocol-MCP-6C5CE7)
+
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
+
+![Techademy](https://img.shields.io/badge/Techademy-AI%20Engineering%20Program-informational)
+
 Production-grade agent-engineering systems covering Modules 6.5–10 of the Techademy AI Engineering program.
 
 This repository is standalone from the earlier program repository. Each module is independently source-faithful and isolated from the other modules while following a shared production-grade engineering standard.
@@ -21,15 +35,15 @@ Engineering standards include:
 
 AI coding agents are used as engineering tools within this controlled process. Generated or agent-authored implementation is not accepted solely because it runs: it remains subject to the same architecture, security, testing, evidence, and human-acceptance requirements.
 
-## Modules
+## Engineering Roadmap
 
-| Module | Focus |
-| --- | --- |
-| 6.5 | Advanced agent-engineering capabilities |
-| 7 | Reliability, safety, and observability |
-| 8 | MCP and modern AI infrastructure |
-| 9 | Multimodal and voice AI systems |
-| 10 | Production inference and deployment infrastructure |
+| Module | Topic | Status |
+| --- | --- | --- |
+| 6.5 | Harness Engineering | In Progress |
+| 7 | Reliability, Safety and Observability | In Progress |
+| 8 | MCP and Modern AI Infrastructure | ✅ Complete |
+| 9 | Multimodal and Voice AI Systems | In Progress |
+| 10 | Deployment and Production AI Systems | In Progress |
 
 Module development can proceed independently and out of numerical order. Consult each module's documentation for its authoritative implementation and acceptance state; completed modules also provide a deployed reviewer experience.
 
