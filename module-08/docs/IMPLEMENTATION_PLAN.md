@@ -93,3 +93,14 @@ If implementation reveals a genuine flaw in the frozen architecture, stop and re
 ## Completion Rule
 
 Passing tests alone does not complete Module 8. Material capabilities must also produce reviewer-visible working results and appropriate execution evidence through the unified presentation experience.
+
+## Story 11 - Opt-In Live Provider / BYOK Mode (post-release, additive)
+
+Add an explicitly opt-in, bounded live-provider variant of the interoperable workflow in
+which genuine OpenAI and/or Gemini models select and call one application-authorized MCP
+capability each through their own SDKs, using ephemeral reviewer-supplied keys.
+
+Acceptance focus: deterministic default preserved, explicit consent, ephemeral
+credentials, call/token/time bounds, provider output without authority, accurate
+`live-provider` versus `mocked` classification, and offline tests with no paid calls.
+See the [Story 11 record](stories/STORY-11-opt-in-live-provider-byok.md).

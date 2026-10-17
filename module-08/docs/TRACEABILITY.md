@@ -86,7 +86,7 @@ explanations, not fabricated runtime implementations.
 | ENG-003 | `CapabilityPolicy`; original application role retained across stages | Unknown-role, forged-argument and workflow authority tests; empty-map regression |
 | ENG-004 | Explicit discovery then independent allowlist check | MCP client and ADK denial-before-execution tests; console denial |
 | ENG-005 | API size/time limits; SDK deadlines; 45s workflow; 60s reviewer; two demo slots | Bounds tests, `test_busy_console_rejects_without_startup`; source review of limits, not a load/SLA certification |
-| ENG-006 | Neither SDK model runner used; no live mode | Workflow runner guards and reviewer no-key/external-connection guards |
+| ENG-006 | Neither SDK model runner used in the default path; Story 11 live mode is opt-in only | Workflow runner guards and reviewer no-key/external-connection guards; Story 11 ambient-key and offline live tests |
 | ENG-007 | `ExecutionEvidence` taxonomy and checked execution flags | `test_evidence_contracts.py`; reviewer evidence assertions and visible classification |
 | ENG-008 | Expected validation, denial, transport, cleanup and safe UI failure tests | Existing domain/backend/client/SDK/workflow/reviewer suites; nine empty-map cases |
 | ENG-009 | Typed public interfaces, docstrings and chained failure boundaries | Source review plus Ruff/compileall and expected failure tests; no formal type-checker claim |
@@ -104,3 +104,24 @@ Where a capability is material to the system's purpose or portfolio claims, its 
 ## Change Control
 
 Any requirement or material architecture change requires explicit human approval before this matrix is revised to depend on that change.
+
+## Story 11 additive extension - opt-in live provider / BYOK mode
+
+No requirement definition changed. The optional live mode strengthens existing rows
+without replacing their deterministic evidence. Tests are in `tests/test_live_provider.py`
+and replace only the external model boundary (Agents SDK `ScriptedModel`, scripted ADK
+`BaseLlm`); all such runs are classified `mocked`. No live-provider evidence exists in
+the repository.
+
+| Requirement | Additive implementation | Verification |
+|---|---|---|
+| REQ-TECH-002 | OpenAI Agents SDK `Runner` drives stage 1 with an optional genuine OpenAI model over the shared MCP plane | `test_scripted_providers_run_real_sdks_but_never_claim_live_evidence` |
+| REQ-TECH-003 | Google ADK `Runner`/`McpToolset` drives stage 2 with an optional genuine Gemini model | Same test; `test_single_provider_selection_keeps_other_stage_deterministic` |
+| REQ-LAB-002 / REQ-INT-002 | Live models connect to enterprise tools through MCP within application bounds | Scripted live-path workflow and console tests |
+| ENG-002 / ENG-003 | Model output untrusted; cannot change role, identity, capability, arguments or decision | `test_provider_text_cannot_change_role_or_decision`, `test_model_cannot_bypass_capability_policy_or_argument_binding` |
+| ENG-004 | Discovery, exposure authorization and per-call authorization are separate | `test_unknown_role_is_denied_before_any_model_request`; tool-exposure assertion |
+| ENG-005 | Call, tool, token, stage and run bounds; no retries; one live run per process | `test_openai_call_and_tool_bounds_are_enforced`, `test_adk_call_bound_and_missing_tool_use_fail_safely`, `test_stage_deadline_is_enforced`, factory retry assertions |
+| ENG-006 | Deterministic default unchanged; ambient keys never trigger live execution | `test_ambient_credentials_never_trigger_live_execution`, `test_console_defaults_to_deterministic_mode_with_attribution` |
+| ENG-007 | `live-provider` only for genuine, completed, validated execution; injected doubles `mocked` | `test_live_classification_requires_genuine_completed_validated_execution`, `test_reviewer_live_run_with_injected_doubles_is_mocked` |
+| ENG-008 | Consent, missing-key, redaction and failure paths | Consent, missing-key, redaction and console refusal tests |
+| ENG-001 | Self-explanatory opt-in console mode with risk, bounds and limits | `test_live_mode_explains_risk_and_masks_key_inputs`, `test_live_console_runs_injected_doubles_as_mocked_and_clears_keys` |

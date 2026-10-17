@@ -189,3 +189,68 @@ Such technologies may not be added merely for perceived production sophisticatio
 This architecture was explicitly human-approved on 2026-10-12 after requirements review and current architecture research.
 
 Material architecture changes require explicit human review and approval before implementation relies on them.
+
+## Additive Extension - Opt-In Live Provider / BYOK Mode (Story 11, post-release)
+
+This section records a post-release additive extension. It does not rewrite the frozen
+baseline above, which remains controlling. Invariants 8, 9, 10 and 12 already permitted
+optional live-provider execution that is isolated, explicitly opt-in, bounded, accurately
+classified and not required for tests or reviewer demonstrations; this extension
+implements exactly that. No requirement changed.
+
+### Modes
+
+- **Deterministic Demo** remains the default reviewer path, unchanged: no key, zero model
+  calls, local-integration evidence.
+- **Live Provider Demo (opt-in)** runs the same OpenAI SDK -> Google ADK -> OpenAI SDK
+  workflow over the same loopback MCP plane. Stage 1 may be driven by a genuine OpenAI
+  model through the OpenAI Agents SDK; stage 2 may be driven by a genuine Gemini model
+  through Google ADK. Stage 3, the enterprise policy decision, never uses a model.
+
+### Authority boundary
+
+For each live stage the application:
+
+1. discovers capabilities over MCP (availability evidence only);
+2. authorizes exactly one capability for the application-owned role with
+   `CapabilityPolicy` before the model sees anything;
+3. exposes only that capability to the model (SDK tool filter);
+4. gates every model-proposed call: policy is re-checked, the name and arguments must
+   equal the application-bound values, and only one call is permitted;
+5. validates the MCP result strictly before use.
+
+Model text is bounded, displayed as plain untrusted narrative, and never feeds identity,
+role, capability, arguments or the policy decision. Violations stop the stage without
+running the unauthorized MCP call.
+
+### Credential lifecycle and consent
+
+Credentials are ephemeral, user-supplied capability material, never consent or
+authority. They enter through masked Streamlit inputs inside a form, are held in a
+redacting wrapper, passed directly to a per-run provider client (`AsyncOpenAI` or the
+ADK `Gemini` client with `vertexai=False`), and overwritten in session state as soon as
+the run ends. Environment keys and ADC are never used for model calls; OpenAI Agents SDK
+tracing export is disabled. Log records created during a run are scrubbed of the run's
+keys. Consent requires selecting the mode, enabling a provider, both acknowledgements
+and an explicit run action; the backend enforces `ProviderPolicy` independently of the UI.
+
+### Bounds
+
+At most 2 model calls per selected provider, 600 output tokens per call, one MCP tool
+call per stage, no SDK or HTTP retries, 50s per stage, 120s per run and one live run
+per process. These bound calls, tokens and time; they are not a billing guarantee.
+
+### Evidence
+
+`live-provider` is produced only when the genuine provider boundary completed within
+bounds and the authorized MCP result passed validation. Injected test doubles are
+classified `mocked` even through the default path; failures produce no success evidence;
+unselected or model-free stages remain `local-integration`.
+
+Google ADK's MCP session manager may still probe ambient Google credentials for MCP
+client-certificate (mTLS) transport configuration unless
+`GOOGLE_API_USE_CLIENT_CERTIFICATE=false`, as recorded for the deployment. That probe
+configures loopback transport only and never selects a credential for model execution.
+
+The reviewer-visible working-results invariant applies unchanged: live results are
+rendered only from actual backend execution and are never fabricated.

@@ -33,6 +33,50 @@ Execution creates and cleans up isolated temporary services and a seeded databas
 At most two demonstrations run concurrently per process. Failures clear stale
 success and show a safe error; retry or ask a maintainer to inspect the cause.
 
+## Reviewer modes
+
+The console opens in **Deterministic Demo**, the accepted default described above:
+no key, zero model or provider calls, deterministic local-integration evidence.
+
+**Live Provider Demo (opt-in)** is an optional, additive mode for reviewers who want
+to see genuine external models use the same MCP capability plane with their own keys
+(BYOK). It never runs because a key exists in the environment, and it never starts
+until the reviewer selects the mode, enables at least one provider, pastes that
+provider's key into a masked field, ticks both acknowledgements (external provider
+calls; possible charges to their own provider account) and clicks **Run live provider
+demonstration**.
+
+- Stage 1 (optional live): an OpenAI model, run by the OpenAI Agents SDK, sees only
+  the application-authorized `get_customer` MCP tool and must call it once with the
+  application-bound customer.
+- Stage 2 (optional live): a Gemini model, run by Google ADK through `McpToolset`,
+  sees only `get_account_status` under the same rules.
+- Stage 3 (never a model): the internal policy decision runs through the accepted
+  OpenAI SDK MCP path with application-built context.
+- An unselected provider's stage uses the accepted deterministic SDK path.
+
+Bounds per run: at most 2 OpenAI and 2 Gemini model calls, 600 output tokens per
+call, one MCP tool call per stage, no SDK/HTTP retries, 50s per stage, 120s per run,
+one live run per process. These are call, token and time bounds, not a billing
+guarantee; providers bill by their own pricing. The synthetic record `CUST-001` is
+sent to each selected provider.
+
+Keys are session-only capability material: never read from `OPENAI_API_KEY`,
+`GOOGLE_API_KEY`, `GEMINI_API_KEY` or ADC for model calls; passed directly to a
+per-run provider client; erased from the form widgets as soon as the run ends;
+never stored, printed, placed in evidence or shown in errors; and scrubbed from
+every log record created during the run. A key never grants authority, and model
+output can never change the role, identity, capabilities or policy decision.
+
+Evidence is `live-provider` only when the genuine provider client completed within
+bounds and the authorized MCP result passed application validation. Injected test
+doubles produce `mocked`; failures produce no success evidence. Live mode proves a
+provider model can choose and call an application-authorized MCP capability through
+its SDK. It does not prove model accuracy, provider availability, billing amounts,
+authentication, multi-host deployment or that a model holds any authority. No paid or
+live provider call was made while implementing or testing this mode; see
+[Story 11](docs/stories/STORY-11-opt-in-live-provider-byok.md).
+
 ## What the demonstration establishes
 
 The MCP SDK implements the server and Streamable HTTP client. OpenAI Agents SDK
@@ -68,8 +112,11 @@ automation is necessary for the accepted reviewer behavior.
 
 Evidence distinguishes deterministic contract/policy tests, mocked failure
 injection, adapter construction, and genuine **local-integration** execution over
-loopback. SDK construction alone is not live-provider evidence. **Live-provider
-and deployment evidence are absent.** The console does not establish multi-host,
+loopback. SDK construction alone is not live-provider evidence. **No live-provider
+evidence exists in this repository**: automated tests replace only the external model
+boundary and are classified `mocked`; only a reviewer's own opt-in live run can
+produce `live-provider` evidence. **Deployment evidence is absent from this local
+verification.** The console does not establish multi-host,
 cloud, authentication, availability or production deployment readiness. The raw
 MCP server and low-level clients are integration primitives; application-owned
 authorization is enforced by the authorized consumer paths, not an authenticated

@@ -18,15 +18,29 @@ import uvicorn
 
 from mcp_enterprise_integration.capability_policy import CapabilityAuthorization, CapabilityPolicy
 from mcp_enterprise_integration.database import CustomerRecord, CustomerRepository
-from mcp_enterprise_integration.errors import AuthorizationError, EnterpriseIntegrationError
+from mcp_enterprise_integration.errors import (
+    AuthorizationError,
+    ConfigurationError,
+    EnterpriseIntegrationError,
+)
 from mcp_enterprise_integration.evidence import EvidenceClass, ExecutionEvidence
 from mcp_enterprise_integration.internal_system import RequestedAction
+from mcp_enterprise_integration.live_provider import (
+    LiveConsent,
+    LiveProviderError,
+    LiveProviderSelection,
+    LiveProviderWorkflow,
+    LiveWorkflowResult,
+)
 from mcp_enterprise_integration.mcp_client import EnterpriseMcpClient, McpConnectionInfo
 from mcp_enterprise_integration.mcp_server import create_enterprise_mcp_server
 from mcp_enterprise_integration.workflow import EnterpriseWorkflow, WorkflowResult
 
 _LOGGER = logging.getLogger(__name__)
 _DEMO_SLOTS = threading.BoundedSemaphore(2)
+# One live run per process: provider spend never multiplies through concurrency.
+_LIVE_SLOTS = threading.BoundedSemaphore(1)
+_SCENARIO_ROLES = {"Manager review": "account_manager", "Support review": "support_agent"}
 
 
 class ReviewerError(Exception):
@@ -231,3 +245,82 @@ def run_reviewer_demo(scenario: str = "Manager review") -> ReviewerResult:
         ) from exc
     finally:
         _DEMO_SLOTS.release()
+
+
+@dataclass(frozen=True)
+class LiveReviewerResult:
+    """Credential-free results of one explicitly consented live-provider run."""
+
+    scenario: str
+    workflow: LiveWorkflowResult
+
+
+def run_live_provider_demo(
+    scenario: str,
+    *,
+    consent: LiveConsent,
+    openai: LiveProviderSelection | None,
+    google_adk: LiveProviderSelection | None,
+) -> LiveReviewerResult:
+    """Execute one opt-in live-provider demonstration over fresh local services.
+
+    Consent and provider selection are checked before any service starts or any
+    provider is contacted. Credentials are used only inside this call and are
+    never returned, stored, logged or placed in evidence.
+
+    Args:
+        scenario: One of the two fixed demonstration scenarios; not authentication.
+        consent: Explicit acknowledgements of external calls and possible charges.
+        openai: Explicit OpenAI selection with an ephemeral key, or None.
+        google_adk: Explicit Gemini selection with an ephemeral key, or None.
+
+    Returns:
+        Validated live-mode results with per-stage evidence classification.
+
+    Raises:
+        ReviewerError: With a fixed safe message if consent, input, execution,
+            validation or cleanup fails.
+    """
+    if scenario not in _SCENARIO_ROLES:
+        raise ReviewerError("Choose Manager review or Support review.")
+    providers = consent.provider_policy()
+    if not providers.allow_live_provider_calls:
+        raise ReviewerError(
+            "Confirm both acknowledgements before running live mode. Nothing was sent."
+        )
+    if openai is None and google_adk is None:
+        raise ReviewerError("Select at least one live provider. Nothing was sent.")
+    if not _LIVE_SLOTS.acquire(blocking=False):
+        raise ReviewerError("A live demonstration is already running. Retry when it finishes.")
+    try:
+        with (
+            TemporaryDirectory(prefix="module08-live-") as directory,
+            _local_plane(Path(directory) / "customers.db") as endpoint,
+        ):
+            workflow = LiveProviderWorkflow(endpoint, providers=providers)
+            result = asyncio.run(
+                workflow.run(
+                    customer_id="CUST-001",
+                    principal_role=_SCENARIO_ROLES[scenario],
+                    openai=openai,
+                    google_adk=google_adk,
+                )
+            )
+        return LiveReviewerResult(scenario=scenario, workflow=result)
+    except ReviewerError:
+        raise
+    except (LiveProviderError, ConfigurationError) as exc:
+        # These messages are fixed application text and never contain secrets.
+        raise ReviewerError(str(exc)) from exc
+    except EnterpriseIntegrationError as exc:
+        _LOGGER.error("Module 8 live reviewer backend failed: %s", type(exc).__name__)
+        raise ReviewerError(
+            "Live demonstration failed safely before completion. No success was recorded."
+        ) from exc
+    except Exception as exc:
+        # Last application boundary: never render underlying exception text or traceback.
+        raise ReviewerError(
+            "Live demonstration failed safely. Ask the maintainer to inspect it."
+        ) from exc
+    finally:
+        _LIVE_SLOTS.release()
