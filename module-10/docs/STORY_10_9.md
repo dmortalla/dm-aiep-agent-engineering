@@ -175,3 +175,114 @@ The human authorized the requested module-only local commit after full local gat
 merge, tag, Azure provisioning, Azure image publication or teardown has occurred.
 No Azure resource was created, modified or deleted by the agent. Story 10.10
 has not begun.
+
+## Bounded independent-review repair — 2026-10-17
+
+Repair baseline HEAD: `8f4cfa8132c18987a15efe2c3de3c9b91484743b`.
+Story 10.9 implementation `fec6e016aa93cf693d2a8d2b38f1b10d59f46b4e`
+remains an ancestor. The repair owns only Module 10 and retains the approved
+infrastructure, compute, cost and human-only mutation architecture.
+
+The rejected RBAC command is replaced by separate subscription-wide `--all` and
+registry-scoped `--include-inherited` reads, both explicitly bound to the expected
+subscription and including group-derived authority. Both complete results must
+contain exactly the same direct registry-scoped AcrPull assignment with validated
+principal, role-definition and assignment identities. Sibling/group/ancestor
+grants, missing lists, page envelopes and failed reads prevent acceptance. Scope
+is the expected subscription and its ancestors; this is not a cross-tenant or
+unrelated-subscription authority audit.
+
+The expected subscription is entered privately at verification time, validated
+as a nonzero canonical UUID, held in memory, and supplied on every CLI read.
+Resource-ID prefixes are constructed from that independent input. No real account
+identifiers are introduced in source, documentation, tests or success evidence;
+test identifiers are generated from explicitly synthetic labels at runtime.
+All three probes must exactly match the approved fields in both app and active
+revision. Host overrides, custom/Authorization headers and unknown fields fail.
+The unsupported ACR API 2023-07-01 authentication policy property is removed;
+Microsoft's documented enabled default remains subject to the explicit read-only
+enabled-state gate. Null/malformed principal and assignment UUIDs are rejected.
+The documented post-buffering CLI output limit remains unchanged.
+
+The original 311 tests remain; **101 added cases**, **412 total**, include:
+
+- `test_real_collector_and_verifier_bind_every_read`
+- `test_collector_rejects_authority_outside_registry`
+- `test_rbac_partial_or_malformed_lists_fail`
+- `test_rbac_missing_required_fields_fail`
+- `test_missing_inherited_collection_fails`
+- `test_rbac_exact_identity_and_authority`
+- `test_null_or_malformed_principals_fail`
+- `test_probe_extra_fields_fail_closed`
+- `test_consistently_wrong_subscription_fails`
+- `test_invalid_subscription_never_reaches_cli`
+- `test_cli_forbids_invalid_scope_and_subscription_override`
+- `test_cli_explicit_subscription_ignores_default`
+- `test_failed_rbac_read_prevents_evidence`
+- `test_acr_uses_documented_default_and_retains_receipt_gate`
+- `test_private_subscription_refuses_echo_fallback`
+- `test_cli_acceptance_never_writes_failed_evidence`
+
+Independent local repair gates (Python 3.12.14, pytest 8.4.2):
+
+1. `python -m ruff check . --no-cache`: passed, exit 0.
+2. `python -m pytest -p no:cacheprovider --basetemp <external-evidence-directory>`:
+   **412 passed, one existing Starlette warning in 4.05s**, exit 0.
+3. `python -m compileall -q src tests scripts ui`: passed, exit 0; bytecode redirected
+   to external evidence with `PYTHONPYCACHEPREFIX`.
+4. Existing `pipeline.validate_contract()`: passed, exit 0.
+5. `python -B scripts/container_acceptance.py`: blocked at `docker info`, exit 1,
+   before any image build or container creation. Starting installed Docker Desktop
+   did not recover the Linux engine. Its local startup log reports a secrets-engine
+   socket rename/access failure. No Docker reset, socket deletion, host repair,
+   image publication or Azure operation was attempted. Container acceptance has
+   not passed at that checkpoint; the conditional repair commit was held pending
+   recovery, as explicitly requested by the human. The resumed results below
+   supersede that environmental blocker.
+
+Initial Ruff found three line-length issues; those were repaired before testing.
+The earlier 408-test run passed before four command-entry-point cases were added.
+No assertion or security invariant was weakened. Temporary test and bytecode files
+are under parent `TECHADEMY/EVIDENCE/story109-bounded-repair-20261017`.
+
+Requirements: review findings addressed locally. Product experience: private
+subscription prompt and updated operator workflow. Real functionality: deterministic
+collector/command regressions pass; cloud execution remains unverified. Reliability:
+both snapshots and probes fail closed. Security: explicit subscription and authority
+checks; no additional privilege. Cost: unchanged bounded footprint/traffic. Evidence:
+offline tests and the resumed local-container acceptance below. Deployment: no
+Azure mutation, fresh independent review and genuine cloud evidence remain deferred.
+No production-grade completion claim or Story 10.10 work is made.
+
+Reference basis: [Microsoft CLI RBAC implementation](https://github.com/Azure/azure-cli/blob/dev/src/azure-cli/azure/cli/command_modules/role/custom.py)
+and [ACR documented authentication default](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-disable-authentication-as-arm),
+consulted read-only for this repair.
+
+### Resumed final acceptance after human-restored Docker
+
+The human independently restored Docker and authorized resuming the preserved
+seven-file repair, without broadening implementation. Resumed HEAD remained
+`8f4cfa8132c18987a15efe2c3de3c9b91484743b`. First, the previously blocked
+`python -B scripts/container_acceptance.py` passed, exit 0. Then the entire
+required fail-fast sequence passed again:
+
+1. `python -m ruff check . --no-cache`: all checks passed, exit 0.
+2. `python -m pytest -p no:cacheprovider --basetemp <external-evidence-directory>`:
+   **412 passed, one existing Starlette warning in 4.23s**, exit 0.
+3. `python -m compileall -q src tests scripts ui`: passed, exit 0; external bytecode.
+4. Existing `pipeline.validate_contract()`: passed, exit 0.
+5. `python -B scripts/container_acceptance.py`: passed, exit 0. Local build,
+   startup/readiness/liveness/Docker health, UID 10001, targeted content/permissions,
+   deterministic inference, 422/malformed JSON rejection, correlated minimized
+   telemetry, graceful stop exit 0 and exact owned-container cleanup all passed.
+
+Final local image: `module10-story105-c98365382c79:local`; Docker content ID:
+`sha256:17266c97b4a47028d698fa386a4b11a5a068ee7035597dc37e7997cd5921cf88`.
+This is local implementation-worktree acceptance, not a clean postcommit promotion
+candidate, registry manifest identity, cloud evidence or deployment authority.
+The human-authorized repair commit may now proceed after exact module-only diff
+inspection. No implementation or tests were changed during resumption. The seven
+files remain the repair's entire scope; only this verification record was updated.
+No Azure operation, provider registration, RBAC mutation, image publication, Git
+push/merge/tag, deployment or Story 10.10 work occurred. Fresh independent semantic
+acceptance and genuine human-controlled Azure evidence remain deferred.

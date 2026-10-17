@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime
+from uuid import UUID
 
 from module10_ai.azure_contract import (
     ACR_PULL,
@@ -35,13 +36,65 @@ def subset(actual: object, expected: object) -> bool:
     return type(actual) is type(expected) and actual == expected
 
 
-def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
+def identifier(value: object) -> str:
+    """Require a canonical nonzero UUID without reflecting private input in errors."""
+    try:
+        require(type(value) is str, "Require a canonical nonzero UUID identifier.")
+        parsed = UUID(value)
+        require(str(parsed) == value.lower() and parsed.int != 0,
+                "Require a canonical nonzero UUID identifier.")
+        return str(parsed)
+    except (ValueError, AttributeError) as exc:
+        raise VerificationError("Require a canonical nonzero UUID identifier.") from exc
+
+
+def validate_roles(state: dict, principal: str, registry_id: str, subscription: str) -> None:
+    """Require both complete CLI lists to agree on exactly the permitted assignment.
+
+    The subscription list covers sibling resources/groups; the registry-scoped
+    list additionally covers inherited assignments above the subscription.
+    CLI pagination is consumed by the list commands, never accepted as raw pages.
+    """
+    expected_role = f"/subscriptions/{subscription}/providers/Microsoft.Authorization/" \
+                    f"roleDefinitions/{ACR_PULL}"
+    assignment_ids = []
+    for key in ("roles", "inherited_roles"):
+        roles = state[key]
+        require(type(roles) is list and len(roles) == 1 and type(roles[0]) is dict,
+                "Require complete subscription and inherited RBAC lists with only AcrPull.")
+        role = roles[0]
+        require(identifier(role["principalId"]) == principal
+                and role["scope"].lower() == registry_id.lower()
+                and role["roleDefinitionId"].lower() == expected_role.lower()
+                and role["principalType"] == "ServicePrincipal"
+                and not role.get("condition")
+                and not role.get("delegatedManagedIdentityResourceId"),
+                "Pull identity must have only the intended registry-scoped AcrPull authority.")
+        assignment_id = role["id"]
+        prefix = registry_id + "/providers/Microsoft.Authorization/roleAssignments/"
+        require(type(assignment_id) is str
+                and assignment_id.lower().startswith(prefix.lower()),
+                "RBAC assignment identity/scope differs.")
+        identifier(assignment_id[len(prefix):])
+        assignment_ids.append(assignment_id.lower())
+    require(assignment_ids[0] == assignment_ids[1], "RBAC observations disagree; rerun collection.")
+
+
+def validate_probes(actual: object, expected: list[dict]) -> None:
+    """Reject all unapproved probe fields, including destinations and custom headers."""
+    require(subset(actual, expected) and actual == expected,
+            "Probes must exactly match the approved paths, ports, timing and fields.")
+
+
+def validate_state(config: AzureConfig, digest: str, state: dict,
+                   expected_subscription: str) -> str:
     """Validate a fresh complete cloud snapshot and return only its safe FQDN.
 
     Args:
         config: Approved naming and ingress contract.
         digest: Operator-reviewed registry manifest identity.
         state: Raw read-only observations held only in memory.
+        expected_subscription: Independent operator-selected UUID, never persisted.
 
     Returns:
         Validated Container Apps hostname for bounded HTTPS acceptance.
@@ -51,6 +104,7 @@ def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
     """
     n = config.names
     image = config.image(digest)
+    subscription = identifier(expected_subscription)
     try:
         kinds = {"registry": "Microsoft.ContainerRegistry/registries",
                  "workspace": "Microsoft.OperationalInsights/workspaces",
@@ -65,7 +119,10 @@ def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
         group = state["group"]
         require(group["name"] == n["group"] and group["location"] == REGION
                 and subset(group["tags"], TAGS), "Resource-group ownership/region differs.")
-        prefix = group["id"] + "/providers/"
+        group_id = f"/subscriptions/{subscription}/resourceGroups/{n['group']}"
+        require(group["id"].lower() == group_id.lower(),
+                "Resource group is outside the independently expected subscription.")
+        prefix = group_id + "/providers/"
         for key, kind in kinds.items():
             item = state[key]
             require(item["id"].lower() == (prefix + kind + "/" + n[key]).lower()
@@ -100,12 +157,8 @@ def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
                 and logs["logAnalyticsConfiguration"]["customerId"] == workspace["customerId"],
                 "Environment logs are not connected to the owned workspace.")
         identity_id = state["identity"]["id"]
-        principal = state["identity"]["properties"]["principalId"]
-        roles = state["roles"]
-        require(len(roles) == 1 and roles[0]["principalId"] == principal
-                and roles[0]["scope"].lower() == registry["id"].lower()
-                and roles[0]["roleDefinitionId"].endswith("/" + ACR_PULL),
-                "Pull identity must have only registry-scoped AcrPull; inspect inherited roles.")
+        principal = identifier(state["identity"]["properties"]["principalId"])
+        validate_roles(state, principal, registry["id"], subscription)
         app = state["app"]
         require(app["identity"]["type"] == "UserAssigned"
                 and set(app["identity"]["userAssignedIdentities"]) == {identity_id},
@@ -138,6 +191,7 @@ def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
                 and not template.get("initContainers") and not template.get("volumes")
                 and not template.get("serviceBinds"), "App compute/probes/scaling/image differs.")
         for item in template["containers"]:
+            validate_probes(item["probes"], expected_container["probes"])
             require(not any(item.get(key) for key in
                             ("env", "command", "args", "volumeMounts")),
                     "Runtime overrides are forbidden; deploy the accepted Docker workload.")
@@ -154,6 +208,8 @@ def validate_state(config: AzureConfig, digest: str, state: dict) -> str:
                 and active[0]["properties"]["provisioningState"] == "Provisioned"
                 and subset(active[0]["properties"]["template"], template),
                 "Active revision is unhealthy, ambiguous or differs from the app template.")
+        for item in active[0]["properties"]["template"]["containers"]:
+            validate_probes(item["probes"], expected_container["probes"])
         fqdn = settings["ingress"]["fqdn"]
         require(isinstance(fqdn, str) and re.fullmatch(
             re.escape(n["app"]) + r"\.[a-z0-9-]+\.southcentralus\.azurecontainerapps\.io", fqdn

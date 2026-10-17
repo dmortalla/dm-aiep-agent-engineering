@@ -55,6 +55,13 @@ export raw deployment/resource responses, debug output, workspace keys or accoun
 inventories into evidence. The verifier disables CLI command-file logging and
 telemetry, captures observations in memory, and persists only minimized facts.
 
+ACR API `2023-07-01` does not define `azureADAuthenticationAsArmPolicy`; the
+template therefore does not emit that property. Microsoft documents ARM audience
+authentication as enabled by default. The existing read-only authentication gate
+still requires `status: enabled` before publication and cloud acceptance; defaults
+are never evidence of observed configuration. A policy-disabled registry fails
+closed and requires human prerequisite review, not automatic mutation.
+
 ## Local validation and artifact preparation
 
 Use the Module 10 Python 3.12 environment with locked reviewer/dev dependencies.
@@ -222,6 +229,36 @@ Invoke-WebRequest -Uri "https://$fqdn/health/ready" -TimeoutSec 30 -MaximumRetry
 if ($LASTEXITCODE -ne 0) { throw 'Cloud verification failed; deployment is not accepted.' }
 ```
 
+Verification privately prompts for the independently approved subscription UUID.
+Obtain it from the human-reviewed intended account, not from the observed resources
+or an unchecked CLI default. Input must be a canonical nonzero UUID. It remains in
+process memory, is not echoed, and is not included in evidence or error messages.
+No insecure stdin fallback is allowed. Every verifier CLI read, including both
+fresh snapshots and Log Analytics, supplies this subscription explicitly. Group
+and resource IDs must match a prefix built from that independent value and the
+approved names. Rendering remains offline and requires no subscription identity.
+
+RBAC verification requires two successful complete lists for the pull principal:
+`role assignment list --all` in the expected subscription, and a separate list
+with `--scope` set to the independently derived registry ID plus
+`--include-inherited`. Both use `--assignee-object-id`, `--include-groups` and
+disabled principal/role display-name enrichment. `--scope` and `--all` are never
+combined. Azure CLI consumes list pagination; raw page envelopes, missing/empty
+lists, malformed assignments, extra authority or disagreeing assignment IDs fail.
+The subscription-wide view detects sibling resources and other resource groups;
+the scoped view includes inherited subscription/management-group authority.
+Group-derived assignments also fail the exact direct-principal-only contract.
+The operator must have complete RBAC visibility for these scopes; denied reads
+must be resolved without narrowing collection or relaxing checks. This is a check
+of the expected subscription and its ancestors, not an audit of unrelated tenants
+or subscriptions; no global identity-authority claim is made.
+
+All three probes in both the app template and active revision must match the
+approved contract exactly. Extra probe fields, destination `host` overrides,
+custom HTTP headers (including Authorization), and unknown `httpGet` fields are
+rejected. Server API differences require review; they must not silently relax
+the health/readiness contract.
+
 Verifier uses only fixed allowlisted read commands with 90-second per-command
 deadlines, no shell, no automatic extension installation, no CLI command log and
 no raw response output. It accepts no snapshot/fixture/approval file. It verifies
@@ -239,7 +276,7 @@ to the owned app, actual revision and this fresh digest, returning only success 
 failure counts. At most six queries, five 20-second delays. Missing ingestion,
 malformed rows, access/query failure or configuration drift fails closed; no
 success file is written. A final fresh snapshot must still match the same app
-configuration/revision. Total work is finite (two sets of 11 CLI reads, five HTTP
+configuration/revision. Total work is finite (two sets of 12 CLI reads, five HTTP
 requests, six queries and 100 seconds of ingestion waits at most). Each CLI response
 is rejected above 1 MiB after capture; CLI capture is not a streaming memory cap.
 

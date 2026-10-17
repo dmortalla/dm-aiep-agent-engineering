@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 import pytest
@@ -32,6 +33,8 @@ deployment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deployment)
 CONFIG = AzureConfig("reviewa", "8.8.8.8/32")
 DIGEST = "sha256:" + "a" * 64
+SUBSCRIPTION = str(uuid5(NAMESPACE_URL, "module10.synthetic.subscription"))
+PRINCIPAL = str(uuid5(NAMESPACE_URL, "module10.synthetic.principal"))
 
 
 def test_approved_identity_footprint() -> None:
@@ -64,13 +67,13 @@ def test_approved_identity_boundary_rejects_expansion(change: str) -> None:
         registry = state["app"]["properties"]["configuration"]["registries"][0]
         registry.update(username="synthetic-user", passwordSecretRef="synthetic-reference")
     with pytest.raises(VerificationError):
-        validate_state(CONFIG, DIGEST, state)
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
 
 
 def observed() -> dict:
     """Build explicitly synthetic observations; never call Azure or emit cloud evidence."""
     names = CONFIG.names
-    group_id = "/synthetic-account/resourceGroups/" + names["group"]
+    group_id = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/" + names["group"]
     state = {"group": {"name": names["group"], "id": group_id,
                        "tags": dict(TAGS), "location": REGION}, "inventory": []}
     kinds = {"registry": "Microsoft.ContainerRegistry/registries",
@@ -97,9 +100,15 @@ def observed() -> dict:
         appLogsConfiguration={"destination": "log-analytics", "logAnalyticsConfiguration": {
             "customerId": "synthetic-workspace"}})
     identity = state["identity"]
-    identity["properties"]["principalId"] = "synthetic-principal"
-    state["roles"] = [{"principalId": "synthetic-principal", "scope": registry["id"],
-                       "roleDefinitionId": "/synthetic-role/" + ACR_PULL}]
+    identity["properties"]["principalId"] = PRINCIPAL
+    assignment = str(uuid5(NAMESPACE_URL, "module10.synthetic.assignment"))
+    state["roles"] = [{"principalId": PRINCIPAL, "scope": registry["id"],
+                       "principalType": "ServicePrincipal",
+                       "id": registry["id"] + "/providers/Microsoft.Authorization/"
+                             "roleAssignments/" + assignment,
+                       "roleDefinitionId": f"/subscriptions/{SUBSCRIPTION}/providers/"
+                                           "Microsoft.Authorization/roleDefinitions/" + ACR_PULL}]
+    state["inherited_roles"] = copy.deepcopy(state["roles"])
     app = state["app"]
     app["identity"] = {"type": "UserAssigned", "userAssignedIdentities": {identity["id"]: {}}}
     settings = {"activeRevisionsMode": "Single", "maxInactiveRevisions": 2,
@@ -181,7 +190,7 @@ def test_arm_minimal_security_and_source_contract() -> None:
 
 def test_fixture_state_is_only_validation() -> None:
     """Synthetic state validation returns a hostname, never a genuine-cloud manifest."""
-    result = validate_state(CONFIG, DIGEST, observed())
+    result = validate_state(CONFIG, DIGEST, observed(), SUBSCRIPTION)
     assert isinstance(result, str) and result.endswith("azurecontainerapps.io")
     assert not subset(True, 1) and not subset([1, 2], [1])
 
@@ -221,7 +230,7 @@ def test_observation_drift_fails_closed(path: tuple, value: object) -> None:
         target = target[key]
     target[path[-1]] = value
     with pytest.raises(VerificationError) as error:
-        validate_state(CONFIG, DIGEST, state)
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
     assert "sensitive" not in str(error.value)
 
 
@@ -231,7 +240,7 @@ def test_missing_observation(missing: str) -> None:
     state = observed()
     del state[missing]
     with pytest.raises(VerificationError):
-        validate_state(CONFIG, DIGEST, state)
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
 
 
 def test_extra_resources_and_authority_fail() -> None:
@@ -239,11 +248,11 @@ def test_extra_resources_and_authority_fail() -> None:
     state = observed()
     state["inventory"].append({"name": "foreign", "type": "Microsoft.Compute/virtualMachines"})
     with pytest.raises(VerificationError):
-        validate_state(CONFIG, DIGEST, state)
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
     state = observed()
     state["roles"].append(copy.deepcopy(state["roles"][0]))
     with pytest.raises(VerificationError):
-        validate_state(CONFIG, DIGEST, state)
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
 
 
 @pytest.mark.parametrize("command", [("group", "delete"), ("deployment", "group", "create"),
@@ -252,7 +261,7 @@ def test_collector_cannot_mutate(command: tuple[str, ...], monkeypatch: pytest.M
     """Unknown and privileged commands fail before process execution or credential inspection."""
     monkeypatch.setattr(deployment.subprocess, "run", lambda *a, **kw: pytest.fail("CLI reached"))
     with pytest.raises(VerificationError, match="forbidden"):
-        deployment.az_read(command)
+        deployment.az_read(command, subscription=SUBSCRIPTION)
 
 
 @pytest.mark.parametrize("result", [subprocess.CompletedProcess([], 1, "sensitive", "sensitive"),
@@ -264,7 +273,8 @@ def test_cli_boundary_minimizes_errors(result: subprocess.CompletedProcess,
     monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
     monkeypatch.setattr(deployment.subprocess, "run", lambda *a, **kw: result)
     with pytest.raises(VerificationError) as error:
-        deployment.az_read(("group", "show"), "--name", CONFIG.names["group"])
+        deployment.az_read(("group", "show"), "--name", CONFIG.names["group"],
+                           subscription=SUBSCRIPTION)
     assert "sensitive" not in str(error.value)
 
 
@@ -279,7 +289,7 @@ def test_cli_timeout_and_bound(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(deployment.subprocess, "run", run)
     with pytest.raises(VerificationError) as error:
-        deployment.az_read(("group", "show"))
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
     assert isinstance(error.value.__cause__, subprocess.TimeoutExpired)
 
 
@@ -313,12 +323,12 @@ def test_verifier_no_success_on_required_failure(failure: str,
 
     monkeypatch.setattr(deployment, "collect", collect)
     monkeypatch.setattr(deployment, "https_checks", http)
-    monkeypatch.setattr(deployment, "az_read", lambda *args:
+    monkeypatch.setattr(deployment, "az_read", lambda *args, **kwargs:
                         [] if failure == "monitor" else [{"successes": 2, "failures": 1}])
     monkeypatch.setattr(deployment.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(deployment, "cloud_evidence", lambda *args: pytest.fail("false success"))
     with pytest.raises(VerificationError):
-        deployment.verify(CONFIG, DIGEST)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
 
 
 def test_monitor_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,10 +336,10 @@ def test_monitor_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     queries, sleeps, http_calls = [], [], []
     monkeypatch.setattr(deployment, "collect", lambda *args: observed())
     monkeypatch.setattr(deployment, "https_checks", lambda *args: http_calls.append(args))
-    monkeypatch.setattr(deployment, "az_read", lambda *args: queries.append(args) or [])
+    monkeypatch.setattr(deployment, "az_read", lambda *args, **kwargs: queries.append(args) or [])
     monkeypatch.setattr(deployment.time, "sleep", lambda seconds: sleeps.append(seconds))
     with pytest.raises(VerificationError, match="receipt missing"):
-        deployment.verify(CONFIG, DIGEST)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
     assert len(queries) == 6 and sleeps == [20] * 5 and len(http_calls) == 1
 
 
@@ -479,7 +489,273 @@ def test_windows_cli_avoids_batch_shell(monkeypatch: pytest.MonkeyPatch, tmp_pat
         return subprocess.CompletedProcess(command, 0, "{}", "")
 
     monkeypatch.setattr(deployment.subprocess, "run", execute)
-    assert deployment.az_read(("group", "show")) == {}
+    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION) == {}
     runtime.unlink()
     with pytest.raises(VerificationError, match="batch execution forbidden"):
-        deployment.az_read(("group", "show"))
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
+
+
+def collector_double(state: dict, calls: list) -> object:
+    """Adapt synthetic observations to real collector commands without calling Azure."""
+    def read(command: tuple[str, ...], *args: str, subscription: str) -> object:
+        calls.append((command, args, subscription))
+        assert subscription == SUBSCRIPTION
+        assert not ("--scope" in args and "--all" in args)
+        if command == ("group", "show"):
+            return copy.deepcopy(state["group"])
+        if command == ("resource", "list"):
+            return copy.deepcopy(state["inventory"])
+        if command == ("resource", "show"):
+            name = args[args.index("--name") + 1]
+            return copy.deepcopy(state[next(k for k, v in CONFIG.names.items() if v == name)])
+        if command == ("role", "assignment", "list"):
+            assert "--assignee-object-id" in args and "--include-groups" in args
+            assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
+            if "--all" in args:
+                return copy.deepcopy(state["roles"])
+            assert "--include-inherited" in args
+            return copy.deepcopy(state["inherited_roles"])
+        if command == ("containerapp", "revision", "list"):
+            return copy.deepcopy(state["revisions"])
+        if command == ("acr", "manifest", "show-metadata"):
+            return copy.deepcopy(state["manifest"])
+        if command == ("acr", "config", "authentication-as-arm", "show"):
+            return copy.deepcopy(state["arm_auth"])
+        if command == ("monitor", "log-analytics", "query"):
+            return [{"successes": 2, "failures": 1}]
+        pytest.fail("Unexpected collector command")
+    return read
+
+
+def test_real_collector_and_verifier_bind_every_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both snapshots, RBAC views and monitor query use the independent subscription."""
+    calls = []
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
+    monkeypatch.setattr(deployment, "https_checks", lambda *args: None)
+    evidence = deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+    assert evidence["classification"] == "AZURE CLOUD / DETERMINISTIC INFERENCE"
+    assert SUBSCRIPTION not in json.dumps(evidence) and PRINCIPAL not in json.dumps(evidence)
+    roles = [args for command, args, _ in calls if command == ("role", "assignment", "list")]
+    assert len(roles) == 4
+    assert sum("--all" in args for args in roles) == 2
+    assert sum("--scope" in args and "--include-inherited" in args for args in roles) == 2
+    assert len(calls) == 25  # Two twelve-read snapshots and one telemetry query.
+
+
+@pytest.mark.parametrize("view", ["roles", "inherited_roles"])
+@pytest.mark.parametrize("scope", ["subscription", "group", "sibling", "other-group", "parent"])
+def test_collector_rejects_authority_outside_registry(view: str, scope: str,
+                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+    """Full subscription and ancestor lists expose forbidden assignments before HTTP."""
+    state = observed()
+    extra = copy.deepcopy(state[view][0])
+    root = f"/subscriptions/{SUBSCRIPTION}"
+    scopes = {"subscription": root, "group": root + "/resourceGroups/" + CONFIG.names["group"],
+              "sibling": state["workspace"]["id"],
+              "other-group": root + "/resourceGroups/synthetic-other",
+              "parent": "/providers/Microsoft.Management/managementGroups/synthetic-parent"}
+    extra["scope"] = scopes[scope]
+    state[view].append(extra)
+    monkeypatch.setattr(deployment, "az_read", collector_double(state, []))
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    with pytest.raises(VerificationError):
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("view", ["roles", "inherited_roles"])
+@pytest.mark.parametrize("bad", [None, [], {}, {"value": [], "nextLink": "untrusted"},
+                                 [None], [True], ["partial"]])
+def test_rbac_partial_or_malformed_lists_fail(view: str, bad: object) -> None:
+    """Missing pages, envelopes, wrong types and absent expected assignments cannot pass."""
+    state = observed()
+    state[view] = bad
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("view", ["roles", "inherited_roles"])
+@pytest.mark.parametrize("field", ["id", "scope", "principalId", "principalType",
+                                  "roleDefinitionId"])
+def test_rbac_missing_required_fields_fail(view: str, field: str) -> None:
+    """Successful CLI status cannot substitute for a complete assignment identity."""
+    state = observed()
+    del state[view][0][field]
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+def test_missing_inherited_collection_fails() -> None:
+    """A subscription-only result cannot stand in for the required inherited read."""
+    state = observed()
+    del state["inherited_roles"]
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("change", ["push", "owner", "group", "assignment", "definition"])
+def test_rbac_exact_identity_and_authority(change: str) -> None:
+    """Broader roles, group authority, conflicting observations and forged role paths fail."""
+    state = observed()
+    role = state["inherited_roles"][0]
+    if change in ("push", "owner"):
+        role["roleDefinitionId"] = "/synthetic/" + change
+    elif change == "group":
+        role["principalType"] = "Group"
+    elif change == "assignment":
+        role["id"] = role["id"].rsplit("/", 1)[0] + "/" + str(uuid5(NAMESPACE_URL, "other"))
+    else:
+        role["roleDefinitionId"] = "/untrusted/" + ACR_PULL
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("bad", [None, "", True, 42, "not-an-id", "0" * 32])
+def test_null_or_malformed_principals_fail(bad: object,
+                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """Matching malformed identifiers cannot grant acceptance or reach a role query."""
+    state = observed()
+    state["identity"]["properties"]["principalId"] = bad
+    state["roles"][0]["principalId"] = bad
+    state["inherited_roles"][0]["principalId"] = bad
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    calls = []
+    monkeypatch.setattr(deployment, "az_read", collector_double(state, calls))
+    with pytest.raises(VerificationError):
+        deployment.collect(CONFIG, DIGEST, SUBSCRIPTION)
+    assert not any(command == ("role", "assignment", "list") for command, _, _ in calls)
+
+
+@pytest.mark.parametrize("target", ["app", "revision", "both"])
+@pytest.mark.parametrize("probe_index", [0, 1, 2])
+@pytest.mark.parametrize("field,value", [
+    ("host", "external.example"),
+    ("httpHeaders", [{"name": "Authorization", "value": "synthetic-sensitive"}]),
+    ("httpHeaders", [{"name": "X-Custom", "value": "synthetic"}]),
+    ("unknown", "unapproved"),
+])
+def test_probe_extra_fields_fail_closed(target: str, probe_index: int,
+                                        field: str, value: object) -> None:
+    """Review exploits fail even when app and active revision agree on the extra fields."""
+    state = observed()
+    templates = []
+    if target in ("app", "both"):
+        templates.append(state["app"]["properties"]["template"])
+    if target in ("revision", "both"):
+        templates.append(state["revisions"][0]["properties"]["template"])
+    for template in templates:
+        template["containers"][0]["probes"][probe_index]["httpGet"][field] = value
+    with pytest.raises(VerificationError) as error:
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert "synthetic-sensitive" not in str(error.value)
+
+
+def test_consistently_wrong_subscription_fails() -> None:
+    """An internally coherent deployment in another subscription is still rejected."""
+    state = observed()
+    other = str(uuid5(NAMESPACE_URL, "module10.synthetic.other-subscription"))
+    state = json.loads(json.dumps(state).replace(SUBSCRIPTION, other))
+    with pytest.raises(VerificationError, match="expected subscription") as error:
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert SUBSCRIPTION not in str(error.value) and other not in str(error.value)
+
+
+@pytest.mark.parametrize("bad", [None, "", True, "default", "0" * 32])
+def test_invalid_subscription_never_reaches_cli(bad: object,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing independent binding cannot fall back to the CLI account default."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
+    with pytest.raises(VerificationError):
+        deployment.az_read(("group", "show"), subscription=bad)
+
+
+@pytest.mark.parametrize("args", [("--scope", "synthetic", "--all"),
+                                  ("--subscription", "default"), ("-s", "default")])
+def test_cli_forbids_invalid_scope_and_subscription_override(
+        args: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject invalid role flags and subscription substitution before process execution."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
+    with pytest.raises(VerificationError):
+        deployment.az_read(("role", "assignment", "list"), *args, subscription=SUBSCRIPTION)
+
+
+def test_cli_explicit_subscription_ignores_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The process command binds reads without relying on mutable account defaults."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda *a: "az")
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "synthetic-other-default")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        assert command[command.index("--subscription") + 1] == SUBSCRIPTION
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(deployment.subprocess, "run", run)
+    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION) == {}
+
+
+@pytest.mark.parametrize("view", ["roles", "inherited_roles"])
+def test_failed_rbac_read_prevents_evidence(view: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Either failed authority read prevents HTTP and success evidence construction."""
+    read = collector_double(observed(), [])
+
+    def failing(command: tuple[str, ...], *args: str, subscription: str) -> object:
+        if command == ("role", "assignment", "list") and (
+                (view == "roles" and "--all" in args)
+                or (view == "inherited_roles" and "--scope" in args)):
+            raise VerificationError("Synthetic RBAC collection failure.")
+        return read(command, *args, subscription=subscription)
+
+    monkeypatch.setattr(deployment, "az_read", failing)
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    with pytest.raises(VerificationError):
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+
+
+def test_acr_uses_documented_default_and_retains_receipt_gate() -> None:
+    """No unsupported ARM authentication policy is emitted; its required state is verified."""
+    registry = arm_template(CONFIG)["resources"][0]
+    assert "azureADAuthenticationAsArmPolicy" not in json.dumps(registry)
+    state = observed()
+    state["arm_auth"] = {"status": "disabled"}
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+def test_private_subscription_refuses_echo_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A noninteractive environment cannot silently echo the expected subscription."""
+    def fallback(prompt: str) -> str:
+        raise deployment.getpass.GetPassWarning("synthetic fallback")
+
+    monkeypatch.setattr(deployment.getpass, "getpass", fallback)
+    with pytest.raises(VerificationError, match="private interactive"):
+        deployment.private_subscription()
+
+
+@pytest.mark.parametrize("failure", ["roles", "inherited_roles", "subscription", "probe"])
+def test_cli_acceptance_never_writes_failed_evidence(failure: str,
+                                                   monkeypatch: pytest.MonkeyPatch,
+                                                   tmp_path: Path,
+                                                   capsys: pytest.CaptureFixture) -> None:
+    """Exploit and partial-response regressions fail through the real command entry point."""
+    state = observed()
+    if failure in ("roles", "inherited_roles"):
+        state[failure] = {"value": state[failure], "nextLink": "synthetic-partial"}
+    elif failure == "subscription":
+        other = str(uuid5(NAMESPACE_URL, "module10.synthetic.wrong-entrypoint-subscription"))
+        state = json.loads(json.dumps(state).replace(SUBSCRIPTION, other))
+    else:
+        state["app"]["properties"]["template"]["containers"][0]["probes"][0]["httpGet"][
+            "host"] = "external.example"
+    output = tmp_path / "no-acceptance.json"
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "az_read", collector_double(state, []))
+    monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
+                        "--verify-cloud", "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    assert "Cloud verification passed" not in captured.out
+    assert SUBSCRIPTION not in captured.out + captured.err

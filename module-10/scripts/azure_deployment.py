@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import getpass
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import shutil
 import subprocess
 import time
 import uuid
+import warnings
 from pathlib import Path
 
 import httpx
@@ -17,6 +19,7 @@ from module10_ai.azure_contract import REGION, AzureConfig, arm_template
 from module10_ai.azure_verification import (
     VerificationError,
     cloud_evidence,
+    identifier,
     require,
     validate_state,
 )
@@ -43,12 +46,13 @@ def destination(path: Path) -> Path:
     return resolved
 
 
-def az_read(command: tuple[str, ...], *args: str) -> object:
+def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
     """Run only fixed read-only CLI operations, with timeout and minimized failures.
 
     Args:
         command: One exact allowlisted read-only Azure command.
         args: Trusted collector arguments; never interpreted by a shell.
+        subscription: Independent expected subscription; passed on every CLI read.
 
     Returns:
         Parsed observations in memory, never raw printed evidence.
@@ -58,6 +62,11 @@ def az_read(command: tuple[str, ...], *args: str) -> object:
     """
     if command not in READ_COMMANDS:
         raise VerificationError("Azure mutation/unknown CLI operation is forbidden.")
+    subscription = identifier(subscription)
+    require("--subscription" not in args and "-s" not in args,
+            "Subscription override is forbidden.")
+    require(not ("--scope" in args and "--all" in args),
+            "Scope and all cannot be combined in an Azure read.")
     executable = shutil.which("az")
     if not executable:
         raise VerificationError("Azure CLI is unavailable; use the operator's authenticated shell.")
@@ -73,7 +82,8 @@ def az_read(command: tuple[str, ...], *args: str) -> object:
                        AZURE_LOGGING_ENABLE_LOG_FILE="false")
     try:
         result = subprocess.run(
-            [*prefix, *command, *args, "--only-show-errors", "--output", "json"],
+            [*prefix, *command, *args, "--subscription", subscription,
+             "--only-show-errors", "--output", "json"],
             capture_output=True, text=True, check=False, timeout=90, env=environment,
         )
         if result.returncode or len(result.stdout.encode()) > 1_048_576:
@@ -84,31 +94,44 @@ def az_read(command: tuple[str, ...], *args: str) -> object:
         raise VerificationError("Azure read/JSON failed; no cloud acceptance recorded.") from exc
 
 
-def collect(config: AzureConfig, digest: str) -> dict:
+def collect(config: AzureConfig, digest: str, expected_subscription: str) -> dict:
     """Collect fresh resource and revision observations; never accept snapshot files."""
     n = config.names
-    state = {"group": az_read(("group", "show"), "--name", n["group"]),
-             "inventory": az_read(("resource", "list"), "--resource-group", n["group"])}
+    subscription = identifier(expected_subscription)
+
+    def read(command: tuple[str, ...], *args: str) -> object:
+        return az_read(command, *args, subscription=subscription)
+
+    state = {"group": read(("group", "show"), "--name", n["group"]),
+             "inventory": read(("resource", "list"), "--resource-group", n["group"])}
     kinds = {"registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01"),
              "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01"),
              "environment": ("Microsoft.App/managedEnvironments", "2025-01-01"),
              "app": ("Microsoft.App/containerApps", "2025-01-01"),
              "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31")}
     for key, (kind, version) in kinds.items():
-        state[key] = az_read(("resource", "show"), "--resource-group", n["group"],
+        state[key] = read(("resource", "show"), "--resource-group", n["group"],
                              "--name", n[key], "--resource-type", kind, "--api-version", version)
-    state["arm_auth"] = az_read(("acr", "config", "authentication-as-arm", "show"),
+    state["arm_auth"] = read(("acr", "config", "authentication-as-arm", "show"),
                                 "--registry", n["registry"])
-    state["manifest"] = az_read(("acr", "manifest", "show-metadata"), "--registry", n["registry"],
+    state["manifest"] = read(("acr", "manifest", "show-metadata"), "--registry", n["registry"],
                                 "--name", "module10-ai@" + digest)
     try:
-        principal = state["identity"]["properties"]["principalId"]
+        principal = identifier(state["identity"]["properties"]["principalId"])
         registry_id = state["registry"]["id"]
     except (KeyError, TypeError) as exc:
         raise VerificationError("Missing registry/identity observations.") from exc
-    state["roles"] = az_read(("role", "assignment", "list"), "--assignee", principal,
-                              "--scope", registry_id, "--include-inherited", "--all")
-    state["revisions"] = az_read(("containerapp", "revision", "list"),
+    expected_registry = (f"/subscriptions/{subscription}/resourceGroups/{n['group']}/providers/"
+                         f"Microsoft.ContainerRegistry/registries/{n['registry']}")
+    require(type(registry_id) is str and registry_id.lower() == expected_registry.lower(),
+            "Registry observation is outside the expected subscription/resource group.")
+    role_args = ("--assignee-object-id", principal, "--include-groups",
+                 "--fill-principal-name", "false",
+                 "--fill-role-definition-name", "false")
+    state["roles"] = read(("role", "assignment", "list"), *role_args, "--all")
+    state["inherited_roles"] = read(("role", "assignment", "list"), *role_args,
+                                    "--scope", expected_registry, "--include-inherited")
+    state["revisions"] = read(("containerapp", "revision", "list"),
                                  "--resource-group", n["group"], "--name", n["app"])
     return state
 
@@ -181,12 +204,13 @@ def monitor_query(app: str, revision: str, request_id: str) -> str:
     )
 
 
-def verify(config: AzureConfig, digest: str) -> dict:
+def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict:
     """Verify configuration, five HTTP calls and at most six telemetry queries before success.
 
     Args:
         config: Human-reviewed contract.
         digest: Human-reviewed manifest identity bound separately to the tested image.
+        expected_subscription: Private independently selected subscription UUID.
 
     Returns:
         Minimized genuine cloud observations, not deployment or release authority.
@@ -194,8 +218,9 @@ def verify(config: AzureConfig, digest: str) -> dict:
     Raises:
         VerificationError: Any required gate or final drift check fails.
     """
-    state = collect(config, digest)
-    fqdn = validate_state(config, digest, state)
+    subscription = identifier(expected_subscription)
+    state = collect(config, digest, subscription)
+    fqdn = validate_state(config, digest, state, subscription)
     revision = state["app"]["properties"]["latestRevisionName"]
     request_id = uuid.uuid4().hex
     https_checks(fqdn, request_id)
@@ -203,7 +228,8 @@ def verify(config: AzureConfig, digest: str) -> dict:
     workspace = state["workspace"]["properties"]["customerId"]
     for attempt in range(6):
         rows = az_read(("monitor", "log-analytics", "query"), "--workspace", workspace,
-                       "--analytics-query", query, "--timespan", "PT10M")
+                       "--analytics-query", query, "--timespan", "PT10M",
+                       subscription=subscription)
         if (isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)
                 and type(rows[0].get("successes")) is int and rows[0]["successes"] >= 2
                 and type(rows[0].get("failures")) is int and rows[0]["failures"] >= 1):
@@ -211,11 +237,22 @@ def verify(config: AzureConfig, digest: str) -> dict:
         if attempt == 5:
             raise VerificationError("Azure Monitor receipt missing; wait for ingestion then rerun.")
         time.sleep(20)
-    final = collect(config, digest)
-    require(validate_state(config, digest, final) == fqdn
+    final = collect(config, digest, subscription)
+    require(validate_state(config, digest, final, subscription) == fqdn
             and final["app"]["properties"]["latestRevisionName"] == revision,
             "Cloud configuration/revision changed during acceptance; rerun after stabilization.")
     return cloud_evidence(config, digest, revision)
+
+
+def private_subscription() -> str:
+    """Read an independent subscription without echo or insecure stdin fallback."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return identifier(getpass.getpass("Expected subscription UUID (private): "))
+    except (getpass.GetPassWarning, EOFError) as exc:
+        raise VerificationError(
+            "Verification requires a private interactive subscription prompt.") from exc
 
 
 def main() -> None:
@@ -238,7 +275,7 @@ def main() -> None:
             config.image(args.digest)
         elif args.digest:
             raise ValueError("Foundation rendering does not accept an image digest.")
-        data = (verify(config, args.digest) if args.verify_cloud
+        data = (verify(config, args.digest, private_subscription()) if args.verify_cloud
                 else arm_template(config, args.digest))
         encoded = json.dumps(data, indent=2) + "\n"
         require(len(encoded.encode()) <= 32768, "Generated output exceeds metadata bound.")

@@ -56,3 +56,18 @@ Story 10.10 are not accepted or started by this ADR.
 
 See [operator workflow](../AZURE_DEPLOYMENT.md) for exact commands, references,
 failure handling, evidence bounds and teardown.
+
+## Bounded verification repair — 2026-10-17
+
+The independent Story 10.9 review rejected the verifier. Repair retains this
+architecture and its human-only mutation boundary: a privately entered expected
+subscription binds every CLI read and expected resource ID; separate complete
+subscription-wide and registry/ancestor RBAC lists enforce direct registry-only
+AcrPull within that verification scope; app and revision probes reject all
+unapproved fields. Required principal/assignment UUIDs must be nonzero and valid.
+No account identifier is committed or persisted in evidence. The unsupported ACR
+authentication policy field is omitted from API 2023-07-01; documented default
+behavior is still subject to the existing explicit read-only enabled-state gate.
+The CLI response limit remains post-buffering, not a streaming memory cap.
+No provider registration, Azure mutation, new infrastructure or Story 10.10 work
+is authorized by this repair. Fresh independent acceptance remains required.
