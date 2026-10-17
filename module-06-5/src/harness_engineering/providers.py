@@ -6,13 +6,15 @@ No automatic retry, tool routing, or authority deserialization occurs.
 Python callbacks are trusted code; timeout rejects results, not external effects.
 """
 
+from __future__ import annotations
+
 from collections import deque
 from enum import StrEnum
 from math import isfinite
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from time import monotonic
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -25,6 +27,9 @@ from harness_engineering.errors import (
     HarnessError,
 )
 from harness_engineering.lifecycle_controls import OffSwitch
+
+if TYPE_CHECKING:
+    from harness_engineering.guardrails_adapter import GuardrailsTextValidator
 
 
 class ProviderTimeoutError(BudgetExceededError):
@@ -160,6 +165,7 @@ class ProviderRuntime:
         output_filter: OutputFilter | None = None,
         off_switch: OffSwitch | None = None,
         live_config: HarnessConfig | None = None,
+        guardrails: GuardrailsTextValidator | None = None,
     ) -> None:
         """Snapshot trusted configuration, independently gating optional live bindings.
 
@@ -171,6 +177,7 @@ class ProviderRuntime:
             off_switch: Shared one-way application cancellation source.
             live_config: Explicit non-deterministic live opt-in with a finite monetary
                 budget matching this runtime. Never inferred from credentials.
+            guardrails: Optional exact local Guardrails text validator from trusted bootstrap.
 
         Raises:
             ContractValidationError: For invalid bootstrap or unsupported adapters.
@@ -220,6 +227,12 @@ class ProviderRuntime:
         self._provider: ModelProvider = FakeProvider() if provider is None else provider
         self._off_switch = OffSwitch() if off_switch is None else off_switch
         self._terms = tuple(term.casefold() for term in policy.blocked_terms)
+        if guardrails is not None:
+            from harness_engineering.guardrails_adapter import GuardrailsTextValidator
+
+            if type(guardrails) is not GuardrailsTextValidator:
+                raise ContractValidationError("Bind the approved local Guardrails text validator.")
+        self._guardrails = guardrails
         self._deadline = monotonic() + b.workflow_deadline_seconds
         self._attempts = 0
         self._actions = dict.fromkeys(action_ids, 0)
@@ -305,6 +318,10 @@ class ProviderRuntime:
                             "Provider output rejected by application filter."
                         )
                     context.checkpoint()
+                    if self._guardrails is not None:
+                        if self._guardrails.validate(response.text) is not None:
+                            raise ProviderOutputRejected("Unsupported Guardrails adapter result.")
+                        context.checkpoint()
                     result.put(ModelResult(text=response.text))
                 except BaseException as exc:
                     # Thread bridge preserves defects; it does not classify them as provider errors.
