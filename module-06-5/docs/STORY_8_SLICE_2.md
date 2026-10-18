@@ -205,7 +205,7 @@ passed in order on the final source/test patch:
 
 1. `.venv/Scripts/ruff.exe check .` — PASS.
 2. `.venv/Scripts/python.exe -m pytest -q -x --basetemp
-   E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-08-slice-02-final-20261014`
+   <LOCAL_EVIDENCE_DIR>/module-06-5-story-08-slice-02-final-20261014`
    — **1,112 passed in 347.76 seconds** (1,038 accepted + 74 new).
 3. `.venv/Scripts/python.exe -m compileall src tests` — PASS.
 

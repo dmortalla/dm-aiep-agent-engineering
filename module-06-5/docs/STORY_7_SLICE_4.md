@@ -22,7 +22,7 @@ traceability, authority policy and project status remain untouched.
 From the Module 6.5 directory:
 
 ```powershell
-.venv\Scripts\python.exe -m harness_engineering.approval_lab --directory E:\ONEDRIVE-PERSONAL\TECHADEMY\EVIDENCE\approval-lab-fresh
+.venv\Scripts\python.exe -m harness_engineering.approval_lab --directory <LOCAL_EVIDENCE_DIR>\approval-lab-fresh
 ```
 
 Choose a new directory. The lab refuses existing directories, retains separate
@@ -130,7 +130,7 @@ The final fail-fast sequence passed: `.venv\Scripts\ruff.exe check .` reported
 `All checks passed!`; `.venv\Scripts\python.exe -m pytest` reported **963 passed
 in 348.68 seconds**; `.venv\Scripts\python.exe -m compileall src tests` exited 0.
 Full-suite temporary state used the fresh parent evidence directory
-`E:\ONEDRIVE-PERSONAL\TECHADEMY\EVIDENCE\s7s4-full-20261014a`.
+`<LOCAL_EVIDENCE_DIR>\s7s4-full-20261014a`.
 The initial focused run passed 54 tests in 124.51 seconds; the full run also
 validated the final refinements to persisted identity, off-switch and denial paths.
 Only mechanical safe Ruff import repair and formatting were used; no unsafe fixes.

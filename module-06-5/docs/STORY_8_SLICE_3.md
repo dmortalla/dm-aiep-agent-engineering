@@ -196,7 +196,7 @@ Final fail-fast gates passed on the final source/test patch:
 
 1. `.venv/Scripts/ruff.exe check .` — PASS.
 2. `.venv/Scripts/python.exe -m pytest -q -x --basetemp
-   E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-08-slice-03-final-20261015`
+   <LOCAL_EVIDENCE_DIR>/module-06-5-story-08-slice-03-final-20261015`
    — **1,142 passed in 494.07 seconds** (1,112 accepted + 30 new).
 3. `.venv/Scripts/python.exe -m compileall src tests` — PASS.
 

@@ -167,7 +167,7 @@ Run from `module-06-5` with its Python 3.12 environment:
 
 ```powershell
 .\.venv\Scripts\ruff.exe check .
-.\.venv\Scripts\python.exe -m pytest --basetemp E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-6-slice-3/pytest-full-1
+.\.venv\Scripts\python.exe -m pytest --basetemp <LOCAL_EVIDENCE_DIR>/module-06-5-story-6-slice-3/pytest-full-1
 .\.venv\Scripts\python.exe -m compileall src tests
 ```
 

@@ -26,7 +26,7 @@ this document adds implementation evidence without restructuring that baseline.
 From `module-06-5`, using its Python 3.12 environment:
 
 ```powershell
-$labDirectory = "E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-6-slice-4/run-$([guid]::NewGuid())"
+$labDirectory = "<LOCAL_EVIDENCE_DIR>/module-06-5-story-6-slice-4/run-$([guid]::NewGuid())"
 .\.venv\Scripts\python.exe -m harness_engineering.recovery_lab --directory $labDirectory
 ```
 
@@ -230,7 +230,7 @@ Use the module-local Python 3.12 environment, safe Ruff fixes only, and fail-fas
 ```powershell
 .\.venv\Scripts\ruff.exe check . --fix
 .\.venv\Scripts\ruff.exe check .
-.\.venv\Scripts\python.exe -m pytest --basetemp E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-6-slice-4/pytest-full-1
+.\.venv\Scripts\python.exe -m pytest --basetemp <LOCAL_EVIDENCE_DIR>/module-06-5-story-6-slice-4/pytest-full-1
 .\.venv\Scripts\python.exe -m compileall src tests
 ```
 
@@ -245,7 +245,7 @@ Final verification on 2026-10-13, using the module-local Python 3.12.14 environm
 - Full suite: **616 passed** (603 accepted cases plus 13 new), in 149.55 seconds.
 - `python -m compileall src tests`: passed.
 - Final CLI execution: one invocation, one commit, zero replay, four verifications,
-  sequences 1–9, and recovery elapsed readings 1125/1250/1375 ms.
+  sequences 1ï¿½9, and recovery elapsed readings 1125/1250/1375 ms.
 - Captured reviewer JSON: parent
   `EVIDENCE/module-06-5-story-6-slice-4/lab-final.json`.
 - Retained CLI databases: parent

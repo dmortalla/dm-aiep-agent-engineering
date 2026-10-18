@@ -161,7 +161,7 @@ Final full-module fail-fast gates on 2026-10-17, from `module-06-5`:
 
 1. `.venv/Scripts/ruff.exe check .` - PASS.
 2. `.venv/Scripts/python.exe -m pytest -q --tb=short --basetemp
-   E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-09-slice-03-final-20261017`
+   <LOCAL_EVIDENCE_DIR>/module-06-5-story-09-slice-03-final-20261017`
    - **1,344 passed, 6 warnings in 455.83 seconds** (1,307 accepted + 37 new).
 3. `.venv/Scripts/python.exe -m compileall src tests` - PASS, exit 0.
 

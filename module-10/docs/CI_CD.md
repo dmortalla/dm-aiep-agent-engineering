@@ -10,7 +10,7 @@ GitHub does not discover it in this module. No root workflow is modified.
 After repository-integration authorization, materialize a new external staging file:
 
 ```powershell
-.venv/Scripts/python.exe scripts/pipeline.py --materialize E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-10.yml
+.venv/Scripts/python.exe scripts/pipeline.py --materialize <LOCAL_EVIDENCE_DIR>/module-10.yml
 ```
 
 An authorized integration step must review and copy that exact file to
@@ -38,7 +38,7 @@ vulnerability scan, SBOM, secret scanner, signed attestation or SLSA guarantee.
 From this module, after locked environment setup, run:
 
 ```powershell
-.venv/Scripts/python.exe scripts/pipeline.py --evidence E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module10-validation-UNIQUE.json
+.venv/Scripts/python.exe scripts/pipeline.py --evidence <LOCAL_EVIDENCE_DIR>/module10-validation-UNIQUE.json
 ```
 
 Use a new filename with an existing parent directory. This executes the native

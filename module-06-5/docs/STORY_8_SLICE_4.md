@@ -165,13 +165,13 @@ Standalone CLI capture passed: ten scenarios, 32 checks, nine protocol handler
 entries, zero unbound calls, all cooperative resources closed. Structured JSON
 (24,940 bytes, pretty printed) is outside the repository at:
 
-`E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-08-slice-04-lab-20261015.json`
+`<LOCAL_EVIDENCE_DIR>/module-06-5-story-08-slice-04-lab-20261015.json`
 
 Final fail-fast sequence on 2026-10-15, from `module-06-5`:
 
 1. `.venv/Scripts/ruff.exe check .` - PASS.
 2. `.venv/Scripts/python.exe -m pytest -q --basetemp
-   E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE/module-06-5-story-08-slice-04-final-20261015`
+   <LOCAL_EVIDENCE_DIR>/module-06-5-story-08-slice-04-final-20261015`
    - **1,164 passed in 347.44 seconds** (1,142 accepted + 22 new).
 3. `.venv/Scripts/python.exe -m compileall src tests` - PASS.
 

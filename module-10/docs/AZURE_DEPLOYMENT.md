@@ -72,7 +72,7 @@ $ErrorActionPreference = 'Stop'
 $env:AZURE_LOGGING_ENABLE_LOG_FILE = 'false'
 $env:AZURE_CORE_COLLECT_TELEMETRY = 'no'
 $env:AZURE_EXTENSION_USE_DYNAMIC_INSTALL = 'no'
-$evidenceDir = 'E:/ONEDRIVE-PERSONAL/TECHADEMY/EVIDENCE'
+$evidenceDir = '<LOCAL_EVIDENCE_DIR>'
 $candidatePath = "$evidenceDir/module10-clean-candidate-UNIQUE.json"
 .venv/Scripts/python.exe scripts/pipeline.py --evidence $candidatePath
 if ($LASTEXITCODE -ne 0) { throw 'Pipeline failed; stop promotion.' }
