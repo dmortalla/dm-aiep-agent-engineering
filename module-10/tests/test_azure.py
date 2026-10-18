@@ -2,11 +2,12 @@
 
 import copy
 import importlib.util
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 import pytest
@@ -809,3 +810,54 @@ def test_cli_acceptance_never_writes_failed_evidence(failure: str,
     captured = capsys.readouterr()
     assert "Cloud verification passed" not in captured.out
     assert SUBSCRIPTION not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("payload", ["valid", "lf", "crlf", "missing", "empty", "bad",
+                                     "zero", "compact", "braces", "extra", "oversize"])
+def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
+                                tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    """Exercise actual input, collector and evidence path without cloud operations."""
+    values = {"valid": SUBSCRIPTION, "lf": SUBSCRIPTION + "\n",
+              "crlf": SUBSCRIPTION + "\r\n", "missing": "", "empty": "\n",
+              "bad": "synthetic-malformed-private", "zero": str(UUID(int=0)),
+              "compact": SUBSCRIPTION.replace("-", ""), "braces": "{" + SUBSCRIPTION + "}",
+              "extra": SUBSCRIPTION + "\nX", "oversize": SUBSCRIPTION + "x" * 100}
+    value = values[payload]
+    calls = []
+    output = tmp_path / "acceptance.json"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(value))
+    monkeypatch.setattr(deployment.getpass, "getpass", lambda *a: pytest.fail("fallback"))
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
+                        "--verify-cloud", "--subscription-stdin", "--output", str(output)])
+    if payload in {"valid", "lf", "crlf"}:
+        deployment.main()
+        assert calls and SUBSCRIPTION not in output.read_text()
+    else:
+        with pytest.raises(SystemExit) as error:
+            deployment.main()
+        assert error.value.code == 1
+        assert not calls and not output.exists()
+    captured = capsys.readouterr()
+    assert SUBSCRIPTION not in captured.out + captured.err
+    if value.strip():
+        assert value.strip() not in captured.out + captured.err
+
+
+def test_private_pipe_rejects_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit pipe mode cannot silently become an echoing terminal read."""
+    stream = io.StringIO(SUBSCRIPTION)
+    monkeypatch.setattr(stream, "isatty", lambda: True)
+    monkeypatch.setattr(sys, "stdin", stream)
+    with pytest.raises(VerificationError, match="redirected operator pipe"):
+        deployment.private_subscription(from_stdin=True)
+
+
+def test_interactive_channel_ignores_redirected_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without the switch only the private prompt supplies independent authority."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO("untrusted observed state"))
+    monkeypatch.setattr(deployment.getpass, "getpass", lambda *a: SUBSCRIPTION)
+    assert deployment.private_subscription() == SUBSCRIPTION

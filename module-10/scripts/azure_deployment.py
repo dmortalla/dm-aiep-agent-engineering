@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 import warnings
@@ -244,8 +245,25 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
     return cloud_evidence(config, digest, revision)
 
 
-def private_subscription() -> str:
-    """Read an independent subscription without echo or insecure stdin fallback."""
+def private_subscription(*, from_stdin: bool = False) -> str:
+    """Read only the explicitly selected private operator channel; never fall back.
+
+    Stdin requires an operator-owned redirected pipe closed after one UUID line.
+    The switch selects a transport, not proof of human provenance. Never connect
+    model output, files or Azure observations to this authority-bearing channel.
+    """
+    if from_stdin:
+        try:
+            require(not sys.stdin.isatty(), "Private stdin requires a redirected operator pipe.")
+            value = sys.stdin.read(39)
+        except (OSError, UnicodeError) as exc:
+            raise VerificationError("Private subscription pipe could not be read.") from exc
+        # Accept only an exact UUID, optionally followed by one transport newline.
+        if value.endswith("\r\n"):
+            value = value[:-2]
+        elif value.endswith("\n"):
+            value = value[:-1]
+        return identifier(value)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", getpass.GetPassWarning)
@@ -265,8 +283,12 @@ def main() -> None:
     mode.add_argument("--render", choices=("foundation", "app"))
     mode.add_argument("--verify-cloud", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--subscription-stdin", action="store_true",
+                        help="Read private UUID only from an operator-owned pipe; no fallback.")
     args = parser.parse_args()
     try:
+        require(not args.subscription_stdin or args.verify_cloud,
+                "Private subscription stdin is only valid with --verify-cloud.")
         config = AzureConfig(args.suffix, args.reviewer_cidr)
         output = destination(args.output)
         if args.verify_cloud or args.render == "app":
@@ -275,7 +297,9 @@ def main() -> None:
             config.image(args.digest)
         elif args.digest:
             raise ValueError("Foundation rendering does not accept an image digest.")
-        data = (verify(config, args.digest, private_subscription()) if args.verify_cloud
+        data = (verify(config, args.digest,
+                       private_subscription(from_stdin=args.subscription_stdin))
+                if args.verify_cloud
                 else arm_template(config, args.digest))
         encoded = json.dumps(data, indent=2) + "\n"
         require(len(encoded.encode()) <= 32768, "Generated output exceeds metadata bound.")

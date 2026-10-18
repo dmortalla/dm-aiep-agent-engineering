@@ -11,7 +11,7 @@ JSON, telemetry and model output confer no deployment authority.
 `src/module10_ai/azure_contract.py` renders two resource-group ARM JSON templates.
 ARM is native, declarative and incremental; no Terraform state, azd project,
 Bicep compiler, new Python dependency or generated shell command executor is
-needed. Names derive from one human-chosen random 6–12 character suffix, never
+needed. Names derive from one human-chosen random 6â€“12 character suffix, never
 tenant/subscription data. Identical inputs render identical resource definitions.
 Global registry-name availability is a preflight gate, not assumed uniqueness.
 
@@ -103,7 +103,7 @@ Set `$suffix` to an account-independent random value, `$reviewerCidr` to the pub
 egress IPv4 of the verifier machine plus `/32`, and derive names through the contract:
 
 ```powershell
-$suffix = Read-Host 'Random lowercase suffix (6–12 letters/digits, starting with a letter)'
+$suffix = Read-Host 'Random lowercase suffix (6â€“12 letters/digits, starting with a letter)'
 $reviewerCidr = Read-Host 'Verifier public IPv4 address with /32'
 $namesJson = .venv/Scripts/python.exe -c "import json,sys; from module10_ai.azure_contract import AzureConfig; print(json.dumps(AzureConfig(sys.argv[1],sys.argv[2]).names))" $suffix $reviewerCidr
 if ($LASTEXITCODE -ne 0) { throw 'Invalid deployment configuration.' }
@@ -224,16 +224,56 @@ Invoke-WebRequest -Uri "https://$fqdn/health/ready" -TimeoutSec 30 -MaximumRetry
 # On cold-start failure, wait at most 60 seconds and deliberately rerun verification once.
 ```
 
+Use this PowerShell 7 procedure from the Module 10 directory. Enter the intended
+subscription from the independently human-reviewed account record, never from
+Azure output, resource IDs, model output, saved input files or an unchecked CLI default.
+The parent creates the private child pipe and closes it after one UUID line.
+Replace UNIQUE with a new evidence filename before execution.
+
 ```powershell
-.venv/Scripts/python.exe scripts/azure_deployment.py --suffix $suffix --reviewer-cidr $reviewerCidr --digest $digest --verify-cloud --output "$evidenceDir/module10-azure-acceptance-UNIQUE.json"
-if ($LASTEXITCODE -ne 0) { throw 'Cloud verification failed; deployment is not accepted.' }
+$privateSubscription = Read-Host 'Independently approved subscription UUID' -AsSecureString
+$pointer = [IntPtr]::Zero
+$process = $null
+try {
+    $start = [System.Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = (Resolve-Path '.venv/Scripts/python.exe').Path
+    $start.UseShellExecute = $false
+    $start.RedirectStandardInput = $true
+    foreach ($argument in @('scripts/azure_deployment.py', '--suffix', $suffix,
+        '--reviewer-cidr', $reviewerCidr, '--digest', $digest, '--verify-cloud',
+        '--subscription-stdin', '--output', "$evidenceDir/module10-azure-acceptance-UNIQUE.json")) {
+        $start.ArgumentList.Add($argument)
+    }
+    $process = [System.Diagnostics.Process]::Start($start)
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($privateSubscription)
+    $process.StandardInput.WriteLine([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer))
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) { throw 'Cloud verification failed; deployment is not accepted.' }
+} finally {
+    if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+    if ($null -ne $process) { $process.Dispose() }
+    $privateSubscription.Dispose()
+    Remove-Variable privateSubscription -ErrorAction SilentlyContinue
+}
 ```
 
-Verification privately prompts for the independently approved subscription UUID.
-Obtain it from the human-reviewed intended account, not from the observed resources
-or an unchecked CLI default. Input must be a canonical nonzero UUID. It remains in
-process memory, is not echoed, and is not included in evidence or error messages.
-No insecure stdin fallback is allowed. Every verifier CLI read, including both
+The UUID is canonical and nonzero, with only one optional LF/CRLF transport newline.
+It is not echoed, intentionally persisted, logged, placed in the Python invocation
+arguments or included in evidence/errors. Transient managed plaintext copies exist
+in memory; SecureString disposal does not guarantee erasure of those copies.
+`--subscription-stdin` explicitly selects only redirected stdin, reads at most 39
+characters, and never falls back. The operator must close the pipe; an open pipe
+can wait for input. The switch is valid only with `--verify-cloud`. Without it,
+direct interactive execution uses only private `getpass`, refusing echo fallback
+and ignoring redirected input. No environment variable or persisted source is used.
+A pipe cannot attest who authored its bytes: only the operator may populate it.
+Never automate this authority input from model/tool output or cloud observations.
+Existing downstream Azure reads still pass the subscription explicitly to Azure CLI
+(as process arguments); this repair changes only private operator-to-verifier input
+and does not claim to conceal existing CLI scoping from local process inspection.
+
+Every verifier CLI read, including both
 fresh snapshots and Log Analytics, supplies this subscription explicitly. Group
 and resource IDs must match a prefix built from that independent value and the
 approved names. Rendering remains offline and requires no subscription identity.
