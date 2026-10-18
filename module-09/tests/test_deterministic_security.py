@@ -145,7 +145,7 @@ def test_deterministic_adapters_expose_no_authority_or_execution_operations() ->
         assert public <= allowed, public
 
 
-def test_later_story_capabilities_are_not_implemented() -> None:
+def test_story_packages_and_transport_ownership_remain_explicit() -> None:
     packages = {p.name for p in SRC.iterdir() if p.is_dir() and p.name != "__pycache__"}
     assert packages == {
         "adapters",
@@ -159,6 +159,7 @@ def test_later_story_capabilities_are_not_implemented() -> None:
         "streaming",
         "interface",
         "live",
+        "ui",
     }
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
     assert adapters == {"deterministic", "local", "reasoning", "speech", "openai"}
@@ -170,9 +171,10 @@ def test_later_story_capabilities_are_not_implemented() -> None:
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
     later_imports |= {"uvicorn"}
     transport_owners = {
-        "starlette": SRC / "interface" / "websocket.py",
-        "uvicorn": SRC / "interface" / "server.py",
-        "websockets": SRC / "live" / "acceptance.py",
+        "starlette": {SRC / "interface" / "websocket.py"},
+        "uvicorn": {SRC / "interface" / "server.py"},
+        "websockets": {SRC / "live" / "acceptance.py", SRC / "ui" / "socket_demo.py"},
+        "streamlit": {SRC / "ui" / "app.py"},
     }
     """Story 9.7: the WebSocket framework and server, each in exactly one interface module."""
     for path in SRC.rglob("*.py"):
@@ -194,4 +196,4 @@ def test_later_story_capabilities_are_not_implemented() -> None:
                 module = getattr(node, "module", None) or ""
                 names = {module, *(alias.name for alias in node.names)}
                 for root in {n.split(".")[0] for n in names} & later_imports:
-                    assert transport_owners.get(root) == path, f"{path}: {root}"
+                    assert path in transport_owners.get(root, set()), f"{path}: {root}"

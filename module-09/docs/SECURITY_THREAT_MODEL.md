@@ -96,3 +96,16 @@ each cited observation's statement text; omit the finding if fewer than two term
 Mocked/test-double/deterministic execution cannot claim `live_integration`. Credentials and raw
 sensitive provider payloads are excluded from repository evidence. Final production/security
 acceptance, WebSocket authentication, TLS, and deployment remain Story 9.10 work.
+
+## Story 9.9 presentation controls
+
+Native widgets never render untrusted HTML. All results are plain text/JSON with central redaction.
+Uploads are admitted as at most 2 MiB of bytes; existing core validation remains authoritative.
+The UI never reads keys from environment, caches, files or URLs. Only explicit submit can execute;
+cost acknowledgement and password input are required for each live submission. The callback
+deletes credential and acknowledgement widget state, live services/sessions stay operation-local,
+and live voice closes in `finally`. Errors are fixed safe messages, including unexpected failures.
+Each browser session owns one bounded deterministic conversation and one retained result/audio;
+reset clears them. Streamlit/framework memory is not a secure erasure facility. Production access
+control, TLS, authentication and retention hardening remain Story 9.10; do not expose this local UI
+to untrusted networks. No live UI/provider acceptance was performed in Story 9.9.

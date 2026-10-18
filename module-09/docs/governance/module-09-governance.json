@@ -17,8 +17,8 @@
   "story_9_8_live_capabilities": {"A_vision": "established", "B_speech_to_text": "established", "C_model_reasoning": "established", "D_text_to_speech": "established", "E_provider_streaming": "established"},
   "story_9_8_final_c_verification": {"scope": "final_c_only_live_verification", "established": true, "evidence_class": "live_integration", "real_endpoint": true, "vision_succeeded": true, "reasoning_succeeded": true, "streamed": true, "provider_output_events": 237},
   "module_completion": "incomplete",
-  "remaining_acceptance": {"streamlit_ui": "not-started", "streamlit_deployment": "not-started", "deployment_verification": "not-started", "production_security_acceptance": "not-started", "linkedin_publication": "not-started"},
-  "implemented_capabilities": ["deterministic_multimodal_foundation", "local_document_vision_understanding", "local_audio_speech_pipeline", "deterministic_cross_modal_reasoning_workflow", "deterministic_voice_assistant_orchestration", "deterministic_websocket_streaming", "openai_live_adapters_contract_tested"],
+  "remaining_acceptance": {"streamlit_ui": "implemented-local-reviewer-ui", "streamlit_deployment": "not-started", "deployment_verification": "not-started", "production_security_acceptance": "not-started", "linkedin_publication": "not-started"},
+  "implemented_capabilities": ["deterministic_multimodal_foundation", "local_document_vision_understanding", "local_audio_speech_pipeline", "deterministic_cross_modal_reasoning_workflow", "deterministic_voice_assistant_orchestration", "deterministic_websocket_streaming", "openai_live_adapters_contract_tested", "streamlit_reviewer_ui"],
   "source_group_count": 17,
   "requirements": [
     {"id": "SRC-001", "group": 1, "kind": "source", "title": "Engineer multimodal AI applications", "stories": ["9.1", "9.5", "9.9", "9.10"], "status": "designed"},
@@ -34,23 +34,23 @@
     {"id": "SRC-011", "group": 11, "kind": "source", "title": "WebSockets", "stories": ["9.7"], "status": "implemented"},
     {"id": "SRC-012", "group": 12, "kind": "source", "title": "Low-latency pipelines", "stories": ["9.7", "9.10"], "status": "partially-implemented"},
     {"id": "SRC-013", "group": 13, "kind": "source", "title": "Voice interaction systems", "stories": ["9.6", "9.9"], "status": "partially-implemented"},
-    {"id": "SRC-014", "group": 14, "kind": "source", "title": "Lab: build voice-enabled assistant", "stories": ["9.6", "9.9"], "status": "partially-implemented"},
-    {"id": "SRC-015", "group": 15, "kind": "source", "title": "Lab: create multimodal AI workflow", "stories": ["9.5", "9.9"], "status": "partially-implemented"},
-    {"id": "SRC-016", "group": 16, "kind": "source", "title": "Lab: implement real-time streaming system", "stories": ["9.7", "9.9"], "status": "partially-implemented"},
+    {"id": "SRC-014", "group": 14, "kind": "source", "title": "Lab: build voice-enabled assistant", "stories": ["9.6", "9.9"], "status": "implemented"},
+    {"id": "SRC-015", "group": 15, "kind": "source", "title": "Lab: create multimodal AI workflow", "stories": ["9.5", "9.9"], "status": "implemented"},
+    {"id": "SRC-016", "group": 16, "kind": "source", "title": "Lab: implement real-time streaming system", "stories": ["9.7", "9.9"], "status": "implemented"},
     {"id": "SRC-017", "group": 17, "kind": "source", "title": "Deliverable: voice-enabled AI assistant", "stories": ["9.6", "9.9", "9.10"], "status": "partially-implemented"},
     {"id": "SRC-018", "group": 17, "kind": "source", "title": "Deliverable: multimodal AI platform", "stories": ["9.5", "9.9", "9.10"], "status": "partially-implemented"},
-    {"id": "ENG-001", "group": null, "kind": "engineering", "title": "Deterministic no-key reviewer mode", "stories": ["9.2", "9.9"], "status": "partially-implemented"},
+    {"id": "ENG-001", "group": null, "kind": "engineering", "title": "Deterministic no-key reviewer mode", "stories": ["9.2", "9.9"], "status": "implemented"},
     {"id": "ENG-002", "group": null, "kind": "engineering", "title": "Explicit opt-in ephemeral BYOK live mode", "stories": ["9.8"], "status": "implemented"},
-    {"id": "ENG-003", "group": null, "kind": "engineering", "title": "Streamlit unified presentation layer", "stories": ["9.9"], "status": "designed"},
-    {"id": "ENG-004", "group": null, "kind": "engineering", "title": "Application logic outside Streamlit", "stories": ["9.1", "9.2", "9.9"], "status": "designed"},
-    {"id": "ENG-005", "group": null, "kind": "engineering", "title": "Reviewer-visible working results", "stories": ["9.9", "9.10"], "status": "designed"},
+    {"id": "ENG-003", "group": null, "kind": "engineering", "title": "Streamlit unified presentation layer", "stories": ["9.9"], "status": "implemented"},
+    {"id": "ENG-004", "group": null, "kind": "engineering", "title": "Application logic outside Streamlit", "stories": ["9.1", "9.2", "9.9"], "status": "implemented"},
+    {"id": "ENG-005", "group": null, "kind": "engineering", "title": "Reviewer-visible working results", "stories": ["9.9", "9.10"], "status": "partially-implemented"},
     {"id": "ENG-006", "group": null, "kind": "engineering", "title": "Untrusted content never grants authority", "stories": ["9.1", "9.3", "9.4", "9.5", "9.6", "9.7", "9.10"], "status": "partially-implemented"},
     {"id": "ENG-007", "group": null, "kind": "engineering", "title": "Bounded cost and latency exposure", "stories": ["9.1", "9.6", "9.7", "9.8", "9.10"], "status": "partially-implemented"},
     {"id": "ENG-008", "group": null, "kind": "engineering", "title": "Structured observability without secrets", "stories": ["9.7", "9.10"], "status": "partially-implemented"},
-    {"id": "ENG-009", "group": null, "kind": "engineering", "title": "Accurate evidence classification", "stories": ["9.1", "9.9", "9.10"], "status": "designed"},
+    {"id": "ENG-009", "group": null, "kind": "engineering", "title": "Accurate evidence classification", "stories": ["9.1", "9.9", "9.10"], "status": "partially-implemented"},
     {"id": "ENG-010", "group": null, "kind": "engineering", "title": "Standalone Module 9", "stories": ["9.1", "9.10"], "status": "designed"},
     {"id": "ENG-011", "group": null, "kind": "engineering", "title": "Python engineering standard and fail-fast gates", "stories": ["9.1", "9.10"], "status": "designed"},
-    {"id": "ENG-012", "group": null, "kind": "engineering", "title": "Built-in reviewer guidance in the UI", "stories": ["9.9"], "status": "designed"}
+    {"id": "ENG-012", "group": null, "kind": "engineering", "title": "Built-in reviewer guidance in the UI", "stories": ["9.9"], "status": "implemented"}
   ],
   "adrs": [
     {"id": "ADR-009-001", "title": "Module 9 is standalone and source-faithful", "file": "adr/ADR-009-001-standalone-source-faithful.md", "status": "Accepted"},
@@ -72,7 +72,7 @@
     {"id": "9.6", "title": "Voice-Enabled AI Assistant", "status": "complete-voice-assistant-orchestration"},
     {"id": "9.7", "title": "Real-Time WebSocket Streaming", "status": "complete-websocket-streaming"},
     {"id": "9.8", "title": "Secure Opt-In Live Providers", "status": "complete-live-integration"},
-    {"id": "9.9", "title": "Unified Streamlit Reviewer Experience", "status": "not-started"},
+    {"id": "9.9", "title": "Unified Streamlit Reviewer Experience", "status": "complete-reviewer-ui"},
     {"id": "9.10", "title": "Production Acceptance & Release", "status": "not-started"}
   ],
   "evidence_classes": [
@@ -141,5 +141,7 @@
     "Architecture, ADRs, requirements, traceability, project status, and README accurately describe the implementation.",
     "Module 9 remains isolated.",
     "Only verified functionality is claimed."
-  ]
+  ],
+  "story_9_9_evidence_class": "automated_test",
+  "story_9_9_ui_acceptance": "deterministic-apptest-and-loopback-websocket"
 }

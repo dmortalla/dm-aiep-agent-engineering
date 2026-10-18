@@ -295,9 +295,11 @@ def test_voice_turns_do_not_implement_streaming_or_websocket_behavior() -> None:
 
 
 def test_authoritative_voice_logic_runs_without_any_ui_layer() -> None:
-    assert not (SRC / "ui").exists()
+    assert (SRC / "ui" / "app.py").is_file()
     for path in STORY_9_6_FILES:
         text = path.read_text("utf-8")
+        assert "multimodal_voice_platform.ui" not in text, path
+        assert "import streamlit" not in text, path
         assert "multimodal_voice_platform.interface" not in text, path
         assert "multimodal_voice_platform.streaming" not in text, path
     voice, config = started()

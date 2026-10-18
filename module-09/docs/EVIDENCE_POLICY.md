@@ -173,4 +173,13 @@ reasoning, D TTS, and E provider streaming, including one live voice turn. The f
 succeeded with real-endpoint vision and streamed reasoning (237 provider output events).
 Original evidence remains outside the repository under `TECHADEMY/EVIDENCE`; no sensitive live
 payloads are copied into documentation. Measurements are not production latency SLOs.
-Stories 9.9 and 9.10 are not started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
+Story 9.9 provides the local reviewer UI; Story 9.10 is not started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
+
+## Story 9.9 classification
+
+Story 9.9 acceptance is `automated_test`: Streamlit AppTest plus guarded real loopback WebSocket
+integration. Reviewer actions request `deterministic_demo` from existing services; UI tests inspect
+those actual requested demo records, while the test run itself remains automated evidence.
+Live BYOK UI is implemented but no live provider request or live UI acceptance was performed for
+this story. Story 9.8 accepted `live_integration` is preserved separately. No deployment, production
+SLO, final production/security acceptance or publication is claimed. See [REVIEWER_UI.md](REVIEWER_UI.md).

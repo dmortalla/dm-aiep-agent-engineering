@@ -10,7 +10,8 @@ with bounded multi-turn conversation state; fixture-playback STT, rule-based rea
 tone-sequence TTS; no speech recognition, speech synthesis, model inference, or streaming). Story
 9.7 is complete (genuine WebSocket gateway and incremental streaming of rule-based reply fragments
 on loopback; not model tokens; no authentication or live providers). Story 9.8 is complete (OpenAI live adapters, explicit live mode, ephemeral BYOK; deterministic
-contract tests and accepted live integration for vision, STT, TTS, model reasoning, and streaming). Stories 9.9 and 9.10 are not started.
+contract tests and accepted live integration for vision, STT, TTS, model reasoning, and streaming). Story 9.9 is complete (local reviewer UI, deterministic AppTest and real loopback WebSocket
+acceptance); Story 9.10 is not started.
 
 | Story | Title | Scope | Status |
 |---|---|---|---|
@@ -22,7 +23,7 @@ contract tests and accepted live integration for vision, STT, TTS, model reasoni
 | 9.6 | Voice-Enabled AI Assistant | Conversation state; STT -> reasoning -> TTS orchestration | Complete (synchronous voice orchestration and bounded multi-turn state; deterministic STT, reasoning, and TTS; no streaming; see [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)) |
 | 9.7 | Real-Time WebSocket Streaming | Typed streaming protocol; partial/final events; lifecycle handling; error handling; genuine WebSocket execution | Complete (Starlette/Uvicorn WebSocket gateway on loopback; incremental rule-based reply fragments, not model tokens; no `transcript_partial` without genuine partial STT; see [STREAMING.md](STREAMING.md)) |
 | 9.8 | Secure Opt-In Live Providers | Ephemeral BYOK configuration; live provider adapters; redaction; budgets; timeouts | Complete: accepted live integration for A–E; see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md) |
-| 9.9 | Unified Streamlit Reviewer Experience | Voice assistant; multimodal workflow; streaming evidence; metrics and evidence presentation; concise built-in guidance on how reviewers use and test the workflows and what results demonstrate | Not started |
+| 9.9 | Unified Streamlit Reviewer Experience | Voice assistant; multimodal workflow; streaming evidence; metrics and evidence presentation; concise built-in guidance on how reviewers use and test the workflows and what results demonstrate | Complete (local reviewer UI; ready for independent review; see [REVIEWER_UI.md](REVIEWER_UI.md)) |
 | 9.10 | Production Acceptance & Release | Security and failure tests; observability; documentation; deployment/release evidence; production-grade acceptance | Not started |
 
 ## Story dependencies

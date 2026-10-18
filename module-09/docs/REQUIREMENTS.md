@@ -26,11 +26,19 @@ SRC-016, ENG-006, ENG-007, and ENG-008 with incremental streaming of rule-based 
 [STREAMING.md](STREAMING.md)). SRC-011 and ENG-002 are implemented. ENG-002's explicit opt-in, secure ephemeral BYOK contract is
 supported by deterministic security tests and accepted real-provider execution. Story 9.8 adds
 accepted live vision, STT, TTS, model reasoning, provider streaming, and one live voice turn.
-Source statuses remain partial where required reviewer demonstrations or final acceptance remain;
 SRC-006 additionally lacks genuine partial transcripts. SRC-012 has measured provider latency,
-not a production SLO. SRC-018 is partial because the platform core exists, but UI and production
-acceptance remain. Other designed requirements remain designed. Stories 9.9 and 9.10 are not
-started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
+not a production SLO. The current post-UI statuses follow below; Module 9 remains incomplete.
+
+### Story 9.9 reconciliation
+
+Implemented: SRC-011, SRC-014, SRC-015, SRC-016, ENG-001, ENG-002, ENG-003, ENG-004, ENG-012.
+The three labs now have actual reviewer workflows with deterministic UI/socket acceptance;
+no-key mode, unified Streamlit presentation, separation of business logic and built-in guidance
+are implemented. ENG-005 and ENG-009 are partial across UI and final acceptance. Other source
+requirements remain partial (except SRC-001, still designed pending end-to-end acceptance).
+SRC-006 still lacks partial transcription; SRC-012 remains partial with no production SLO.
+Live UI acceptance is not inferred from Story 9.8 adapter evidence. Story 9.10 is not started;
+Module 9 is incomplete. [REVIEWER_UI.md](REVIEWER_UI.md) describes the implementation and limits.
 
 ## Source-derived requirements
 

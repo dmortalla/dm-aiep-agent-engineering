@@ -240,3 +240,11 @@ authority. Pydantic and provenance validation remain fail-closed, including lite
 case-insensitive shared-term membership in each cited observation's statement text; fewer than
 two qualifying terms means omitting `shared_concepts`. This evidence does not complete UI or
 production acceptance. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
+
+## Story 9.9 presentation boundary
+
+`ui/reviewer.py` selects existing service interfaces and returns their typed records. `Upload`
+adds a 2 MiB presentation admission bound; existing ingestion remains authoritative for type,
+magic bytes and names. No UI-controlled evidence/provider/authority fields enter a core request.
+The `ui/socket_demo.py` transport parses every genuine loopback event using `parse_stream_event`,
+invoking the renderer on receipt. It does not replace streaming or accept arbitrary endpoints.

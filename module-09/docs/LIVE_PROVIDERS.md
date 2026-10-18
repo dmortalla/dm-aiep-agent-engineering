@@ -86,7 +86,7 @@ uploaded to the provider.
 
 ## Credential lifecycle (ephemeral BYOK)
 
-1. The backend receives the caller's key at the trusted boundary (Story 9.9's UI will collect it in
+1. The backend receives the caller's key at the trusted boundary (Story 9.9's UI collects it in
    a password field; the acceptance runner reads it with a hidden prompt or one named variable).
 2. `live_session` checks it locally (length, printable ASCII, no whitespace) and stores it as a
    `SecretStr` in the session configuration, which excludes it from serialization and `repr`.
@@ -199,8 +199,9 @@ SRC-002/005/006/007/009/010 retain partial status because their traceability inc
 acceptance/demonstration; SRC-006 also requires partial transcripts, which are not produced.
 SRC-008 remains partial: one live turn does not establish live multi-turn acceptance.
 SRC-012 remains partial: measured latency does not establish production performance.
-SRC-013 through SRC-018 remain partial pending Story 9.9 and/or 9.10. ENG-001 remains partial
-pending the unified no-key reviewer experience. No requirement wording or acceptance criterion is relaxed.
+Story 9.9 implements the three reviewer labs (SRC-014/015/016) and no-key mode (ENG-001).
+UI-dependent deliverables SRC-013/017/018 remain partial pending live UI and/or final acceptance.
+No requirement wording or acceptance criterion is relaxed.
 
 ## Accepted validation and provenance boundary
 
@@ -214,11 +215,13 @@ shared term must occur literally as a whole word, case-insensitively, in the sta
 each cited observation; omit the finding if fewer than two qualifying terms exist. The final C
 run passed this boundary. No rejected raw payload is published in evidence or errors.
 
-Module 9 is incomplete. Stories 9.9 and 9.10 are not started. Streamlit reviewer UI is not
-implemented; Streamlit deployment, deployment verification, final production/security acceptance,
-and LinkedIn publication have not occurred. These remain module completion requirements.
+Module 9 is incomplete. Story 9.9 provides the local Streamlit reviewer UI with deterministic
+AppTest and loopback WebSocket acceptance; Story 9.10 is not started. Streamlit deployment,
+deployment verification, final production/security acceptance, and LinkedIn publication have not
+occurred. UI execution is separately gated by explicit submit, a masked ephemeral credential and
+cost acknowledgement; see [REVIEWER_UI.md](REVIEWER_UI.md). No live UI acceptance was run in 9.9.
 
 ## Not in this story
 
-Streamlit (9.9); persistent credential storage; browser-side provider calls; user-controlled
+Streamlit is delivered separately in Story 9.9. Excluded here: persistent credential storage; browser-side provider calls; user-controlled
 endpoints; deployment, authentication, and TLS (9.10); other providers.

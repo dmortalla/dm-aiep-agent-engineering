@@ -30,7 +30,9 @@ adapters (`adapters/openai/`, OpenAI as the first live provider) behind the unch
 provider-neutral live core (`live/`, `contracts/live.py`), and explicit live bindings in the
 services; accepted real-provider evidence establishes vision, STT, TTS, model reasoning, and
 provider streaming without changing the frozen architecture (see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md)).
-No other runtime component below is implemented yet.
+Story 9.9 adds the thin Streamlit reviewer presentation described in
+[REVIEWER_UI.md](REVIEWER_UI.md). The application/domain/provider boundaries are unchanged.
+Deployment and final production acceptance remain Story 9.10.
 
 ## Goal
 
@@ -214,7 +216,8 @@ module-09/
     live/                                Story 9.8: live config, credentials, bindings, redaction,
                                          prompts, acceptance runner (provider-neutral)
     adapters/openai/                     Story 9.8: OpenAI live adapters (provider-specific)
-    (ui/)                                Story 9.9; not created yet
+    ui/                                  Story 9.9: Streamlit presentation, service facade,
+                                         short-lived loopback WebSocket client
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
 ```

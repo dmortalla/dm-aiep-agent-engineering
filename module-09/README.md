@@ -3,7 +3,7 @@
 Standalone module that will deliver a **voice-enabled AI assistant** and a **multimodal AI
 platform**: vision, audio, and document understanding; cross-modal reasoning; speech-to-text and
 text-to-speech; real-time conversations and voice orchestration; and genuine WebSocket streaming
-with measured latency. Streamlit will be the reviewer-facing UI. Business logic lives outside it.
+with measured latency. Streamlit is the local reviewer-facing UI. Business logic lives outside it.
 
 ## Current status
 
@@ -63,9 +63,32 @@ Deterministic tests exercise the real SDK over an in-process fake API (`automate
 Separately authorized real-provider verification established vision, speech-to-text, text-to-speech,
 model reasoning, and provider streaming (`live_integration`). See [docs/LIVE_PROVIDERS.md](docs/LIVE_PROVIDERS.md).
 
-Semantic document understanding and the Streamlit reviewer UI remain unverified or unimplemented.
-Module 9 is incomplete: Stories 9.9 and 9.10 are not started. Streamlit deployment, deployment
+Semantic document understanding remains unestablished. Story 9.9 provides the local reviewer UI.
+Module 9 is incomplete: Story 9.9 is complete and ready for independent review; Story 9.10 is not started. Streamlit deployment, deployment
 verification, final production/security acceptance, and LinkedIn publication have not occurred. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+
+## Launch the reviewer application
+
+From `module-09/`, using the module-owned environment:
+
+```bash
+uv sync --extra dev
+uv run streamlit run streamlit_app.py
+```
+
+Start with **Multimodal workflow -> Run selected workflow** for a four-modality sample.
+Try **Voice assistant** with `voice-remember`, then `voice-recall`; listen to the generated tone
+audio. **Document & vision** shows local measurements/extracted text. **WebSocket streaming**
+runs two turns through a real short-lived loopback gateway and displays events on receipt;
+select disconnect-after-first-fragment to exercise cancellation. No key or provider is needed.
+These are deterministic fixtures, local processing, and rule-based reasoning, not model inference,
+speech recognition, or speech synthesis. Local/demo latency is not a production SLO.
+
+Optional **Live / BYOK** requires a masked credential, cost acknowledgement and explicit submit
+for each operation. Keys are removed from widget state before execution and never cached or saved.
+Live failures do not fall back. Live voice uses one fresh session per operation; deterministic
+voice preserves bounded multi-turn history. The streaming reviewer demonstration stays deterministic.
+See [docs/REVIEWER_UI.md](docs/REVIEWER_UI.md) for controls, evidence and limitations.
 
 ## Documentation
 

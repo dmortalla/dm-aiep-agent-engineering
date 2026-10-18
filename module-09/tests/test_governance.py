@@ -22,11 +22,12 @@ SKIPPED_DIRS = {".venv", ".pytest_cache", ".ruff_cache", "__pycache__"}
 TEXT_SUFFIXES = {".md", ".py", ".toml", ".json", ".txt", ".lock", ".yaml", ".yml"}
 ALLOWED_THIRD_PARTY = {"pydantic", "pytest", "multimodal_voice_platform"}
 RESTRICTED_THIRD_PARTY = {
+    "streamlit": {"ui/app.py"},
     "PIL": {"adapters/local/image_analysis.py"},
     "pypdf": {"adapters/local/document_parsing.py"},
     "starlette": {"interface/websocket.py"},
     "uvicorn": {"interface/server.py"},
-    "websockets": {"live/acceptance.py"},
+    "websockets": {"live/acceptance.py", "ui/socket_demo.py"},
     "openai": {"adapters/openai/client.py"},
     "httpx2": {
         "adapters/openai/__init__.py",
@@ -40,6 +41,31 @@ and its HTTP client, each allowed only in the modules named (and in tests). The 
 client is used by tests and by the separately invoked live acceptance runner only."""
 FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
 FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
+
+
+IMPLEMENTED_REQUIREMENTS = {
+    "SRC-011",
+    "SRC-014",
+    "SRC-015",
+    "SRC-016",
+    "ENG-001",
+    "ENG-002",
+    "ENG-003",
+    "ENG-004",
+    "ENG-012",
+}
+PARTIAL_REQUIREMENTS = {
+    *(f"SRC-{number:03d}" for number in range(2, 11)),
+    "SRC-012",
+    "SRC-013",
+    "SRC-017",
+    "SRC-018",
+    "ENG-005",
+    "ENG-006",
+    "ENG-007",
+    "ENG-008",
+    "ENG-009",
+}
 
 
 @pytest.fixture(scope="module")
@@ -120,7 +146,7 @@ def test_story_9_2_claims_only_the_deterministic_foundation(governance: dict[str
     assert governance["story_9_2_evidence_class"] == EvidenceClass.AUTOMATED_TEST
     assert governance["implemented_capabilities"][0] == "deterministic_multimodal_foundation"
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
-    assert statuses["ENG-001"] == "partially-implemented"
+    assert statuses["ENG-001"] == "implemented"  # No-key UI now delivered in Story 9.9.
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.2"] == "complete-deterministic-foundation"
     foundation_doc = _doc("DETERMINISTIC_FOUNDATION.md")
@@ -137,7 +163,9 @@ def test_story_9_3_claims_only_local_understanding(governance: dict[str, Any]) -
     ]
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
     for rid in ("SRC-002", "SRC-004", "ENG-006"):
-        assert statuses[rid] == "partially-implemented", rid
+        assert statuses[rid] == (
+            "implemented" if rid in IMPLEMENTED_REQUIREMENTS else "partially-implemented"
+        ), rid
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.3"] == "complete-local-understanding"
     understanding_doc = " ".join(_doc("UNDERSTANDING.md").lower().split())
@@ -156,7 +184,9 @@ def test_story_9_4_claims_only_the_audio_speech_pipeline(governance: dict[str, A
     ]
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
     for rid in ("SRC-003", "SRC-006", "SRC-007", "ENG-006"):
-        assert statuses[rid] == "partially-implemented", rid
+        assert statuses[rid] == (
+            "implemented" if rid in IMPLEMENTED_REQUIREMENTS else "partially-implemented"
+        ), rid
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.4"] == "complete-audio-speech-pipeline"
     audio_doc = " ".join(_doc("AUDIO_SPEECH.md").lower().split())
@@ -179,7 +209,9 @@ def test_story_9_5_claims_only_deterministic_cross_modal_reasoning(
     ]
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
     for rid in ("SRC-005", "SRC-015", "ENG-006"):
-        assert statuses[rid] == "partially-implemented", rid
+        assert statuses[rid] == (
+            "implemented" if rid in IMPLEMENTED_REQUIREMENTS else "partially-implemented"
+        ), rid
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.5"] == "complete-cross-modal-reasoning"
     cross_doc = " ".join(_doc("CROSS_MODAL.md").lower().split())
@@ -220,9 +252,13 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
         "ENG-006",
         "ENG-007",
     }
-    assert {statuses[rid] for rid in partial} == {"partially-implemented"}
-    for later in ("ENG-003", "ENG-005"):
-        assert statuses[later] == "designed", later
+    assert all(
+        statuses[rid]
+        == ("implemented" if rid in IMPLEMENTED_REQUIREMENTS else "partially-implemented")
+        for rid in partial
+    )
+    assert statuses["ENG-003"] == "implemented"
+    assert statuses["ENG-005"] == "partially-implemented"
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories.pop("9.1") == "complete-design-only"
     assert stories.pop("9.2") == "complete-deterministic-foundation"
@@ -279,17 +315,22 @@ def test_story_9_7_claims_only_deterministic_websocket_streaming(
         "ENG-007",
         "ENG-008",
     }
-    assert {statuses[rid] for rid in partial} == {"partially-implemented"}
-    assert {rid for rid, status in statuses.items() if status == "implemented"} == {
-        "SRC-011", "ENG-002"
-    }  # Story 9.8 now satisfies explicit opt-in ephemeral BYOK.
+    assert all(
+        statuses[rid]
+        == ("implemented" if rid in IMPLEMENTED_REQUIREMENTS else "partially-implemented")
+        for rid in partial
+    )
+    assert {rid for rid, status in statuses.items() if status == "implemented"} == (
+        IMPLEMENTED_REQUIREMENTS
+    )
     assert set(statuses.values()) == {"designed", "partially-implemented", "implemented"}
     assert statuses["SRC-018"] == "partially-implemented"
-    for later in ("SRC-001", "ENG-003", "ENG-005", "ENG-012"):
+    for later in ("SRC-001", "ENG-010", "ENG-011"):
         assert statuses[later] == "designed", later
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.7"] == "complete-websocket-streaming"
-    assert {stories[sid] for sid in ("9.9", "9.10")} == {"not-started"}
+    assert stories["9.9"] == "complete-reviewer-ui"
+    assert stories["9.10"] == "not-started"
     streaming_doc = " ".join(_doc("STREAMING.md").lower().split())
     for phrase in (
         "not model tokens",
@@ -313,54 +354,86 @@ def test_story_9_8_accepted_live_evidence_preserves_conservative_scope(
     assert governance["story_9_8_evidence_class"] == EvidenceClass.LIVE_INTEGRATION
     assert governance["story_9_8_evidence_classes"] == ["automated_test", "live_integration"]
     assert governance["story_9_8_live_acceptance"] == "established"
-    assert governance["implemented_capabilities"][-1] == "openai_live_adapters_contract_tested"
+    assert "openai_live_adapters_contract_tested" in governance["implemented_capabilities"]
     assert governance["story_9_8_live_capabilities"] == {
-        "A_vision": "established", "B_speech_to_text": "established",
-        "C_model_reasoning": "established", "D_text_to_speech": "established",
+        "A_vision": "established",
+        "B_speech_to_text": "established",
+        "C_model_reasoning": "established",
+        "D_text_to_speech": "established",
         "E_provider_streaming": "established",
     }
     assert governance["story_9_8_final_c_verification"] == {
-        "scope": "final_c_only_live_verification", "established": True,
-        "evidence_class": "live_integration", "real_endpoint": True,
-        "vision_succeeded": True, "reasoning_succeeded": True,
-        "streamed": True, "provider_output_events": 237,
+        "scope": "final_c_only_live_verification",
+        "established": True,
+        "evidence_class": "live_integration",
+        "real_endpoint": True,
+        "vision_succeeded": True,
+        "reasoning_succeeded": True,
+        "streamed": True,
+        "provider_output_events": 237,
     }
     statuses = {req["id"]: req["status"] for req in governance["requirements"]}
     assert statuses["ENG-002"] == "implemented"
-    assert ("Live-provider mode is explicit opt-in; users may supply supported credentials "
-            "securely and ephemerally.") in _doc("REQUIREMENTS.md")
+    assert (
+        "Live-provider mode is explicit opt-in; users may supply supported credentials "
+        "securely and ephemerally."
+    ) in _doc("REQUIREMENTS.md")
     partial = {rid for rid, status in statuses.items() if status == "partially-implemented"}
-    assert partial == {
-        "ENG-001", "ENG-006", "ENG-007", "ENG-008",
-        *(f"SRC-{number:03d}" for number in range(2, 11)),
-        *(f"SRC-{number:03d}" for number in range(12, 19)),
-    }, "reviewer, partial STT, latency, and final acceptance obligations remain"
+    assert partial == PARTIAL_REQUIREMENTS, "later acceptance obligations remain protected"
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.8"] == "complete-live-integration"
-    assert stories["9.9"] == stories["9.10"] == "not-started"
+    assert stories["9.9"] == "complete-reviewer-ui"
+    assert stories["9.10"] == "not-started"
     assert governance["module_completion"] == "incomplete"
-    assert governance["remaining_acceptance"] == dict.fromkeys(
-        ("streamlit_ui", "streamlit_deployment", "deployment_verification",
-         "production_security_acceptance", "linkedin_publication"), "not-started"
+    assert governance["remaining_acceptance"]["streamlit_ui"] == "implemented-local-reviewer-ui"
+    assert {
+        k: v for k, v in governance["remaining_acceptance"].items() if k != "streamlit_ui"
+    } == dict.fromkeys(
+        (
+            "streamlit_deployment",
+            "deployment_verification",
+            "production_security_acceptance",
+            "linkedin_publication",
+        ),
+        "not-started",
     )
     live_doc = " ".join(_doc("LIVE_PROVIDERS.md").lower().split())
     for phrase in (
-        "story 9.8 is complete", "accepted `live_integration`", "237 provider output events",
-        "max_retries=0", "not individual tokens", "no fallback", "ephemeral byok",
-        "redaction", "call budget", "operation deadline", "untrusted", "fail-closed",
-        "whole word, case-insensitively", "fewer than two qualifying terms",
-        "module 9 is incomplete", "stories 9.9 and 9.10 are not started",
-        "streamlit reviewer ui is not implemented", "deployment verification",
-        "final production/security acceptance", "linkedin publication have not occurred",
-        "not a production slo", "partial transcripts",
+        "story 9.8 is complete",
+        "accepted `live_integration`",
+        "237 provider output events",
+        "max_retries=0",
+        "not individual tokens",
+        "no fallback",
+        "ephemeral byok",
+        "redaction",
+        "call budget",
+        "operation deadline",
+        "untrusted",
+        "fail-closed",
+        "whole word, case-insensitively",
+        "fewer than two qualifying terms",
+        "module 9 is incomplete",
+        "story 9.10 is not started",
+        "local streamlit reviewer ui",
+        "deployment verification",
+        "final production/security acceptance",
+        "linkedin publication have not occurred",
+        "not a production slo",
+        "partial transcripts",
     ):
         assert phrase in live_doc, phrase
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
         text = " ".join(_doc(name).lower().split())
         assert "story 9.8" in text and "live_integration" in text, name
-        for stale in ("live acceptance pending", "live acceptance has not run",
-                      "no `live_integration` evidence", "no real provider call has been made",
-                      "live execution unverified", "phase b pending"):
+        for stale in (
+            "live acceptance pending",
+            "live acceptance has not run",
+            "no `live_integration` evidence",
+            "no real provider call has been made",
+            "live execution unverified",
+            "phase b pending",
+        ):
             assert stale not in text, (name, stale)
     policy = " ".join(_doc("EVIDENCE_POLICY.md").lower().split())
     assert "mocked execution can never be `live_integration`" in policy
@@ -369,6 +442,32 @@ def test_story_9_8_accepted_live_evidence_preserves_conservative_scope(
         text = path.read_text("utf-8")
         assert not re.search(r"sk-(?:proj-)?[a-zA-Z0-9_-]{16,}", text), path
         assert "-----BEGIN PRIVATE KEY-----" not in text, path
+
+
+def test_story_9_9_delivers_local_ui_without_claiming_release(governance: dict[str, Any]) -> None:
+    assert governance["story_9_9_evidence_class"] == "automated_test"
+    assert governance["story_9_9_ui_acceptance"] == "deterministic-apptest-and-loopback-websocket"
+    assert governance["implemented_capabilities"][-1] == "streamlit_reviewer_ui"
+    statuses = {r["id"]: r["status"] for r in governance["requirements"]}
+    assert {rid for rid, value in statuses.items() if value == "implemented"} == (
+        IMPLEMENTED_REQUIREMENTS
+    )
+    assert {rid for rid, value in statuses.items() if value == "partially-implemented"} == (
+        PARTIAL_REQUIREMENTS
+    )
+    ui_doc = " ".join(_doc("REVIEWER_UI.md").lower().split())
+    for phrase in (
+        "streamlit",
+        "ephemeral loopback",
+        "no provider call",
+        "not a production",
+        "no live ui",
+        "story 9.10",
+        "incomplete",
+    ):
+        assert phrase in ui_doc, phrase
+    assert "gatherUsageStats = false" in (MODULE_ROOT / ".streamlit/config.toml").read_text("utf-8")
+    assert (MODULE_ROOT / "streamlit_app.py").exists()
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

@@ -72,7 +72,10 @@ def test_streaming_code_has_no_command_filesystem_or_later_story_path() -> None:
         for node in ast.walk(ast.parse(path.read_text("utf-8"))):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 assert node.func.id not in FORBIDDEN_CALLS, f"{path}: {node.func.id}"
-    assert not (SRC / "ui").exists() and not (SRC / "adapters" / "live").exists()
+    assert (SRC / "ui" / "app.py").is_file()
+    assert not (SRC / "adapters" / "live").exists()
+    for path in [*STREAMING, *INTERFACE]:
+        assert not any("multimodal_voice_platform.ui" in name for name in _imports(path)), path
 
 
 def test_streaming_code_swallows_no_exception_silently() -> None:
