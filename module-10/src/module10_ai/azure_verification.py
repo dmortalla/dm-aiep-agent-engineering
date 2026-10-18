@@ -36,6 +36,17 @@ def canonical_region(value: object) -> str:
     return REGION
 
 
+def canonical_transport(value: object) -> str:
+    """Accept only the contract spelling and explicitly approved Azure HTTP spelling.
+
+    All other types, protocols, capitalization and whitespace fail closed.
+    This changes only observation interpretation, never the deployment contract.
+    """
+    require(type(value) is str and value in ("http", "Http"),
+            "Ingress transport must be the approved HTTP transport.")
+    return "http"
+
+
 def subset(actual: object, expected: object) -> bool:
     """Match required ARM fields while allowing server-populated read-only defaults."""
     if isinstance(expected, dict):
@@ -179,9 +190,13 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                 == state["environment"]["id"] and props["workloadProfileName"] == "Consumption"
                 and props["provisioningState"] == "Succeeded", "App environment/state differs.")
         settings = props["configuration"]
+        require(type(settings["ingress"]) is dict, "Ingress must be an observation mapping.")
+        # Copy only this mapping so the raw observation remains unchanged.
+        observed_ingress = dict(settings["ingress"])
+        observed_ingress["transport"] = canonical_transport(settings["ingress"]["transport"])
         require(settings["activeRevisionsMode"] == "Single"
                 and settings["maxInactiveRevisions"] == 2
-                and subset(settings["ingress"], ingress(config.reviewer_cidr))
+                and subset(observed_ingress, ingress(config.reviewer_cidr))
                 and subset(settings["registries"], [{"server": n["registry"] + ".azurecr.io",
                                                       "identity": identity_id}])
                 and subset(settings["identitySettings"], [{"identity": identity_id,

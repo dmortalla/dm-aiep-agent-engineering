@@ -197,6 +197,73 @@ def test_fixture_state_is_only_validation() -> None:
 
 
 
+@pytest.mark.parametrize("transport", ["http", "Http"])
+def test_approved_transport_representations(transport: str) -> None:
+    """Only observation interpretation changes; contract and raw state stay intact."""
+    state = observed()
+    state["app"]["properties"]["configuration"]["ingress"]["transport"] = transport
+    original = copy.deepcopy(state)
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION).endswith("azurecontainerapps.io")
+    assert state == original
+    assert ingress(CONFIG.reviewer_cidr)["transport"] == "http"
+    assert not subset({"transport": "Http"}, {"transport": "http"})
+
+
+@pytest.mark.parametrize("transport", [
+    "HTTP", "hTtp", "httP", " http", "http ", "Http\n", "http\t", "http\x00",
+    "https", "tcp", "auto", "http2", "unknown", "", None, True, 1, [], {}, ["Http"],
+])
+def test_transport_observations_fail_closed(transport: object) -> None:
+    """Exact allowlisting rejects near matches, other modes and malformed types."""
+    state = observed()
+    state["app"]["properties"]["configuration"]["ingress"]["transport"] = transport
+    with pytest.raises(VerificationError, match="approved HTTP transport"):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("field", list(ingress(CONFIG.reviewer_cidr)))
+def test_transport_alias_requires_complete_ingress(field: str) -> None:
+    """The approved spelling cannot compensate for any missing contract field."""
+    state = observed()
+    target = state["app"]["properties"]["configuration"]["ingress"]
+    target["transport"] = "Http"
+    del target[field]
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("value", [None, [], ["malformed"], "Http", True, 8000])
+def test_malformed_ingress_fails_closed(value: object) -> None:
+    """An ingress observation must be a mapping before transport interpretation."""
+    state = observed()
+    state["app"]["properties"]["configuration"]["ingress"] = value
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("external", False), ("targetPort", 80), ("targetPort", "8000"),
+    ("allowInsecure", True), ("allowInsecure", 0),
+    ("traffic", []), ("traffic", [{"latestRevision": True, "weight": 99}]),
+    ("ipSecurityRestrictions", []),
+    ("ipSecurityRestrictions", [{"name": "reviewer", "action": "Allow",
+                                 "ipAddressRange": "0.0.0.0/0"}]),
+    ("ipSecurityRestrictions", [{"name": "reviewer", "action": "Deny",
+                                 "ipAddressRange": CONFIG.reviewer_cidr}]),
+    ("ipSecurityRestrictions", ingress(CONFIG.reviewer_cidr)["ipSecurityRestrictions"] * 2),
+    ("additionalPortMappings", [{"external": True, "targetPort": 9000}]),
+    ("customDomains", [{"name": "synthetic.invalid"}]),
+])
+def test_transport_alias_preserves_ingress_security(field: str, value: object) -> None:
+    """HTTP representation equivalence grants no additional ingress exposure."""
+    state = observed()
+    target = state["app"]["properties"]["configuration"]["ingress"]
+    target.update(transport="Http")
+    target[field] = value
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
 RESOURCE_KEYS = ("registry", "workspace", "environment", "app", "identity")
 
 
@@ -273,9 +340,11 @@ def test_region_alias_preserves_resource_ownership(resource: str, field: str, da
     (("revisions", 0, "properties", "active"), False),
     (("app", "properties", "latestReadyRevisionName"), "other"),
 ])
-def test_observation_drift_fails_closed(path: tuple, value: object) -> None:
+@pytest.mark.parametrize("transport", ["http", "Http"])
+def test_observation_drift_fails_closed(path: tuple, value: object, transport: str) -> None:
     """Resource, cost, identity, ingress, image, runtime and revision deviations cannot pass."""
     state = observed()
+    state["app"]["properties"]["configuration"]["ingress"]["transport"] = transport
     target = state
     for key in path[:-1]:
         target = target[key]
