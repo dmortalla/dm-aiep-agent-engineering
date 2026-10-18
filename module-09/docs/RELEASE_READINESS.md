@@ -4,9 +4,9 @@
 
 Accepted Stories 9.1-9.9 baseline: `d956efe51bcc41ccc44e435b0692a9594d5ee34d`
 (`feat(module-09): add unified multimodal reviewer UI`). Its ancestry is preserved.
-Story 9.10 is complete for local engineering acceptance and ready for independent review.
-It has not been independently accepted or committed by this agent. Module 9 remains incomplete.
-No staging, commit, push, tag, deployment or publication is part of this story.
+Story 9.10 passed local engineering acceptance and subsequent deployed reviewer verification.
+Engineering acceptance, controlled commits, GitHub publication and Streamlit deployment are complete. Module 9 remains incomplete only because recruiter-facing LinkedIn publication is still outstanding.
+The original Story 9.10 boundary was local-only; subsequent controlled closeout performed commit, push and reviewer-facing Streamlit deployment. No release tag is claimed.
 
 This is a local reviewer-readiness assessment of the supported capabilities, not an assertion that
 all source requirements or public-production operation are complete. The five partial source
@@ -18,13 +18,13 @@ are reviewed individually. No nineteenth source requirement is introduced.
 | Gate | Local review and evidence | Boundary |
 |---|---|---|
 | Requirements | All 30 IDs reconciled in the matrix below | Five source requirements remain partial |
-| Product Experience | AppTest executes actual multimodal, voice, image/document and WebSocket UI paths | No microphone hardware/browser permission verification |
+| Product Experience | AppTest plus deployed Streamlit verification exercise multimodal, voice, image/document and WebSocket paths | Browser microphone capture verified; arbitrary deterministic speech correctly fails closed and live spoken UI interaction remains unverified |
 | Real Functionality | Real local decoding/extraction, rule-based reasoning, voice transactions and socket streaming; accepted 9.8 live A-E retained | Fixture STT and tone audio are not inference or genuine speech |
 | Reliability | Failure atomicity, bounded history/events, deadlines, replay rejection, timeout/cancellation cleanup; worker-thread isolation | Public hosting and production load not tested |
 | Security | Validated media/names, provenance, least-authority ports, ephemeral keys, inert injections, safe text rendering and redaction regressions | No authentication/TLS/public exposure acceptance |
 | Cost | Offline tests and samples, explicit submitted live acknowledgement, bounded calls/tokens/time, max_retries=0 | No dollar estimate or cumulative spend guarantee across authorized operations |
 | Evidence | Automated, local deterministic and prior accepted live evidence remain separate | No new live integration or production SLO inferred |
-| Deployment | Not performed; closeout gates remain pending | Human authorization and target-environment verification required |
+| Deployment | PASS: reviewer-facing Streamlit deployment verified with deterministic workflows and opt-in BYOK vision | Public Streamlit presentation is verified; the internal loopback WebSocket gateway is not separately exposed as a public authenticated/TLS service |
 
 ## Genuine defects repaired
 
@@ -67,8 +67,8 @@ Test filenames below are in `tests/`; implementation references are module-owned
 
 | Requirement ID | Final status | Implementation evidence | Test/acceptance evidence | Residual limitation / boundary |
 |---|---|---|---|---|
-| SRC-001 | implemented | UI + CrossModalWorkflow + VoiceAssistant integration | test_reviewer_ui.py; test_production_acceptance.py | Locally integrated objective; deployment remains a separate gate. |
-| SRC-002 | implemented | VisionPort / OpenAI vision adapter; local pixel analysis stays distinct | test_live_adapters.py; test_local_vision.py; accepted Story 9.8 A | Real vision established in 9.8; no new live UI verification. |
+| SRC-001 | implemented | UI + CrossModalWorkflow + VoiceAssistant integration | test_reviewer_ui.py; test_production_acceptance.py; deployed Streamlit verification | Integrated objective verified in the deployed reviewer application. |
+| SRC-002 | implemented | VisionPort / OpenAI vision adapter; local pixel analysis stays distinct | test_live_adapters.py; test_local_vision.py; accepted Story 9.8 A; deployed BYOK vision | Deployed live vision verified; model interpretation remains explicitly untrusted and separate from measured local facts. |
 | SRC-003 | partially-implemented | AudioLimits + PCM WAV ingestion/decoding/signal analysis | test_audio_processing.py; test_understanding_security.py | WAV supported; MP3/WebM decoding remains unsupported, preserving accepted partial status. |
 | SRC-004 | partially-implemented | Local PDF/Markdown/text extraction and structured sections | test_local_document.py; test_reviewer_ui.py | Local extraction/structure only; semantic document understanding remains unestablished. |
 | SRC-005 | implemented | Normalized observations, bounded context, ReasoningPort and citation checks | test_crossmodal_workflow.py; test_crossmodal_security.py; accepted Story 9.8 C | Rule-based local demo and accepted live reasoning are distinct; no cross-modal authority granted. |
@@ -79,15 +79,15 @@ Test filenames below are in `tests/`; implementation references are module-owned
 | SRC-010 | implemented | Incremental reply port, coordinator, typed response_delta transport | test_streaming_coordinator.py; test_websocket_loopback.py; accepted Story 9.8 E | Whole reply acts are incremental; no artificial typing and no partial-STT claim. |
 | SRC-011 | implemented | Starlette/Uvicorn gateway and independent RFC 6455 client | test_websocket_gateway.py; test_websocket_loopback.py | Loopback integration, not authenticated or TLS-protected public hosting. |
 | SRC-012 | partially-implemented | Measured stage/milestone latency, deadlines, incremental delivery | test_streaming_coordinator.py; test_websocket_loopback.py | Low-latency-oriented architecture and local/prior provider measurements only; no production SLO or performance completion. |
-| SRC-013 | partially-implemented | Native Streamlit microphone/WAV input and existing voice interfaces | test_reviewer_ui.py | Hardware permissions and genuine live UI spoken interaction not verified; partial remains explicit. |
+| SRC-013 | partially-implemented | Native Streamlit microphone/WAV input and existing voice interfaces | test_reviewer_ui.py; deployed browser microphone capture | Browser microphone acquisition is verified; genuine deployed live spoken interaction was not exercised, so partial status remains explicit. |
 | SRC-014 | implemented | Runnable Streamlit voice lab, transcript/reply/audio/history | test_reviewer_ui.py | Implemented local lab; deterministic labels remain visible. |
 | SRC-015 | implemented | Runnable four-modality workflow with observations/findings | test_reviewer_ui.py; test_crossmodal_workflow.py | Implemented local lab; arbitrary deterministic semantic reasoning not claimed. |
 | SRC-016 | implemented | Runnable real loopback streaming lab and cancellation action | test_reviewer_ui.py; test_production_acceptance.py | Implemented local lab; local latency is not a production SLO. |
-| SRC-017 | implemented | Integrated local voice assistant UI + orchestration + bounded history | test_reviewer_ui.py; test_voice_failures.py; test_production_acceptance.py | Local deliverable is demonstrable; browser hardware, deployed and live UI verification remain separate. |
-| SRC-018 | implemented | Integrated local multimodal platform, voice and streaming reviewer paths | test_reviewer_ui.py; test_crossmodal_workflow.py; test_production_acceptance.py | Local deliverable is demonstrable with explicit capability limitations; no deployment/publication claim. |
+| SRC-017 | implemented | Integrated voice assistant UI + orchestration + bounded history | test_reviewer_ui.py; test_voice_failures.py; test_production_acceptance.py; deployed deterministic remember/recall and microphone verification | Deployed deterministic voice interaction and browser capture verified; deployed live spoken voice was not re-exercised. |
+| SRC-018 | implemented | Integrated multimodal platform, voice and streaming reviewer paths | test_reviewer_ui.py; test_crossmodal_workflow.py; test_production_acceptance.py; deployed reviewer verification | Public reviewer deployment verified across deterministic workflows plus opt-in live BYOK vision. |
 | ENG-001 | implemented | Default no-key sample paths through existing services | test_reviewer_ui.py; test_crossmodal_security.py | No provider spend; real loopback sockets are local integration only. |
-| ENG-002 | implemented | Explicit opt-in, ephemeral BYOK and acknowledgement boundary | test_live_mode.py; test_reviewer_ui.py; test_production_acceptance.py | No live call in this story; framework memory clearing is not secure memory erasure. |
-| ENG-003 | implemented | Unified Streamlit presentation package | test_reviewer_ui.py | Local reviewer app, not deployed hosting. |
+| ENG-002 | implemented | Explicit opt-in, ephemeral BYOK and acknowledgement boundary | test_live_mode.py; test_reviewer_ui.py; test_production_acceptance.py; deployed BYOK vision | Deployed live vision verified with live_integration evidence; credential field cleared after execution. Framework memory clearing is not secure memory erasure. |
+| ENG-003 | implemented | Unified Streamlit presentation package | test_reviewer_ui.py; deployed Streamlit verification | Reviewer-facing application is publicly deployed and verified. |
 | ENG-004 | implemented | Thin UI/service facade; core independent of UI imports | test_governance.py; test_streaming_security.py; test_voice_security.py | Architecture remains frozen; no domain logic moved into widgets. |
 | ENG-005 | implemented | Actual service records, observations, transcripts, audio, events in UI | test_reviewer_ui.py; test_production_acceptance.py | Results are execution-derived, not screenshots or hard-coded outcome assertions. |
 | ENG-006 | implemented | Untrusted contracts, provenance checks, inert injection content, no tool authority | test_crossmodal_security.py; test_voice_security.py; test_production_acceptance.py | Implemented controls within exposed local surfaces; not a universal prompt-injection guarantee. |
@@ -96,7 +96,7 @@ Test filenames below are in `tests/`; implementation references are module-owned
 | ENG-009 | implemented | Authoritative evidence validators and UI classification preservation | test_evidence_and_limits.py; test_live_mode.py; test_reviewer_ui.py | Mocks/deterministic runs cannot establish live_integration; partial failures do not prove success. |
 | ENG-010 | implemented | Module-owned package, dependencies, tests, fixtures and documentation | test_governance.py; test_crossmodal_security.py | No dependency on another module; accepted ancestry preserved. |
 | ENG-011 | implemented | Python 3.12, typed interfaces/docstrings, intentional failure boundaries, native gates | test_governance.py; full Ruff/pytest/compileall sequence | Local gates only; no unsupported claim of formal proof or public production operation. |
-| ENG-012 | implemented | Built-in workflow guidance, expected-result and evidence explanations | test_reviewer_ui.py; test_governance.py | Headless UI acceptance; hardware/browser interaction remains unverified. |
+| ENG-012 | implemented | Built-in workflow guidance, expected-result and evidence explanations | test_reviewer_ui.py; test_governance.py; deployed browser verification | Reviewer guidance and browser interaction verified in the deployed application. |
 
 ## Adversarial and integrated coverage
 
@@ -121,9 +121,8 @@ explicitly automated evidence. No artificial browser typing animation is used.
 
 - Five source requirements remain partial: audio is PCM WAV only; document processing is local
   extraction/structure; STT has no genuine partial transcripts; latency is local/prior-provider
-  measurement without a production SLO; actual browser microphone/live UI speech was not verified.
-- Live UI execution and live multi-turn recall are not established by these tests. Live UI voice
-  sessions intentionally last one operation; accepted 9.8 evidence is not relabeled as new UI proof.
+  measurement without a production SLO; browser microphone capture is verified, while genuine deployed live spoken interaction was not exercised.
+- Deployed opt-in BYOK vision is established as live_integration evidence. Live voice UI execution and live multi-turn recall were not re-exercised; live voice sessions intentionally remain one operation.
 - Loopback-only WebSockets have no authentication or TLS. Streamlit/framework retention, access
   controls, proxy trust, production concurrency, resource sizing and abuse resistance need review
   against the eventual deployment target. Do not expose the current local gateway publicly.
@@ -133,8 +132,8 @@ explicitly automated evidence. No artificial browser typing animation is used.
   content and one redacted result/audio may remain within the bounded UI session until reset/end.
 - Fixed gateway logs intentionally omit raw traceback details to prevent payload/secret disclosure.
 
-All following release-closeout gates are pending and require human control after independent
-Story 9.10 acceptance and controlled commit: publication/push, actual reviewer-facing Streamlit
-deployment, deployed-application verification, deterministic/demo verification in that environment,
-secure opt-in BYOK/live verification when separately authorized, and recruiter-facing LinkedIn
-publication. No release tags or public publication were created. Module 9 remains incomplete.
+Engineering and deployment closeout gates are complete. The remaining human-controlled release gate is
+Post-Story-9.10 closeout completed GitHub publication, reviewer-facing Streamlit deployment, deployed deterministic workflow verification, browser microphone verification, real loopback WebSocket normal/cancellation verification, prompt-injection containment verification, reviewer-visible analyzed-image verification, and one explicitly authorized opt-in BYOK live vision execution.
+The deployed live vision run retained live_integration classification, separated untrusted model interpretation from measured local facts, recorded provider usage, and cleared the submitted credential/acknowledgement afterward.
+No additional live provider execution is required for release evidence. Remaining capability limitations above are preserved and no production SLO is claimed.
+Recruiter-facing LinkedIn publication remains the final human-controlled release-closeout gate. Module 9 is not COMPLETE until that publication is confirmed.
