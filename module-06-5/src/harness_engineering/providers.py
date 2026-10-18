@@ -26,7 +26,14 @@ from harness_engineering.errors import (
     ContractValidationError,
     HarnessError,
 )
+from harness_engineering.latency import Measurement, Outcome
 from harness_engineering.lifecycle_controls import OffSwitch
+from harness_engineering.observability import (
+    TelemetrySession,
+    TraceContext,
+    bind_trace,
+    current_trace,
+)
 
 if TYPE_CHECKING:
     from harness_engineering.guardrails_adapter import GuardrailsTextValidator
@@ -109,6 +116,12 @@ class ProviderCallContext:
         self._max_output_tokens = 2_000
         self._max_context_tokens = 12_000
         self._live_allowed = False
+        self._trace_context: TraceContext | None = None
+
+    @property
+    def trace_context(self) -> TraceContext | None:
+        """Return inert application trace linkage, never execution authority."""
+        return self._trace_context
 
     @property
     def remaining_seconds(self) -> float:
@@ -166,6 +179,7 @@ class ProviderRuntime:
         off_switch: OffSwitch | None = None,
         live_config: HarnessConfig | None = None,
         guardrails: GuardrailsTextValidator | None = None,
+        telemetry: TelemetrySession | None = None,
     ) -> None:
         """Snapshot trusted configuration, independently gating optional live bindings.
 
@@ -178,6 +192,7 @@ class ProviderRuntime:
             live_config: Explicit non-deterministic live opt-in with a finite monetary
                 budget matching this runtime. Never inferred from credentials.
             guardrails: Optional exact local Guardrails text validator from trusted bootstrap.
+            telemetry: Optional exact application-owned local telemetry session.
 
         Raises:
             ContractValidationError: For invalid bootstrap or unsupported adapters.
@@ -233,6 +248,9 @@ class ProviderRuntime:
             if type(guardrails) is not GuardrailsTextValidator:
                 raise ContractValidationError("Bind the approved local Guardrails text validator.")
         self._guardrails = guardrails
+        if telemetry is not None and type(telemetry) is not TelemetrySession:
+            raise ContractValidationError("Bind an application-owned telemetry session.")
+        self._telemetry = telemetry
         self._deadline = monotonic() + b.workflow_deadline_seconds
         self._attempts = 0
         self._actions = dict.fromkeys(action_ids, 0)
@@ -250,6 +268,19 @@ class ProviderRuntime:
         return tuple(self._audit)
 
     def generate(self, request: object, *, action_id: str = "model") -> ModelResult:
+        """Observe caller-boundary latency without changing provider execution semantics.
+
+        Telemetry captures no request, output, action string or exception payload.
+        Worker completion after timeout never creates a second completion sample.
+        """
+        if self._telemetry is None:
+            return self._generate(request, action_id=action_id)
+        return self._telemetry.call(
+            Measurement.PROVIDER, lambda: self._generate(request, action_id=action_id),
+            classify=lambda _: Outcome.SUCCEEDED,
+        )
+
+    def _generate(self, request: object, *, action_id: str = "model") -> ModelResult:
         """Validate input, invoke once, filter output and return untrusted text.
 
         Args:
@@ -286,6 +317,7 @@ class ProviderRuntime:
             context._max_output_tokens = b.max_output_tokens
             context._max_context_tokens = b.max_context_tokens
             context._live_allowed = self._live_allowed
+            context._trace_context = current_trace()
             context.checkpoint()
             if self._attempts >= b.max_provider_attempts:
                 raise BudgetExceededError("Workflow provider-attempt budget exhausted.")
@@ -329,7 +361,11 @@ class ProviderRuntime:
                 finally:
                     self._slot.release()
 
-            worker = Thread(target=invoke, name="module-06-5-provider", daemon=True)
+            def traced_invoke() -> None:
+                with bind_trace(context.trace_context):
+                    invoke()
+
+            worker = Thread(target=traced_invoke, name="module-06-5-provider", daemon=True)
             worker.start()
             launched = True
             try:
