@@ -47,6 +47,71 @@ AI coding agents are used as engineering tools within this controlled process. G
 
 Module development can proceed independently and out of numerical order. Consult each module's documentation for its authoritative implementation and acceptance state; completed modules also provide a deployed reviewer experience.
 
+## Module 9 - Multimodal & Voice AI Systems
+
+Module 9 implements a production-grade reviewer-facing multimodal and voice AI platform spanning vision, documents, audio, cross-modal reasoning, voice orchestration, and genuine WebSocket streaming. Authoritative application logic remains outside the Streamlit presentation layer.
+
+**Reviewer app:** https://dm-aiep-agent-engineering-module-09.streamlit.app
+
+### Implemented capabilities
+
+- Text, image, document, and audio workflows with bounded validated inputs and explicit provenance.
+- Local image measurement and document extraction kept distinct from model-derived interpretation.
+- Cross-modal reasoning over normalized observations with cited findings and untrusted-output boundaries.
+- Voice orchestration through STT, bounded conversational state, reasoning, and TTS interfaces.
+- Genuine loopback WebSocket streaming with incremental events, multi-turn interaction, cancellation, deadlines, and latency evidence.
+- Deterministic no-key reviewer mode with zero provider spend.
+- Explicit opt-in BYOK live mode with ephemeral credentials, bounded provider operations, and no silent fallback.
+- Security controls for prompt-injection containment, malformed and oversized inputs, secret redaction, resource bounds, timeout/cancellation, and evidence integrity.
+
+Production acceptance included **827 automated tests**, Ruff, compileall, integrated adversarial checks, and deployed reviewer verification. Deterministic multimodal, voice, browser-microphone, document/vision, WebSocket, cancellation, and opt-in live BYOK vision paths were exercised.
+
+Five source requirements retain explicit partial status rather than being overstated: broader audio-format processing, semantic document understanding, genuine partial transcription, production latency/SLO evidence, and deployed live spoken interaction. The loopback WebSocket reviewer gateway is not represented as an authenticated TLS-protected public service.
+
+Run locally:
+
+```text
+cd module-09
+uv run streamlit run streamlit_app.py
+```
+
+See [Module 9](module-09/README.md) and [Release Readiness](module-09/docs/RELEASE_READINESS.md) for exact implementation evidence, requirement status, and residual boundaries.
+
+---
+
+## Module 8 - MCP & Modern AI Infrastructure
+
+Module 8 implements a standalone enterprise MCP capability plane in which OpenAI Agents SDK and Google ADK consumers interoperate with shared, application-controlled MCP capabilities. Application policy - not model output - retains authority.
+
+**Reviewer app:** https://dm-aiep-module-08.streamlit.app
+
+### Implemented capabilities
+
+- MCP server and Streamable HTTP client integration over application-owned capabilities.
+- Shared capability discovery and invocation across OpenAI Agents SDK and Google ADK.
+- Independent application authorization and capability-policy enforcement.
+- Deterministic reviewer mode requiring no API key and making zero external model calls.
+- Explicit opt-in BYOK live-provider mode with bounded calls, tool use, tokens, stage deadlines, and run lifetime.
+- Strict separation of discovery, capability exposure, and per-call authorization.
+- Typed workflow envelopes, identity correlation, bounded execution, safe failure paths, and accurate evidence classification.
+- Streamlit reviewer console demonstrating MCP discovery and interoperable multi-SDK workflows.
+
+Verified Streamlit Cloud deployment discovered **3 MCP capabilities** and completed **3 interoperable workflow stages: OpenAI SDK -> Google ADK -> OpenAI SDK, with zero model calls** in the deterministic reviewer path. The allowed customer read completed through the MCP capability boundary.
+
+Deployment verification also established `GOOGLE_API_USE_CLIENT_CERTIFICATE=false` as the accepted credential-free configuration preventing an unnecessary Google client-certificate/ambient-credential probe during bounded MCP discovery.
+
+The reviewer services are integration and demonstration surfaces; they are not represented as an authenticated multi-host public MCP service or as production availability/performance certification.
+
+Run locally:
+
+```text
+cd module-08
+uv run streamlit run src/mcp_enterprise_integration/console.py
+```
+
+See [Module 8](module-08/README.md) for implementation, security, evidence, deployment, and live-provider boundaries.
+
+---
 ## Provenance
 
 Developed from Techademy AI Engineering program requirements, with independent implementation, engineering enhancements, security hardening, testing, and deployment.
