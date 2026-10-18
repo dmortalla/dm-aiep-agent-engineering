@@ -53,6 +53,7 @@ def _submit() -> None:
     raw_key = st.session_state.pop("credential", "")
     st.session_state.pop("result", None)
     st.session_state.pop("audio_result", None)
+    st.session_state.pop("image_result", None)
     st.session_state.pop("safe_error", None)
     key = None
     try:
@@ -106,6 +107,11 @@ def _submit() -> None:
                     spec.display_name, spec.media_type, reviewer.catalog.content(fixture_id)
                 )
             record = reviewer.understand(modality, upload, key)
+            if modality is Modality.IMAGE:
+                st.session_state.image_result = {
+                    "data": upload.data,
+                    "caption": upload.name,
+                }
         else:
             slot = st.empty()
             history: list[dict[str, Any]] = []
@@ -150,6 +156,7 @@ def _reset() -> None:
     for name in (
         "result",
         "audio_result",
+        "image_result",
         "safe_error",
         "credential",
         "microphone",
@@ -187,6 +194,13 @@ def _show_result(result: dict[str, Any]) -> None:
         with st.expander("Normalized observations and citations"):
             st.json(result.get("observations", []))
     if result.get("vision"):
+        image_result = st.session_state.get("image_result")
+        if image_result:
+            st.subheader("Analyzed image")
+            st.image(
+                image_result["data"],
+                caption=image_result["caption"],
+            )
         st.subheader("Image analysis")
         st.text(result["vision"]["description"])
         for observation in result["vision"].get("observations", []):
