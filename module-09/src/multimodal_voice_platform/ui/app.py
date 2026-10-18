@@ -230,11 +230,11 @@ def _show_result(result: dict[str, Any]) -> None:
 def render() -> None:
     """Render the reviewer app; all execution is gated by explicit form submission."""
     st.set_page_config(
-        page_title="Module 9  |  Multimodal & voice",
+        page_title="Module 9  |  Multimodal and Voice",
         page_icon=":material/graphic_eq:",
         layout="wide",
     )
-    st.title("Multimodal & voice studio")
+    st.title("Multimodal and Voice Studio")
     st.caption("Module 9  |  A working reviewer experience  |  Local preview")
     if "reviewer" not in st.session_state:
         st.session_state.reviewer = Reviewer()
@@ -336,3 +336,9 @@ def render() -> None:
         st.error(st.session_state.safe_error)
     if "result" in st.session_state:
         _show_result(st.session_state.result)
+
+    st.divider()
+    st.caption(
+        "Developed from Techademy AI Engineering program requirements. Independent "
+        "implementation, engineering enhancements, and deployment."
+    )

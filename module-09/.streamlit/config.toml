@@ -10,6 +10,6 @@ gatherUsageStats = false
 showErrorDetails = "none"
 
 [theme]
-base = "light"
+base = "dark"
 primaryColor = "#167D8D"
 font = "sans serif"
