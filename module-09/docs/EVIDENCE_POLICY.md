@@ -173,7 +173,7 @@ reasoning, D TTS, and E provider streaming, including one live voice turn. The f
 succeeded with real-endpoint vision and streamed reasoning (237 provider output events).
 Original evidence remains outside the repository under `TECHADEMY/EVIDENCE`; no sensitive live
 payloads are copied into documentation. Measurements are not production latency SLOs.
-Story 9.9 provides the local reviewer UI; Story 9.10 is not started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
+Story 9.9 provides the local reviewer UI; Story 9.10 local engineering acceptance is ready for independent review; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
 
 ## Story 9.9 classification
 
@@ -183,3 +183,14 @@ those actual requested demo records, while the test run itself remains automated
 Live BYOK UI is implemented but no live provider request or live UI acceptance was performed for
 this story. Story 9.8 accepted `live_integration` is preserved separately. No deployment, production
 SLO, final production/security acceptance or publication is claimed. See [REVIEWER_UI.md](REVIEWER_UI.md).
+
+## Story 9.10 classification
+
+Story 9.10 evidence is `automated_test`: maintained integrated/adversarial tests, AppTest and actual
+local loopback socket execution. Local decoder/extractor, fixture playback and rule-based behavior
+remain distinct. Prior accepted Story 9.8 `live_integration` is not new live UI or deployment proof.
+No provider call, model inference or real credential is required by automated acceptance.
+
+[RELEASE_READINESS.md](RELEASE_READINESS.md) is the durable local acceptance artifact. It does not
+establish `deployment_release`, a production SLO, deployed microphone/BYOK operation, public
+publication, or final Module 9 completion. All release-closeout gates remain pending human control.

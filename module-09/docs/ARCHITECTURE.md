@@ -32,7 +32,8 @@ services; accepted real-provider evidence establishes vision, STT, TTS, model re
 provider streaming without changing the frozen architecture (see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md)).
 Story 9.9 adds the thin Streamlit reviewer presentation described in
 [REVIEWER_UI.md](REVIEWER_UI.md). The application/domain/provider boundaries are unchanged.
-Deployment and final production acceptance remain Story 9.10.
+Story 9.10 verifies local production/security acceptance; actual deployment remains a separate
+human-controlled release-closeout gate. See [RELEASE_READINESS.md](RELEASE_READINESS.md).
 
 ## Goal
 

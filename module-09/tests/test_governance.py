@@ -43,29 +43,10 @@ FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
 FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
 
 
-IMPLEMENTED_REQUIREMENTS = {
-    "SRC-011",
-    "SRC-014",
-    "SRC-015",
-    "SRC-016",
-    "ENG-001",
-    "ENG-002",
-    "ENG-003",
-    "ENG-004",
-    "ENG-012",
-}
-PARTIAL_REQUIREMENTS = {
-    *(f"SRC-{number:03d}" for number in range(2, 11)),
-    "SRC-012",
-    "SRC-013",
-    "SRC-017",
-    "SRC-018",
-    "ENG-005",
-    "ENG-006",
-    "ENG-007",
-    "ENG-008",
-    "ENG-009",
-}
+PARTIAL_REQUIREMENTS = {"SRC-003", "SRC-004", "SRC-006", "SRC-012", "SRC-013"}
+IMPLEMENTED_REQUIREMENTS = (
+    {f"SRC-{number:03d}" for number in range(1, 19)} - PARTIAL_REQUIREMENTS
+) | {f"ENG-{number:03d}" for number in range(1, 13)}
 
 
 @pytest.fixture(scope="module")
@@ -258,7 +239,7 @@ def test_story_9_6_claims_only_deterministic_voice_orchestration(
         for rid in partial
     )
     assert statuses["ENG-003"] == "implemented"
-    assert statuses["ENG-005"] == "partially-implemented"
+    assert statuses["ENG-005"] == "implemented"
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories.pop("9.1") == "complete-design-only"
     assert stories.pop("9.2") == "complete-deterministic-foundation"
@@ -323,14 +304,14 @@ def test_story_9_7_claims_only_deterministic_websocket_streaming(
     assert {rid for rid, status in statuses.items() if status == "implemented"} == (
         IMPLEMENTED_REQUIREMENTS
     )
-    assert set(statuses.values()) == {"designed", "partially-implemented", "implemented"}
-    assert statuses["SRC-018"] == "partially-implemented"
+    assert set(statuses.values()) == {"partially-implemented", "implemented"}
+    assert statuses["SRC-018"] == "implemented"
     for later in ("SRC-001", "ENG-010", "ENG-011"):
-        assert statuses[later] == "designed", later
+        assert statuses[later] == "implemented", later
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.7"] == "complete-websocket-streaming"
     assert stories["9.9"] == "complete-reviewer-ui"
-    assert stories["9.10"] == "not-started"
+    assert stories["9.10"] == "complete-local-production-acceptance"
     streaming_doc = " ".join(_doc("STREAMING.md").lower().split())
     for phrase in (
         "not model tokens",
@@ -383,16 +364,17 @@ def test_story_9_8_accepted_live_evidence_preserves_conservative_scope(
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.8"] == "complete-live-integration"
     assert stories["9.9"] == "complete-reviewer-ui"
-    assert stories["9.10"] == "not-started"
+    assert stories["9.10"] == "complete-local-production-acceptance"
     assert governance["module_completion"] == "incomplete"
     assert governance["remaining_acceptance"]["streamlit_ui"] == "implemented-local-reviewer-ui"
     assert {
-        k: v for k, v in governance["remaining_acceptance"].items() if k != "streamlit_ui"
+        k: v
+        for k, v in governance["remaining_acceptance"].items()
+        if k not in {"streamlit_ui", "production_security_acceptance"}
     } == dict.fromkeys(
         (
             "streamlit_deployment",
             "deployment_verification",
-            "production_security_acceptance",
             "linkedin_publication",
         ),
         "not-started",
@@ -414,7 +396,7 @@ def test_story_9_8_accepted_live_evidence_preserves_conservative_scope(
         "whole word, case-insensitively",
         "fewer than two qualifying terms",
         "module 9 is incomplete",
-        "story 9.10 is not started",
+        "story 9.10 local acceptance",
         "local streamlit reviewer ui",
         "deployment verification",
         "final production/security acceptance",
@@ -470,6 +452,50 @@ def test_story_9_9_delivers_local_ui_without_claiming_release(governance: dict[s
     assert (MODULE_ROOT / "streamlit_app.py").exists()
 
 
+def test_story_9_10_matrix_preserves_partial_requirements_and_release_boundary(
+    governance: dict[str, Any],
+) -> None:
+    assert governance["story_9_10_evidence_class"] == "automated_test"
+    assert (
+        governance["story_9_10_scope"] == "local-engineering-acceptance-pending-independent-review"
+    )
+    assert governance["accepted_story_9_9_baseline"] == ("d956efe51bcc41ccc44e435b0692a9594d5ee34d")
+    assert governance["module_completion"] == "incomplete"
+    assert governance["remaining_acceptance"]["production_security_acceptance"] == (
+        "local-automated-acceptance-passed"
+    )
+    assert governance["release_closeout"] == {
+        "publication_push": "pending",
+        "streamlit_deployment": "pending",
+        "deployed_application_verification": "pending",
+        "deployed_deterministic_demo": "pending",
+        "linkedin_publication": "pending",
+        "deployed_byok_live": "pending-separate-human-authorization",
+    }
+    artifact = _doc(governance["readiness_artifact"])
+    rows = re.findall(r"^\| ((?:SRC|ENG)-[0-9]{3}) \| ([^|]+) \|", artifact, re.MULTILINE)
+    assert len(rows) == 30
+    expected = {req["id"]: req["status"] for req in governance["requirements"]}
+    assert {rid: status.strip() for rid, status in rows} == expected
+    for test_file in re.findall(r"test_[a-z_]+\.py", artifact):
+        assert (MODULE_ROOT / "tests" / test_file).is_file(), test_file
+    for phrase in (
+        "module 9 remains incomplete",
+        "no production slo",
+        "pending",
+        "json-escaped credential",
+        "reset after expiry",
+        "exception disclosure",
+    ):
+        assert phrase in artifact.lower(), phrase
+    unchecked = re.findall(r"^- \[ \] (.+)$", _doc("DEFINITION_OF_DONE.md"), re.MULTILINE)
+    assert unchecked == [
+        "Audio processing works.",
+        "Document understanding works.",
+        "Speech-to-text works.",
+    ]
+
+
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:
     classes = {item["id"]: item for item in governance["evidence_classes"]}
     assert set(classes) == {member.value for member in EvidenceClass}
@@ -498,7 +524,7 @@ def test_security_invariants_are_documented(governance: dict[str, Any]) -> None:
 
 
 def test_definition_of_done_matches_governance(governance: dict[str, Any]) -> None:
-    checklist = re.findall(r"^- \[ \] (.+)$", _doc("DEFINITION_OF_DONE.md"), re.MULTILINE)
+    checklist = re.findall(r"^- \[[ x]\] (.+)$", _doc("DEFINITION_OF_DONE.md"), re.MULTILINE)
     assert checklist == governance["definition_of_done"]
     assert len(checklist) == 25
 

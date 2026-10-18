@@ -60,8 +60,8 @@ Optional live UI execution uses Story 9.8's existing evidence ladder. Mocked tra
 No live UI acceptance or real provider call was performed for Story 9.9. Prior Story 9.8 accepted
 live evidence remains separate. No production latency SLO is inferred from local measurements.
 
-Module 9 remains incomplete. Story 9.10 is not started: deployment, deployment verification,
-final production/security acceptance, live UI acceptance and LinkedIn publication remain outstanding.
+Module 9 remains incomplete. Story 9.10 local engineering acceptance is ready for independent review. Deployment, deployed
+verification/security acceptance, live UI acceptance and LinkedIn publication remain outstanding.
 No deployed or publicly accessible Streamlit application is claimed. Microphone hardware/browser
 permission UX is not covered by headless tests. The framework necessarily holds widget inputs in
 browser/process memory; clearing references is not a claim of cryptographic memory erasure.
@@ -75,3 +75,11 @@ until replaced/reset or the session ends; deterministic history has existing cor
 A new submission clears prior output so a failure cannot display an old result as current success.
 The short-lived streaming server is shut down in `finally`; disconnect cancels the active gateway
 turn. Only loopback sockets are required for deterministic streaming.
+
+## Story 9.10 regression acceptance
+
+Structured records are redacted after JSON decoding, so JSON escaping cannot conceal known
+credential values. Reset recovers from a conversation already closed by expiry. Production
+acceptance exercises concurrent UI worker WebSocket isolation and renderer-failure cleanup.
+The full local review and pending release gates are in [RELEASE_READINESS.md](RELEASE_READINESS.md).
+No live UI or deployed browser behavior is established by this automated acceptance.

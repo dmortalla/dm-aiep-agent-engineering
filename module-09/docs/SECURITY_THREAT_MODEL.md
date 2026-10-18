@@ -2,18 +2,12 @@
 
 ## Status
 
-Story 9.1 design, updated for Stories 9.2 to 9.6. Controls marked "contract" are enforced today by
-the typed models in `src/multimodal_voice_platform/contracts/` and covered by automated tests.
-Controls marked "9.2" are enforced by the deterministic foundation and its tests. Controls marked
-"9.3" are enforced at runtime on the image and document path (`ingestion/`, `adapters/local/`,
-`understanding/`) and its tests (see [UNDERSTANDING.md](UNDERSTANDING.md)). Controls marked "9.4"
-are enforced at runtime on the audio and speech path (`audio/`, `adapters/speech/`, `speech/`) and
-its tests (see [AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Controls marked "9.5" are enforced at runtime
-on the cross-modal reasoning path (`contracts/reasoning.py`, `adapters/reasoning/`, `crossmodal/`)
-and its tests (see [CROSS_MODAL.md](CROSS_MODAL.md)). Controls marked "9.6" are enforced at runtime
-on the voice-assistant path (`contracts/conversation.py`, `adapters/reasoning/conversation.py`,
-`voice/`) and its tests (see [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Every other control is
-planned for the listed story and is **not implemented yet**.
+Current local control implementation and adversarial coverage span Stories 9.1-9.10. Typed
+contracts, core services, provider adapters, gateway and thin UI enforce the listed controls;
+[RELEASE_READINESS.md](RELEASE_READINESS.md) maps actual tests and residual limitations.
+This is local engineering acceptance, not public deployment or a universal security guarantee.
+Authentication, TLS, production access controls and target-specific hardening must be resolved
+before any public exposure; release-closeout authorization is separate.
 
 ## Assets
 
@@ -109,3 +103,17 @@ Each browser session owns one bounded deterministic conversation and one retaine
 reset clears them. Streamlit/framework memory is not a secure erasure facility. Production access
 control, TLS, authentication and retention hardening remain Story 9.10; do not expose this local UI
 to untrusted networks. No live UI/provider acceptance was performed in Story 9.9.
+
+## Story 9.10 findings and verification
+
+- Known credentials are removed from decoded JSON strings before UI records are retained; escaping
+  cannot bypass redaction. No raw rejected provider payload or credential enters acceptance evidence.
+- Unexpected gateway failure logs now use fixed events without payload-bearing exception traceback.
+  Stable wire errors and cleanup remain enforced; no error is silently converted into success.
+- Reset after closed/expired conversations creates a new session and cannot expose prior history.
+- Adversarial PNG metadata, renderer interruption and concurrent UI worker/socket isolation are
+  covered in `tests/test_production_acceptance.py`, alongside the existing maintained security suites.
+
+Local acceptance preserves explicit opt-in, ephemeral BYOK, no fallback, least authority, fixed
+endpoints, zero automatic live retries, bounded exposure and authoritative fail-closed provenance.
+Deployment/publication, actual microphone/live UI verification and Module 9 completion remain pending.

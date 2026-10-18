@@ -6,10 +6,11 @@ for text that leaves the process anyway (acceptance output, log records): it rem
 secret values and anything shaped like a provider key or bearer token.
 """
 
+import json
 import logging
 import re
 from collections.abc import Iterable
-from typing import Final
+from typing import Any, Final
 
 from pydantic import SecretStr
 
@@ -41,6 +42,33 @@ def redact(text: str, secrets: Iterable[str | SecretStr] = ()) -> str:
     for pattern in SECRET_PATTERNS:
         text = pattern.sub(REDACTED, text)
     return text
+
+
+def redact_json(text: str, secrets: Iterable[str | SecretStr] = ()) -> str:
+    """Redact decoded JSON strings so JSON escaping cannot hide a known secret.
+
+    Args:
+        text: Valid, application-serialized JSON ready for presentation.
+        secrets: Known ephemeral credentials to remove verbatim, including escaped characters.
+
+    Returns:
+        Valid JSON with keys and string values redacted; other scalar types are preserved.
+
+    Raises:
+        ValueError: If the input is not valid JSON. Callers must fail closed.
+    """
+    known = tuple(secrets)
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, str):
+            return redact(value, known)
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if isinstance(value, dict):
+            return {redact(name, known): scrub(item) for name, item in value.items()}
+        return value
+
+    return json.dumps(scrub(json.loads(text)), ensure_ascii=False)
 
 
 class RedactingFilter(logging.Filter):

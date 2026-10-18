@@ -2,43 +2,27 @@
 
 ## Status
 
-Story 9.1 baseline. Requirements are traced to stories in [TRACEABILITY.md](TRACEABILITY.md).
-The machine-readable copy is [governance/module-09-governance.json](governance/module-09-governance.json).
+All 18 source-derived and 12 additive requirements are individually reconciled in
+[RELEASE_READINESS.md](RELEASE_READINESS.md), with implementation, test/acceptance evidence and
+remaining limitations. The atomic requirement wording below is unchanged.
 
-Story 9.1 implements no capability. Story 9.2 partially implements ENG-001 with deterministic,
-no-key fixture playback, which performs no inference and satisfies no SRC requirement. Story 9.3
-partially implements SRC-002, SRC-004, and ENG-006 with validated ingestion and genuine local image
-analysis and document extraction, with no model inference (see [UNDERSTANDING.md](UNDERSTANDING.md)).
-Story 9.4 partially implements SRC-003, SRC-006, SRC-007, and ENG-006 with validated local PCM WAV
-processing and speech-to-text and text-to-speech pipelines whose deterministic adapters are fixture
-playback (not speech recognition) and tone generation (not speech synthesis) (see
-[AUDIO_SPEECH.md](AUDIO_SPEECH.md)). Story 9.5 partially implements SRC-005, SRC-015, and ENG-006 with
-a cross-modal workflow whose default reasoner is rule-based deterministic reasoning over a closed
-vocabulary, which is not model inference (see [CROSS_MODAL.md](CROSS_MODAL.md)). Story 9.6 partially
-implements SRC-008, SRC-009, SRC-013, SRC-014, SRC-017, ENG-006, and ENG-007 with synchronous
-voice-assistant orchestration and bounded multi-turn conversation state; its default adapters are
-fixture playback (not speech recognition), rule-based reasoning (not model inference), and tone
-generation (not speech synthesis), and nothing is streamed (see
-[VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 implements SRC-011 with a genuine WebSocket
-gateway exercised over a loopback socket, and partially implements SRC-008, SRC-010, SRC-012,
-SRC-016, ENG-006, ENG-007, and ENG-008 with incremental streaming of rule-based reply fragments
-(not model tokens), measured stage and first-response latency, and transport bounds (see
-[STREAMING.md](STREAMING.md)). SRC-011 and ENG-002 are implemented. ENG-002's explicit opt-in, secure ephemeral BYOK contract is
-supported by deterministic security tests and accepted real-provider execution. Story 9.8 adds
-accepted live vision, STT, TTS, model reasoning, provider streaming, and one live voice turn.
-SRC-006 additionally lacks genuine partial transcripts. SRC-012 has measured provider latency,
-not a production SLO. The current post-UI statuses follow below; Module 9 remains incomplete.
+Implemented locally: SRC-001, SRC-002, SRC-005, SRC-007 through SRC-011, SRC-014 through SRC-018,
+and ENG-001 through ENG-012. SRC-003, SRC-004, SRC-006, SRC-012 and SRC-013 remain partial:
+WAV-only decoding, local document extraction/structure, final-only genuine STT, lack of defensible
+production low-latency acceptance, and unverified browser microphone/live UI behavior respectively.
+No unsupported format, semantic understanding, partial transcription or SLO is inferred.
 
-### Story 9.9 reconciliation
+Story 9.10 is complete for local engineering acceptance and ready for independent review.
+Module 9 remains incomplete. Publication/push, Streamlit deployment, deployed verification,
+deployed deterministic/demo and separately authorized BYOK/live verification, and LinkedIn
+publication remain pending human-controlled release closeout.
 
-Implemented: SRC-011, SRC-014, SRC-015, SRC-016, ENG-001, ENG-002, ENG-003, ENG-004, ENG-012.
-The three labs now have actual reviewer workflows with deterministic UI/socket acceptance;
-no-key mode, unified Streamlit presentation, separation of business logic and built-in guidance
-are implemented. ENG-005 and ENG-009 are partial across UI and final acceptance. Other source
-requirements remain partial (except SRC-001, still designed pending end-to-end acceptance).
-SRC-006 still lacks partial transcription; SRC-012 remains partial with no production SLO.
-Live UI acceptance is not inferred from Story 9.8 adapter evidence. Story 9.10 is not started;
-Module 9 is incomplete. [REVIEWER_UI.md](REVIEWER_UI.md) describes the implementation and limits.
+## Evidence scope
+
+Stories 9.1-9.9 are accepted at baseline `d956efe51bcc41ccc44e435b0692a9594d5ee34d`.
+Story 9.10 acceptance is automated/local. Genuine prior live capability is accepted Story 9.8
+evidence; no paid call, API key or model inference was used for this story. Local deliverables
+SRC-017 and SRC-018 are demonstrable through the existing reviewer UI; deployment is a separate gate.
 
 ## Source-derived requirements
 

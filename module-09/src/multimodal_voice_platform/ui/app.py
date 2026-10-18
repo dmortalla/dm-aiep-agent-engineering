@@ -11,6 +11,7 @@ from multimodal_voice_platform.contracts.errors import Module9Error
 from multimodal_voice_platform.contracts.modality import Modality
 from multimodal_voice_platform.crossmodal.service import ModalitySubmission
 from multimodal_voice_platform.live.errors import LiveProviderError
+from multimodal_voice_platform.live.redaction import redact_json
 from multimodal_voice_platform.ui.reviewer import (
     MAX_UPLOAD_BYTES,
     Reviewer,
@@ -123,7 +124,9 @@ def _submit() -> None:
             }
             return
         # Never retain credential-bearing sessions/services or raw provider failures.
-        st.session_state.result = json.loads(safe_display(record.model_dump_json(), key))
+        st.session_state.result = json.loads(
+            redact_json(record.model_dump_json(), [key] if key else ())
+        )
     except ReviewerInputError as exc:
         st.session_state.safe_error = str(exc)  # Only fixed, application-owned messages.
     except (ValidationError, Module9Error, LiveProviderError):
@@ -240,8 +243,8 @@ def render() -> None:
         st.radio("Execution mode", MODES, key="mode")
         st.button("Reset session and clear results", on_click=_reset)
         st.caption(
-            "Module 9 is incomplete. Story 9.10 production/security acceptance, deployment "
-            "verification and LinkedIn publication remain outstanding."
+            "Module 9 is incomplete. Story 9.10 local acceptance is ready for independent review. "
+            "Deployment verification and LinkedIn publication remain outstanding."
         )
     route = st.session_state.route
     live = st.session_state.mode == MODES[1] and route != ROUTES[3]

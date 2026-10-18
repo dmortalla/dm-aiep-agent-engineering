@@ -193,15 +193,11 @@ C (reasoning), D (text-to-speech), and E (provider streaming) were established.
 
 ## Requirement status
 
-ENG-002 is implemented: its requirement is explicit opt-in with secure ephemeral user-supplied
-credentials; deterministic security checks and accepted live execution satisfy that scope.
-SRC-002/005/006/007/009/010 retain partial status because their traceability includes reviewer
-acceptance/demonstration; SRC-006 also requires partial transcripts, which are not produced.
-SRC-008 remains partial: one live turn does not establish live multi-turn acceptance.
-SRC-012 remains partial: measured latency does not establish production performance.
-Story 9.9 implements the three reviewer labs (SRC-014/015/016) and no-key mode (ENG-001).
-UI-dependent deliverables SRC-013/017/018 remain partial pending live UI and/or final acceptance.
-No requirement wording or acceptance criterion is relaxed.
+ENG-002 is implemented within the explicit opt-in ephemeral BYOK scope. The final requirement
+matrix is in [RELEASE_READINESS.md](RELEASE_READINESS.md). Prior real-provider A-E evidence is
+preserved. SRC-006 still lacks genuine partial transcripts; SRC-012 does not claim a production
+SLO; SRC-013 still requires actual browser microphone/live UI verification. No requirement or
+acceptance criterion is relaxed.
 
 ## Accepted validation and provenance boundary
 
@@ -216,12 +212,12 @@ each cited observation; omit the finding if fewer than two qualifying terms exis
 run passed this boundary. No rejected raw payload is published in evidence or errors.
 
 Module 9 is incomplete. Story 9.9 provides the local Streamlit reviewer UI with deterministic
-AppTest and loopback WebSocket acceptance; Story 9.10 is not started. Streamlit deployment,
-deployment verification, final production/security acceptance, and LinkedIn publication have not
-occurred. UI execution is separately gated by explicit submit, a masked ephemeral credential and
+AppTest and loopback WebSocket acceptance; Story 9.10 local acceptance is ready for independent review. Streamlit deployment,
+deployment verification, deployed production/security acceptance, and LinkedIn publication have
+not occurred. Local production/security acceptance is documented in RELEASE_READINESS.md. UI execution is separately gated by explicit submit, a masked ephemeral credential and
 cost acknowledgement; see [REVIEWER_UI.md](REVIEWER_UI.md). No live UI acceptance was run in 9.9.
 
 ## Not in this story
 
 Streamlit is delivered separately in Story 9.9. Excluded here: persistent credential storage; browser-side provider calls; user-controlled
-endpoints; deployment, authentication, and TLS (9.10); other providers.
+endpoints; actual deployment, authentication and TLS for public hosting (release closeout); other providers.

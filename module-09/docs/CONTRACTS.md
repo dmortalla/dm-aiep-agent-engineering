@@ -248,3 +248,11 @@ adds a 2 MiB presentation admission bound; existing ingestion remains authoritat
 magic bytes and names. No UI-controlled evidence/provider/authority fields enter a core request.
 The `ui/socket_demo.py` transport parses every genuine loopback event using `parse_stream_event`,
 invoking the renderer on receipt. It does not replace streaming or accept arbitrary endpoints.
+
+## Story 9.10 local acceptance
+
+Typed contracts and authoritative validators are unchanged. Structured UI result redaction now
+operates on decoded JSON strings, preserving types and blocking escaped credential echoes. Gateway
+unexpected-failure logs retain fixed diagnostic events without raw exception text or traceback.
+Reset after an already-closed session is an explicit expected recovery path. No provider output
+can acquire authority. See [RELEASE_READINESS.md](RELEASE_READINESS.md) for the final evidence matrix.

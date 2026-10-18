@@ -11,7 +11,8 @@ tone-sequence TTS; no speech recognition, speech synthesis, model inference, or 
 9.7 is complete (genuine WebSocket gateway and incremental streaming of rule-based reply fragments
 on loopback; not model tokens; no authentication or live providers). Story 9.8 is complete (OpenAI live adapters, explicit live mode, ephemeral BYOK; deterministic
 contract tests and accepted live integration for vision, STT, TTS, model reasoning, and streaming). Story 9.9 is complete (local reviewer UI, deterministic AppTest and real loopback WebSocket
-acceptance); Story 9.10 is not started.
+acceptance); Story 9.10 is complete for local engineering acceptance and ready for independent review.
+Module 9 remains incomplete; human-controlled release closeout is pending.
 
 | Story | Title | Scope | Status |
 |---|---|---|---|
@@ -24,7 +25,7 @@ acceptance); Story 9.10 is not started.
 | 9.7 | Real-Time WebSocket Streaming | Typed streaming protocol; partial/final events; lifecycle handling; error handling; genuine WebSocket execution | Complete (Starlette/Uvicorn WebSocket gateway on loopback; incremental rule-based reply fragments, not model tokens; no `transcript_partial` without genuine partial STT; see [STREAMING.md](STREAMING.md)) |
 | 9.8 | Secure Opt-In Live Providers | Ephemeral BYOK configuration; live provider adapters; redaction; budgets; timeouts | Complete: accepted live integration for A–E; see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md) |
 | 9.9 | Unified Streamlit Reviewer Experience | Voice assistant; multimodal workflow; streaming evidence; metrics and evidence presentation; concise built-in guidance on how reviewers use and test the workflows and what results demonstrate | Complete (local reviewer UI; ready for independent review; see [REVIEWER_UI.md](REVIEWER_UI.md)) |
-| 9.10 | Production Acceptance & Release | Security and failure tests; observability; documentation; deployment/release evidence; production-grade acceptance | Not started |
+| 9.10 | Production Acceptance & Release | Security and failure tests; observability; documentation; deployment/release evidence; production-grade acceptance | Complete for local engineering acceptance; ready for independent review; see [RELEASE_READINESS.md](RELEASE_READINESS.md). Deployment/publication remain pending |
 
 ## Story dependencies
 

@@ -508,8 +508,8 @@ class _Connection:
         """Inspect a finished turn task. Unexpected failures end the session with a safe error."""
         try:
             return task.result()
-        except Exception as exc:  # The transport boundary: log details, send nothing unsafe.
-            _LOG.error("streamed voice turn failed unexpectedly", exc_info=exc)
+        except Exception:  # Log only a fixed event; unexpected exceptions may contain secrets.
+            _LOG.error("streamed voice turn failed unexpectedly")
             await self._send_error(
                 SafeError(
                     code=ErrorCode.INTERNAL_ERROR,
@@ -579,7 +579,7 @@ async def _stop(task: asyncio.Task[Any] | None) -> None:
     if exc is not None and not isinstance(
         exc, _ClientGone | _ClientTooSlow | WebSocketDisconnect | OSError
     ):
-        _LOG.error("connection task failed while stopping", exc_info=exc)
+        _LOG.error("connection task failed while stopping")
 
 
 def _kind(kind: Enum | None) -> str | None:

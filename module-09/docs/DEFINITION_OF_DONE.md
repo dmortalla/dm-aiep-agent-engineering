@@ -4,48 +4,38 @@ Module 9 is done only when every item below has verified evidence of the require
 [EVIDENCE_POLICY.md](EVIDENCE_POLICY.md)). Design documentation alone never checks a box except
 where the item itself is about documentation or traceability.
 
-Current state: Story 9.1 complete (design only), Story 9.2 complete (deterministic foundation),
-Story 9.3 complete (local document and vision understanding, no model inference), and Story 9.4
-complete (audio and speech pipeline; no speech recognition or synthesis), and Story 9.5 complete
-(cross-modal workflow with rule-based deterministic reasoning; not model inference). No item below
-is satisfied yet. Story 9.5 contributes automated evidence toward "Cross-modal reasoning works" and
-"The multimodal workflow is demonstrable"; both stay unchecked because the reasoning covers only a
-closed vocabulary with no model-based reasoning (9.8) and reviewer-visible results (9.9) do not
-exist yet. Story 9.4 contributes automated evidence toward "Audio processing works",
-"Speech-to-text works", and "Text-to-speech works"; all three stay unchecked because only PCM WAV
-is decodable, the STT adapter is fixture playback, the TTS adapter generates tones, and
-reviewer-visible results (9.9) do not exist yet. Story 9.3 contributes automated evidence toward "Vision processing works" and
-"Document understanding works"; both stay unchecked until model-based vision (9.8) and
-reviewer-visible results (9.9) exist. Item 1 is traced at the design level and still needs implementation
-evidence before it can be checked. Story 9.2 contributes deterministic foundation evidence toward
-"Deterministic no-key mode is reproducible", which stays unchecked until every essential workflow
-runs deterministically (Story 9.9).
+Current local evidence is reconciled through Story 9.10 in [RELEASE_READINESS.md](RELEASE_READINESS.md).
+Checked items mean established within the documented local scope, not public deployment. The
+unchecked audio/document/STT items retain accepted limitations (WAV-only, local extraction only,
+and no genuine partial STT). Measured latency is checked only as measurement, not an SLO or closure
+of SRC-012. SRC-013 also remains partial because real browser microphone/live UI is unverified.
+Module 9 remains incomplete; separate human-controlled release-closeout gates follow this checklist.
 
-- [ ] Every authoritative source requirement is traced.
-- [ ] Vision processing works.
+- [x] Every authoritative source requirement is traced.
+- [x] Vision processing works.
 - [ ] Audio processing works.
 - [ ] Document understanding works.
-- [ ] Cross-modal reasoning works.
+- [x] Cross-modal reasoning works.
 - [ ] Speech-to-text works.
-- [ ] Text-to-speech works.
-- [ ] Voice orchestration works.
-- [ ] The voice-enabled AI assistant is demonstrable.
-- [ ] The multimodal workflow is demonstrable.
-- [ ] Genuine WebSocket streaming works.
-- [ ] Real-time/low-latency behavior has measured evidence.
-- [ ] The integrated multimodal AI platform works.
-- [ ] Deterministic no-key mode is reproducible.
-- [ ] Live BYOK mode is explicit opt-in and safely bounded.
-- [ ] Streamlit exposes actual working results.
-- [ ] The UI includes concise built-in reviewer/user guidance.
-- [ ] Security and failure paths are tested.
-- [ ] Structured observability exists without secret leakage.
-- [ ] Documentation, type, and error-handling standards are satisfied.
-- [ ] Native quality gates pass.
-- [ ] Reviewer-visible acceptance evidence exists.
-- [ ] Architecture, ADRs, requirements, traceability, project status, and README accurately describe the implementation.
-- [ ] Module 9 remains isolated.
-- [ ] Only verified functionality is claimed.
+- [x] Text-to-speech works.
+- [x] Voice orchestration works.
+- [x] The voice-enabled AI assistant is demonstrable.
+- [x] The multimodal workflow is demonstrable.
+- [x] Genuine WebSocket streaming works.
+- [x] Real-time/low-latency behavior has measured evidence.
+- [x] The integrated multimodal AI platform works.
+- [x] Deterministic no-key mode is reproducible.
+- [x] Live BYOK mode is explicit opt-in and safely bounded.
+- [x] Streamlit exposes actual working results.
+- [x] The UI includes concise built-in reviewer/user guidance.
+- [x] Security and failure paths are tested.
+- [x] Structured observability exists without secret leakage.
+- [x] Documentation, type, and error-handling standards are satisfied.
+- [x] Native quality gates pass.
+- [x] Reviewer-visible acceptance evidence exists.
+- [x] Architecture, ADRs, requirements, traceability, project status, and README accurately describe the implementation.
+- [x] Module 9 remains isolated.
+- [x] Only verified functionality is claimed.
 
 ## Native quality gates (fail-fast)
 
@@ -53,7 +43,7 @@ Run from `module-09/`:
 
 1. `uv run ruff check .`
 2. `uv run pytest`
-3. `uv run python -m compileall -q src tests`
+3. `uv run python -m compileall src tests streamlit_app.py`
 4. Project-native integration and acceptance tests (added by Stories 9.2 to 9.10).
 
 A later passing gate never overrides an earlier failure. Ruff safe fixes only; never `--unsafe-fixes`.
@@ -62,3 +52,14 @@ A later passing gate never overrides an earlier failure. Ruff safe fixes only; n
 
 Requirements -> Product Experience -> Real Functionality -> Reliability -> Security -> Cost ->
 Evidence -> Deployment
+
+## Mandatory release-closeout gates (not performed here)
+
+- Independent Story 9.10 acceptance and separately controlled commit.
+- Explicitly authorized publication/push.
+- Actual reviewer-facing Streamlit deployment.
+- Deployed application and deterministic/demo verification.
+- Secure opt-in BYOK/live verification where appropriate and separately authorized.
+- Recruiter-facing LinkedIn publication.
+
+No checked local engineering item overrides these gates or the partial requirement statuses.

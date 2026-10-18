@@ -64,8 +64,20 @@ Separately authorized real-provider verification established vision, speech-to-t
 model reasoning, and provider streaming (`live_integration`). See [docs/LIVE_PROVIDERS.md](docs/LIVE_PROVIDERS.md).
 
 Semantic document understanding remains unestablished. Story 9.9 provides the local reviewer UI.
-Module 9 is incomplete: Story 9.9 is complete and ready for independent review; Story 9.10 is not started. Streamlit deployment, deployment
+Module 9 is incomplete: Stories 9.1-9.9 are accepted; Story 9.10 local engineering acceptance is ready for independent review. Streamlit deployment, deployment
 verification, final production/security acceptance, and LinkedIn publication have not occurred. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+
+## Local production acceptance and release boundary
+
+Story 9.10 is complete for local engineering acceptance and ready for independent review.
+Module 9 remains incomplete. Publication/push, Streamlit deployment, deployed verification,
+deployed deterministic/demo and separately authorized BYOK/live verification, and LinkedIn
+publication remain pending human-controlled release closeout.
+
+See [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for all 30 requirement decisions,
+local security/functional evidence, regression repairs and residual risks. Five source requirements
+remain partial: SRC-003, SRC-004, SRC-006, SRC-012 and SRC-013. No production SLO, live UI,
+public deployment or microphone hardware verification is claimed.
 
 ## Launch the reviewer application
 

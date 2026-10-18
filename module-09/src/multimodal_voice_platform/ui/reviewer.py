@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from multimodal_voice_platform.speech.service import SpeechService
 from multimodal_voice_platform.understanding.records import UnderstandingRecord
 from multimodal_voice_platform.understanding.service import UnderstandingService
 from multimodal_voice_platform.voice import VoiceAssistant, VoiceTurnRequest, load_voice_catalog
+from multimodal_voice_platform.voice.errors import UnknownSessionError
 from multimodal_voice_platform.voice.records import VoiceTurnRecord
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
@@ -79,7 +81,9 @@ class Reviewer:
 
     def reset(self) -> None:
         """Release conversation history and start a fresh bounded deterministic session."""
-        self.voice.end_session(self.session_id)
+        # Expiry already closes the session; reset must still create a fresh conversation.
+        with suppress(UnknownSessionError):
+            self.voice.end_session(self.session_id)
         self.session_id = f"ui-{uuid4().hex}"
         self.voice.start_session(SessionConfig(session_id=self.session_id))
         self.turn = 0
