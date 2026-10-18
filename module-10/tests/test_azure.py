@@ -195,6 +195,56 @@ def test_fixture_state_is_only_validation() -> None:
     assert not subset(True, 1) and not subset([1, 2], [1])
 
 
+
+RESOURCE_KEYS = ("registry", "workspace", "environment", "app", "identity")
+
+
+@pytest.mark.parametrize("resource", ("group", *RESOURCE_KEYS))
+@pytest.mark.parametrize("location", [REGION, "South Central US"])
+def test_approved_region_representations(resource: str, location: str) -> None:
+    """Every Azure resource observation accepts exactly the approved region aliases."""
+    state = observed()
+    state[resource]["location"] = location
+    original = copy.deepcopy(state)
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION).endswith("azurecontainerapps.io")
+    assert state == original  # Canonicalization must not rewrite raw observations.
+
+
+@pytest.mark.parametrize("resource", ("group", *RESOURCE_KEYS))
+@pytest.mark.parametrize("location", [
+    "eastus", "East US", "southcentralus2", "South Central US EUAP",
+    "prefixsouthcentralus", "southcentralus/", "SOUTHCENTRALUS", "south central us",
+    " South Central US", "South Central US ", "South  Central US", "South\tCentral US",
+    "South\u00a0Central US", "southcentralus\n", "South Central US\x00", "", "unknown",
+    None, True, 1, [], {}, [REGION],
+])
+def test_region_observations_fail_closed(resource: str, location: object) -> None:
+    """Other regions, near matches, Unicode, whitespace and malformed types fail closed."""
+    state = observed()
+    state[resource]["location"] = location
+    with pytest.raises(VerificationError, match="approved South Central US region"):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("resource", RESOURCE_KEYS)
+@pytest.mark.parametrize("field", ["id", "name", *TAGS])
+@pytest.mark.parametrize("damage", ["wrong", "missing"])
+def test_region_alias_preserves_resource_ownership(resource: str, field: str, damage: str) -> None:
+    """Display-name locations cannot bypass any resource ID, name or required tag gate."""
+    state = observed()
+    for key in RESOURCE_KEYS:
+        state[key]["location"] = "South Central US"
+    target = state[resource]["tags"] if field in TAGS else state[resource]
+    if damage == "missing":
+        del target[field]
+    elif field == "id":
+        target[field] = target[field].replace(SUBSCRIPTION, PRINCIPAL)
+    else:
+        target[field] = "synthetic-foreign"
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
 @pytest.mark.parametrize("path,value", [
     (("group", "tags", "module"), "09"),
     (("registry", "sku", "name"), "Premium"),

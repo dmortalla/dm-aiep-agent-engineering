@@ -332,3 +332,16 @@ Reviewed 2026-10-16: [Container App ARM 2025-01-01](https://learn.microsoft.com/
 [revision lifecycle](https://learn.microsoft.com/en-us/azure/container-apps/revisions).
 Official schema and managed-identity guidance inform the contract; only real
 operator-run validation/deployment can establish actual Azure behavior.
+
+## Azure location representation interoperability
+
+The observation verifier canonicalizes only exact strings `southcentralus` and
+`South Central US` to the approved internal `REGION = "southcentralus"` for the
+resource group and all five resources. Independent human-supplied read-only
+diagnostics established that the Container Apps environment and app return the
+Azure display name. No trimming, case folding, substring matching, discovery call
+or fallback is used; every other value or type fails closed. Raw observations
+remain unchanged, and resource ownership, names, tags and security gates still
+apply. This representation repair changes neither deployment region nor evidence
+classification. Offline regression tests do not establish cloud acceptance;
+fresh independent cloud verification remains required and was not run for this repair.

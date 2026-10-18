@@ -25,6 +25,17 @@ def require(condition: bool, message: str) -> None:
         raise VerificationError(message)
 
 
+def canonical_region(value: object) -> str:
+    """Canonicalize only the approved Azure region's exact known representations.
+
+    Azure resource providers may return the programmatic name or display name.
+    Unknown values and malformed types fail without reflecting raw observations.
+    """
+    require(type(value) is str and value in (REGION, "South Central US"),
+            "Resource location must be the approved South Central US region.")
+    return REGION
+
+
 def subset(actual: object, expected: object) -> bool:
     """Match required ARM fields while allowing server-populated read-only defaults."""
     if isinstance(expected, dict):
@@ -117,7 +128,7 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         require(observed == expected and len(state["inventory"]) <= 6,
                 "Resource inventory differs; inspect the dedicated Module 10 group.")
         group = state["group"]
-        require(group["name"] == n["group"] and group["location"] == REGION
+        require(group["name"] == n["group"] and canonical_region(group["location"]) == REGION
                 and subset(group["tags"], TAGS), "Resource-group ownership/region differs.")
         group_id = f"/subscriptions/{subscription}/resourceGroups/{n['group']}"
         require(group["id"].lower() == group_id.lower(),
@@ -126,7 +137,7 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         for key, kind in kinds.items():
             item = state[key]
             require(item["id"].lower() == (prefix + kind + "/" + n[key]).lower()
-                    and item["name"] == n[key] and item["location"] == REGION
+                    and item["name"] == n[key] and canonical_region(item["location"]) == REGION
                     and subset(item["tags"], TAGS), "Resource ownership/region/tags differ.")
         registry = state["registry"]
         require(registry["sku"]["name"] == "Basic"
