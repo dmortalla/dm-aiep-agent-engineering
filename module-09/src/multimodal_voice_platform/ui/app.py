@@ -241,7 +241,7 @@ def render() -> None:
     with st.sidebar:
         st.radio("Workflow", ROUTES, key="route")
         st.radio("Execution mode", MODES, key="mode")
-        st.button("Reset session and clear results", on_click=_reset)
+        st.button("Reset session and clear results", on_click=_reset, type="primary")
         st.caption(
             "Module 9 is incomplete. Story 9.10 local acceptance is ready for independent review. "
             "Deployment verification and LinkedIn publication remain outstanding."
