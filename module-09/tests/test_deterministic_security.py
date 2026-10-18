@@ -158,18 +158,21 @@ def test_later_story_capabilities_are_not_implemented() -> None:
         "voice",
         "streaming",
         "interface",
+        "live",
     }
     adapters = {p.name for p in (SRC / "adapters").iterdir() if p.is_dir()} - {"__pycache__"}
-    assert adapters == {"deterministic", "local", "reasoning", "speech"}
+    assert adapters == {"deterministic", "local", "reasoning", "speech", "openai"}
     reasoning_adapters = {
         SRC / "adapters" / "reasoning" / "rule_reasoner.py",
         SRC / "adapters" / "reasoning" / "conversation.py",
+        SRC / "adapters" / "openai" / "reasoning.py",
     }
     later_imports = {"streamlit", "websockets", "fastapi", "starlette", "aiohttp", "httpx"}
     later_imports |= {"uvicorn"}
     transport_owners = {
         "starlette": SRC / "interface" / "websocket.py",
         "uvicorn": SRC / "interface" / "server.py",
+        "websockets": SRC / "live" / "acceptance.py",
     }
     """Story 9.7: the WebSocket framework and server, each in exactly one interface module."""
     for path in SRC.rglob("*.py"):

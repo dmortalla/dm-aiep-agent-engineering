@@ -18,6 +18,12 @@ against the port contract before it is recorded. Adapters must translate their o
 failures into ``Module9Error`` subclasses (for example ``SpeechProviderUnavailableError``); the
 service turns those into safe rejected or failed records. Anything else is a defect and propagates.
 
+Story 9.8 adds explicit live operation: a service constructed with ``LiveSpeechBindings`` runs
+an opted-in live session's speech stage through a live adapter (speech recognition or synthesis
+by the real provider, or a contract test double), after the same local validation, and validates
+the provider's output exactly as before. A live session without live bindings is refused, as it
+was in Story 9.4; a deterministic session never reaches a live adapter.
+
 Content is staged in a store that lives for one call and is released before the call returns
 (SEC-022). Authority (mode, budget, limits, provider selection) comes only from application code
 and the application-owned ``SessionConfig``; transcripts and other content never change it.
@@ -45,6 +51,7 @@ from multimodal_voice_platform.audio.limits import AudioLimits
 from multimodal_voice_platform.audio.staging import stage_audio_content
 from multimodal_voice_platform.contracts.errors import ErrorCode, Module9Error
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
+from multimodal_voice_platform.contracts.live import LiveCall, calls_of, live_evidence
 from multimodal_voice_platform.contracts.modality import InputSource, ModalityInput
 from multimodal_voice_platform.contracts.providers import (
     LanguageTag,
@@ -59,6 +66,8 @@ from multimodal_voice_platform.contracts.providers import (
 )
 from multimodal_voice_platform.contracts.session import ExecutionMode, SessionConfig
 from multimodal_voice_platform.ingestion.errors import IngestionError
+from multimodal_voice_platform.live.bindings import LiveBinding, LiveSpeechBindings
+from multimodal_voice_platform.live.credentials import session_credential
 from multimodal_voice_platform.speech.errors import (
     LiveSpeechUnavailableError,
     SpeechConfigurationError,
@@ -88,7 +97,17 @@ _REQUIREMENTS: Final = {
     SpeechOperation.SYNTHESIS: ("SRC-007", "ENG-006"),
 }
 _NO_LIVE: Final = "No model inference, live provider, network, or credential was used."
+_LIVE_KINDS: Final = {
+    ProviderPort.SPEECH_TO_TEXT: SpeechProcessingKind.SPEECH_RECOGNITION,
+    ProviderPort.TEXT_TO_SPEECH: SpeechProcessingKind.SPEECH_SYNTHESIS,
+}
 _KIND_NOTES: Final = {
+    SpeechProcessingKind.SPEECH_RECOGNITION: (
+        "The transcript was produced by a live speech recognition model and is untrusted."
+    ),
+    SpeechProcessingKind.SPEECH_SYNTHESIS: (
+        "The audio was produced by a live speech synthesis model and validated locally."
+    ),
     SpeechProcessingKind.FIXTURE_PLAYBACK: (
         "The transcript is a scripted fixture transcript replayed by digest match, "
         "not speech recognition."
@@ -156,6 +175,16 @@ class TextToSpeechBinding:
             raise SpeechConfigurationError("unsupported text-to-speech processing kind")
 
 
+@dataclass(frozen=True)
+class _Wiring:
+    """The speech adapter chosen for one run, and whether the run is live."""
+
+    provider: object | None
+    descriptor: ProviderDescriptor | None
+    kind: SpeechProcessingKind | None
+    live: bool
+
+
 @dataclass
 class _Run:
     """Mutable progress of one run, so failures record exactly what completed."""
@@ -186,6 +215,7 @@ class SpeechService:
         *,
         speech_to_text: SpeechToTextBinding | None = None,
         text_to_speech: TextToSpeechBinding | None = None,
+        live: LiveSpeechBindings | None = None,
     ) -> None:
         """Create the service.
 
@@ -194,6 +224,7 @@ class SpeechService:
                 fixture-playback speech-to-text adapter. Defaults to the packaged fixtures.
             speech_to_text: Speech-to-text binding. Defaults to Story 9.2 fixture playback.
             text_to_speech: Text-to-speech binding. Defaults to the tone-sequence synthesizer.
+            live: Live speech bindings (Story 9.8). Without them, live sessions are refused.
 
         Raises:
             FixtureIntegrityError: If the default catalog fails verification.
@@ -208,7 +239,49 @@ class SpeechService:
             factory=ToneSequenceSynthesizer,
             processing=SpeechProcessingKind.DETERMINISTIC_TONE_SYNTHESIS,
         )
+        self._live = live
         self._runs = 0
+
+    def _live_binding(
+        self, session: SessionConfig, port: ProviderPort
+    ) -> LiveBinding[object] | None:
+        if session.mode is not ExecutionMode.LIVE or self._live is None:
+            return None
+        if port is ProviderPort.SPEECH_TO_TEXT:
+            return self._live.speech_to_text
+        return self._live.text_to_speech
+
+    def _wire(
+        self,
+        session: SessionConfig,
+        port: ProviderPort | None,
+        evidence_class: EvidenceClass,
+        *context: object,
+    ) -> _Wiring:
+        """Choose the deterministic or live adapter for one run. Never falls back silently."""
+        live_ready = session.mode is ExecutionMode.LIVE and self._live is not None
+        binding = self._live_binding(session, port) if port is not None else None
+        if binding is not None:
+            binding.check_requested(evidence_class)
+            provider = binding.build(session_credential(session), *context)
+            kind = (
+                _LIVE_KINDS[port]
+                if binding.real
+                else SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE
+            )
+            return _Wiring(provider, provider.descriptor, kind, True)
+        if live_ready and port is None:
+            if evidence_class not in {EvidenceClass.LIVE_INTEGRATION, EvidenceClass.AUTOMATED_TEST}:
+                raise SpeechConfigurationError(
+                    "live runs request live_integration or automated_test"
+                )
+            return _Wiring(None, None, None, True)
+        if port is None:
+            self._check_evidence_class(evidence_class, None)
+            return _Wiring(None, None, None, False)
+        deterministic = self._stt if port is ProviderPort.SPEECH_TO_TEXT else self._tts
+        self._check_evidence_class(evidence_class, deterministic.processing)
+        return _Wiring(None, None, deterministic.processing, False)
 
     async def analyze_audio_upload(
         self,
@@ -343,16 +416,20 @@ class SpeechService:
         Raises:
             SpeechConfigurationError: If the evidence class or adapter wiring is invalid.
         """
-        binding = self._tts
-        self._check_evidence_class(evidence_class, binding.processing)
         store = SessionContentStore()
         limits = AudioLimits.from_budget(session.budget)
-        provider = binding.factory(store, limits)
-        descriptor = _checked_descriptor(provider.descriptor, ProviderPort.TEXT_TO_SPEECH)
+        wiring = self._wire(session, ProviderPort.TEXT_TO_SPEECH, evidence_class, store, limits)
+        if wiring.live:
+            provider = wiring.provider
+            kind = wiring.kind
+        else:
+            provider = self._tts.factory(store, limits)
+            kind = self._tts.processing
+        descriptor = _checked_descriptor(provider.descriptor, ProviderPort.TEXT_TO_SPEECH, wiring)
         run = _Run(SpeechOperation.SYNTHESIS)
         try:
             run.begin(SpeechStage.INGESTION)
-            _require_deterministic(session)
+            _require_mode(session, wiring)
             item = stage_text_input(session.session_id, text)
             run.input = item
             try:
@@ -368,7 +445,7 @@ class SpeechService:
                 raise SpeechProviderOutputError(
                     "text-to-speech provider returned audio not attributed to it"
                 )
-            run.processing.append(binding.processing)
+            run.processing.append(kind)
             run.finish()
             run.begin(SpeechStage.OUTPUT_VALIDATION)
             wav, analysis = await _validate_generated(store, session, synthesized, limits)
@@ -377,7 +454,7 @@ class SpeechService:
             run.finish()
         except Module9Error as exc:
             return self._unsuccessful(
-                session, run, descriptor, binding.processing, exc, evidence_class
+                session, run, descriptor, kind, exc, evidence_class, wiring.live, calls_of(provider)
             )
         finally:
             store.release(session.session_id)
@@ -390,18 +467,20 @@ class SpeechService:
         )
         summary = (
             f"Text input {item.input_id} rendered by {descriptor.provider_id} "
-            f"({binding.processing}) into {analysis.duration_ms} ms of {analysis.encoding} WAV "
-            f"audio, then decoded and measured locally. {_KIND_NOTES[binding.processing]} "
-            f"{_NO_LIVE}"
+            f"({kind}) into {analysis.duration_ms} ms of {analysis.encoding} WAV "
+            f"audio, then decoded and measured locally. {_KIND_NOTES[kind]} "
+            f"{_mode_note(wiring.live, calls_of(provider))}"
         )
         return self._record(
             session,
             run,
             descriptor,
-            binding.processing,
+            kind,
             evidence_class,
             summary,
             synthesis=synthesis,
+            live=wiring.live,
+            calls=calls_of(provider),
         )
 
     async def _audio_run(
@@ -417,20 +496,23 @@ class SpeechService:
         evidence_class: EvidenceClass,
     ) -> SpeechRecord:
         transcribing = operation is SpeechOperation.TRANSCRIPTION
-        kind = self._stt.processing if transcribing else None
-        self._check_evidence_class(evidence_class, kind)
         store = SessionContentStore()
         limits = AudioLimits.from_budget(session.budget)
+        port = ProviderPort.SPEECH_TO_TEXT if transcribing else None
+        wiring = self._wire(session, port, evidence_class, store)
+        kind = wiring.kind
         provider: SpeechToTextPort | None = None
         descriptor: ProviderDescriptor | None = None
         if transcribing:
-            provider = self._stt.factory(store)
-            descriptor = _checked_descriptor(provider.descriptor, ProviderPort.SPEECH_TO_TEXT)
+            provider = wiring.provider if wiring.live else self._stt.factory(store)  # type: ignore[assignment]
+            descriptor = _checked_descriptor(
+                provider.descriptor, ProviderPort.SPEECH_TO_TEXT, wiring
+            )
         run = _Run(operation)
         transcript: TranscriptResult | None = None
         try:
             run.begin(SpeechStage.INGESTION)
-            _require_deterministic(session)
+            _require_mode(session, wiring)
             if language is not None:
                 try:
                     _LANGUAGE.validate_python(language)
@@ -460,7 +542,9 @@ class SpeechService:
                 run.processing.append(kind)
                 run.finish()
         except Module9Error as exc:
-            return self._unsuccessful(session, run, descriptor, kind, exc, evidence_class)
+            return self._unsuccessful(
+                session, run, descriptor, kind, exc, evidence_class, wiring.live, calls_of(provider)
+            )
         finally:
             store.release(session.session_id)
         audio = run.audio
@@ -476,14 +560,17 @@ class SpeechService:
             summary += f" Transcript by {descriptor.provider_id} ({kind}). {_KIND_NOTES[kind]}"
         else:
             summary += " Audio processing only; no speech recognition."
+        calls = calls_of(provider)
         return self._record(
             session,
             run,
             descriptor,
             kind,
             evidence_class,
-            f"{summary} {_NO_LIVE}",
+            f"{summary} {_mode_note(wiring.live, calls)}",
             transcript=transcript,
+            live=wiring.live,
+            calls=calls,
         )
 
     @staticmethod
@@ -513,8 +600,11 @@ class SpeechService:
         *,
         transcript: TranscriptResult | None = None,
         synthesis: SynthesisResult | None = None,
+        live: bool = False,
+        calls: tuple[LiveCall, ...] = (),
     ) -> SpeechRecord:
         record_id = self._next_id()
+        processing = tuple(run.processing)
         return SpeechRecord(
             record_id=record_id,
             session_id=session.session_id,
@@ -523,12 +613,13 @@ class SpeechService:
             input=run.input,
             provider=descriptor,
             provider_processing=kind,
-            processing=tuple(run.processing),
+            processing=processing,
             audio=run.audio,
             transcript=transcript,
             synthesis=synthesis,
             timings=tuple(run.timings),
-            evidence=_evidence(record_id, run.operation, evidence_class, summary),
+            **_flags(processing, calls),
+            evidence=_evidence(record_id, run.operation, evidence_class, summary, live, calls),
         )
 
     def _unsuccessful(
@@ -539,10 +630,13 @@ class SpeechService:
         kind: SpeechProcessingKind | None,
         error: Module9Error,
         evidence_class: EvidenceClass,
+        live: bool = False,
+        calls: tuple[LiveCall, ...] = (),
     ) -> SpeechRecord:
         status = SpeechStatus.FAILED if error.code in _FAILED_CODES else SpeechStatus.REJECTED
         safe = error.to_safe_error(retryable=isinstance(error, _RETRYABLE))
         record_id = self._next_id()
+        processing = tuple(run.processing)
         return SpeechRecord(
             record_id=record_id,
             session_id=session.session_id,
@@ -551,17 +645,20 @@ class SpeechService:
             input=run.input,
             provider=descriptor,
             provider_processing=kind,
-            processing=tuple(run.processing),
+            processing=processing,
             audio=run.audio,
             timings=tuple(run.timings),
             failed_stage=run.stage,
             error=safe,
+            **_flags(processing, calls),
             evidence=_evidence(
                 record_id,
                 run.operation,
                 evidence_class,
                 f"{run.operation} {status} safely at the {run.stage} stage with code "
-                f"{safe.code}. {_NO_LIVE}",
+                f"{safe.code}. {_mode_note(live, calls)}",
+                live,
+                calls,
             ),
         )
 
@@ -570,17 +667,45 @@ class SpeechService:
         return f"spc-{self._runs:06d}"
 
 
-def _require_deterministic(session: SessionConfig) -> None:
-    if session.mode is not ExecutionMode.DETERMINISTIC:
+def _require_mode(session: SessionConfig, wiring: _Wiring) -> None:
+    if session.mode is not ExecutionMode.DETERMINISTIC and not wiring.live:
         raise LiveSpeechUnavailableError(
             "live speech providers are not available; use deterministic mode"
         )
 
 
-def _checked_descriptor(descriptor: ProviderDescriptor, port: ProviderPort) -> ProviderDescriptor:
-    if descriptor.port is not port or descriptor.mode is not ExecutionMode.DETERMINISTIC:
-        raise SpeechConfigurationError(f"the configured {port} adapter must be deterministic")
+def _checked_descriptor(
+    descriptor: ProviderDescriptor, port: ProviderPort, wiring: _Wiring
+) -> ProviderDescriptor:
+    expected = ExecutionMode.LIVE if wiring.live else ExecutionMode.DETERMINISTIC
+    if descriptor.port is not port or descriptor.mode is not expected:
+        raise SpeechConfigurationError(f"the configured {port} adapter must be {expected}")
     return descriptor
+
+
+def _flags(
+    processing: tuple[SpeechProcessingKind, ...], calls: tuple[LiveCall, ...]
+) -> dict[str, bool]:
+    recognized = SpeechProcessingKind.SPEECH_RECOGNITION in processing
+    synthesized = SpeechProcessingKind.SPEECH_SYNTHESIS in processing
+    return {
+        "speech_recognition_performed": recognized,
+        "speech_synthesis_performed": synthesized,
+        "model_inference_performed": recognized or synthesized,
+        "live_provider_called": any(call.real_endpoint for call in calls),
+        "live_calls": calls,
+    }
+
+
+def _mode_note(live: bool, calls: tuple[LiveCall, ...]) -> str:
+    if not live:
+        return _NO_LIVE
+    real = sum(call.real_endpoint for call in calls)
+    if real:
+        return f"Live mode: {real} call(s) to the real provider endpoint; no credential recorded."
+    if calls:
+        return "Live mode over a provider contract test double; no real provider was called."
+    return "Live mode, but no provider call was made; only local processing ran."
 
 
 def _read(store: SessionContentStore, item: ModalityInput) -> bytes:
@@ -685,8 +810,21 @@ async def _validate_generated(
 
 
 def _evidence(
-    record_id: str, operation: SpeechOperation, evidence_class: EvidenceClass, summary: str
+    record_id: str,
+    operation: SpeechOperation,
+    evidence_class: EvidenceClass,
+    summary: str,
+    live: bool = False,
+    calls: tuple[LiveCall, ...] = (),
 ) -> EvidenceRecord:
+    if live:
+        return live_evidence(
+            evidence_id=f"ev-9-8-{record_id}",
+            requested=evidence_class,
+            calls=calls,
+            requirement_ids=_REQUIREMENTS[operation],
+            summary=summary,
+        )
     return EvidenceRecord(
         evidence_id=f"ev-9-4-{record_id}",
         evidence_class=evidence_class,

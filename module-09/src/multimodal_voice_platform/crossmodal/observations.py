@@ -32,12 +32,17 @@ from multimodal_voice_platform.speech.records import (
     SpeechRecord,
     SpeechTiming,
 )
-from multimodal_voice_platform.understanding.records import StageTiming, UnderstandingRecord
+from multimodal_voice_platform.understanding.records import (
+    ProcessingKind,
+    StageTiming,
+    UnderstandingRecord,
+)
 
 _SENTENCE_SPLIT: Final = re.compile(r"(?<=[.!?])\s+|\n+")
 _TRANSCRIPT_ORIGIN: Final = {
     SpeechProcessingKind.FIXTURE_PLAYBACK: FactOrigin.FIXTURE_PLAYBACK,
     SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE: FactOrigin.PROVIDER_CONTRACT_TEST_DOUBLE,
+    SpeechProcessingKind.SPEECH_RECOGNITION: FactOrigin.MODEL_INFERENCE,
 }
 
 
@@ -207,6 +212,15 @@ def observe_understanding(
         builder.fact("image.brightness", image.brightness, numeric=image.mean_luma)
         builder.fact("image.orientation", image.orientation.value)
         builder.fact("image.size", f"{image.width} x {image.height} pixels")
+        if record.model_vision is not None:
+            origin = (
+                FactOrigin.MODEL_INFERENCE
+                if ProcessingKind.MODEL_INFERENCE in record.processing
+                else FactOrigin.PROVIDER_CONTRACT_TEST_DOUBLE
+            )
+            builder.text(record.model_vision.description, origin)
+            for observed in record.model_vision.observations:
+                builder.text(observed, origin)
     elif record.document is not None and record.document_analysis is not None:
         analysis = record.document_analysis
         extraction = FactOrigin.LOCAL_EXTRACTION

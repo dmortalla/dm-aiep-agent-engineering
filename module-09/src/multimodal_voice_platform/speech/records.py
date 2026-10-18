@@ -5,8 +5,14 @@ audio properties, the transcript or generated audio, the provider that handled t
 stage timings, and the safe failure, with an ``EvidenceRecord``. Processing kinds are explicit so
 that local audio decoding is never mistaken for speech recognition, fixture playback is never
 mistaken for transcription, and deterministic tone generation is never mistaken for speech
-synthesis. ``speech_recognition_performed``, ``speech_synthesis_performed``,
-``model_inference_performed``, and ``live_provider_called`` are always ``False`` in Story 9.4.
+synthesis. Deterministic runs (Story 9.4) never set ``speech_recognition_performed``,
+``speech_synthesis_performed``, ``model_inference_performed``, or ``live_provider_called``.
+
+Story 9.8 adds live runs: a live provider (``mode=live``) declares ``speech_recognition`` or
+``speech_synthesis`` when it reaches the real provider, or ``provider_contract_test_double`` when it
+runs over a test transport. A live record reports every provider call (``live_calls``), its flags
+are derived from what actually completed and what actually reached the real provider, and its
+evidence follows the live evidence ladder in ``contracts.live``.
 """
 
 import hashlib
@@ -18,6 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from multimodal_voice_platform.audio.analysis import AudioAnalysis
 from multimodal_voice_platform.contracts.errors import SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
+from multimodal_voice_platform.contracts.live import (
+    LIVE_STORY,
+    MAX_LIVE_CALLS,
+    LiveCall,
+    check_live_evidence,
+    real_call_made,
+)
 from multimodal_voice_platform.contracts.modality import (
     Identifier,
     Modality,
@@ -79,7 +92,7 @@ LOCAL_AUDIO_PROCESSING: Final = (
 RESERVED_KINDS: Final = frozenset(
     {SpeechProcessingKind.SPEECH_RECOGNITION, SpeechProcessingKind.SPEECH_SYNTHESIS}
 )
-"""Genuine model-based speech kinds. Not implemented; reserved for the live-provider story."""
+"""Genuine model-based speech kinds. Only a live provider (Story 9.8) may declare them."""
 
 PROVIDER_KINDS: Final = {
     ProviderPort.SPEECH_TO_TEXT: frozenset(
@@ -96,6 +109,22 @@ PROVIDER_KINDS: Final = {
     ),
 }
 """Processing kinds a Story 9.4 speech provider may declare, per port."""
+
+LIVE_PROVIDER_KINDS: Final = {
+    ProviderPort.SPEECH_TO_TEXT: frozenset(
+        {
+            SpeechProcessingKind.SPEECH_RECOGNITION,
+            SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE,
+        }
+    ),
+    ProviderPort.TEXT_TO_SPEECH: frozenset(
+        {
+            SpeechProcessingKind.SPEECH_SYNTHESIS,
+            SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE,
+        }
+    ),
+}
+"""Processing kinds a Story 9.8 live speech provider may declare, per port."""
 
 OPERATION_PORT: Final = {
     SpeechOperation.AUDIO_ANALYSIS: None,
@@ -233,10 +262,11 @@ class SpeechRecord(BaseModel):
     provider: ProviderDescriptor | None = None
     provider_processing: SpeechProcessingKind | None = None
     processing: tuple[SpeechProcessingKind, ...] = ()
-    speech_recognition_performed: Literal[False] = False
-    speech_synthesis_performed: Literal[False] = False
-    model_inference_performed: Literal[False] = False
-    live_provider_called: Literal[False] = False
+    speech_recognition_performed: bool = False
+    speech_synthesis_performed: bool = False
+    model_inference_performed: bool = False
+    live_provider_called: bool = False
+    live_calls: tuple[LiveCall, ...] = Field(default=(), max_length=MAX_LIVE_CALLS)
     audio: AudioAnalysis | None = None
     transcript: TranscriptResult | None = None
     synthesis: SynthesisResult | None = None
@@ -261,8 +291,10 @@ class SpeechRecord(BaseModel):
             raise ValueError(
                 f"{self.operation} records take {OPERATION_INPUT[self.operation]} input"
             )
-        if RESERVED_KINDS.intersection(self.processing):
-            raise ValueError("speech recognition and synthesis kinds are not implemented")
+        live = self._is_live()
+        if RESERVED_KINDS.intersection(self.processing) and not live:
+            raise ValueError("speech recognition and synthesis kinds need a live provider")
+        self._validate_flags(live)
         expected = expected_processing(self.operation, self.provider_processing)
         if self.status is SpeechStatus.SUCCEEDED:
             self._validate_success(expected)
@@ -275,6 +307,29 @@ class SpeechRecord(BaseModel):
         self._validate_evidence()
         return self
 
+    def _is_live(self) -> bool:
+        provider_live = self.provider is not None and self.provider.mode is ExecutionMode.LIVE
+        if provider_live != (self.evidence.story == LIVE_STORY) and self.provider is not None:
+            raise ValueError("live speech providers, and only they, produce Story 9.8 evidence")
+        return self.evidence.story == LIVE_STORY
+
+    def _validate_flags(self, live: bool) -> None:
+        recognized = SpeechProcessingKind.SPEECH_RECOGNITION in self.processing
+        synthesized = SpeechProcessingKind.SPEECH_SYNTHESIS in self.processing
+        if self.speech_recognition_performed != recognized:
+            raise ValueError("speech_recognition_performed must match the completed stages")
+        if self.speech_synthesis_performed != synthesized:
+            raise ValueError("speech_synthesis_performed must match the completed stages")
+        if self.model_inference_performed != (recognized or synthesized):
+            raise ValueError("model_inference_performed must match the completed stages")
+        if self.live_provider_called != real_call_made(self.live_calls):
+            raise ValueError("live_provider_called must match the reported provider calls")
+        if self.live_calls and not live:
+            raise ValueError("only live runs report provider calls")
+        model_kind = self.provider_processing in RESERVED_KINDS
+        if any(call.real_endpoint != model_kind for call in self.live_calls):
+            raise ValueError("real provider calls are exactly the model-backed speech calls")
+
     def _validate_provider(self) -> None:
         port = OPERATION_PORT[self.operation]
         provider, kind = self.provider, self.provider_processing
@@ -286,10 +341,9 @@ class SpeechRecord(BaseModel):
             raise ValueError(f"{self.operation} records name their provider and its processing")
         if provider.port is not port:
             raise ValueError(f"{self.operation} records require a {port} provider")
-        if kind not in PROVIDER_KINDS[port]:
-            raise ValueError(f"{kind} is not a valid {port} processing kind in Story 9.4")
-        if provider.mode is not ExecutionMode.DETERMINISTIC:
-            raise ValueError("Story 9.4 speech providers run only in deterministic mode")
+        kinds = LIVE_PROVIDER_KINDS if provider.mode is ExecutionMode.LIVE else PROVIDER_KINDS
+        if kind not in kinds[port]:
+            raise ValueError(f"{kind} is not a valid {port} processing kind for this provider")
 
     def _validate_success(self, expected: tuple[SpeechProcessingKind, ...]) -> None:
         if self.error is not None or self.failed_stage is not None or self.input is None:
@@ -324,6 +378,9 @@ class SpeechRecord(BaseModel):
 
     def _validate_evidence(self) -> None:
         evidence = self.evidence
+        if evidence.story == LIVE_STORY:
+            check_live_evidence(evidence, self.live_calls)
+            return
         if evidence.evidence_class not in SPEECH_EVIDENCE_CLASSES:
             raise ValueError("speech records allow only deterministic evidence classes")
         if evidence.execution_mode is not ExecutionMode.DETERMINISTIC:

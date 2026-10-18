@@ -27,6 +27,12 @@ session's busy mark; nothing is committed and the turn ID stays unused.
 
 Authority (mode, budgets, limits, adapters, evidence class) comes only from application code.
 Session IDs are generated here, so a client never chooses or names one.
+
+Story 9.8: a coordinator built with a live reply binding and a server-side credential source opens
+opted-in live sessions. Their turns run live speech recognition, live model reasoning whose reply
+fragments are released by the provider adapter as the provider streams them (and are still
+citation-checked here before they are yielded), and live speech synthesis whose audio is validated
+locally. The credential never comes from a client message.
 """
 
 import asyncio
@@ -35,9 +41,9 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from multimodal_voice_platform.adapters.deterministic.errors import UnknownFixtureError
 from multimodal_voice_platform.adapters.reasoning.conversation import (
@@ -51,6 +57,7 @@ from multimodal_voice_platform.contracts.conversation import (
 from multimodal_voice_platform.contracts.errors import ErrorCode, Module9Error, SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
 from multimodal_voice_platform.contracts.limits import ResourceBudget
+from multimodal_voice_platform.contracts.live import LiveCall, calls_of, live_evidence
 from multimodal_voice_platform.contracts.modality import Modality
 from multimodal_voice_platform.contracts.providers import (
     ProviderDescriptor,
@@ -66,6 +73,8 @@ from multimodal_voice_platform.crossmodal.errors import (
     ReasoningProviderTimeoutError,
 )
 from multimodal_voice_platform.crossmodal.records import RESERVED_REASONING_KINDS, ReasoningKind
+from multimodal_voice_platform.live.bindings import LiveBinding
+from multimodal_voice_platform.live.credentials import live_session, session_credential
 from multimodal_voice_platform.speech.errors import SpeechConfigurationError
 from multimodal_voice_platform.speech.records import SpeechRecord, SpeechStage, SpeechStatus
 from multimodal_voice_platform.streaming.errors import (
@@ -131,6 +140,10 @@ _SYNTHESIS_STAGES: Final = {
     SpeechStage.TEXT_TO_SPEECH: VoiceStage.TEXT_TO_SPEECH,
     SpeechStage.OUTPUT_VALIDATION: VoiceStage.OUTPUT_AUDIO_VALIDATION,
 }
+_LIVE_NOTE: Final = (
+    "Live mode: fragments are whole reply acts assembled from provider token deltas and released "
+    "as the provider streamed them; provider calls are listed without any credential or payload."
+)
 _NOT_LIVE: Final = (
     "Fragments are whole rule-based reply acts, not model tokens. No speech recognition, speech "
     "synthesis, language model, live provider, network, or credential was used."
@@ -186,6 +199,9 @@ class _Run:
     reasoning_ms: float = 0.0
     validation_ms: float = 0.0
     context: ConversationContext | None = None
+    kind: ReasoningKind = ReasoningKind.DETERMINISTIC_RULE_INFERENCE
+    live: bool = False
+    provider: object = None
 
     def begin(self, stage: VoiceStage) -> None:
         self.stage = stage
@@ -231,6 +247,8 @@ class StreamingVoiceCoordinator:
         limits: StreamingLimits | None = None,
         budget: ResourceBudget | None = None,
         session_ids: Callable[[], str] | None = None,
+        live_reply: LiveBinding[Any] | None = None,
+        live_credential: Callable[[], SecretStr] | None = None,
     ) -> None:
         """Create the coordinator.
 
@@ -242,6 +260,9 @@ class StreamingVoiceCoordinator:
             limits: Streaming bounds. Defaults to ``StreamingLimits()``.
             budget: Resource budget bound to every session this coordinator opens.
             session_ids: Session ID generator. Defaults to random ``ws-`` identifiers.
+            live_reply: Live incremental reply binding (Story 9.8), ``factory(credential)``.
+            live_credential: Server-side source of the live key. With ``live_reply``, every
+                session this coordinator opens is an opted-in live session. Never a client value.
         """
         self.voice = voice if voice is not None else VoiceAssistant()
         self.limits = limits if limits is not None else StreamingLimits()
@@ -251,6 +272,8 @@ class StreamingVoiceCoordinator:
             processing=ReasoningKind.DETERMINISTIC_RULE_INFERENCE,
         )
         self._session_ids = session_ids or _random_session_id
+        self._live_reply = live_reply
+        self._live_credential = live_credential
         self._active_turns = 0
         self._runs = 0
 
@@ -269,7 +292,11 @@ class StreamingVoiceCoordinator:
             DuplicateSessionError: If the generated ID is already active.
             ConversationLimitError: If the active-session bound is reached.
         """
-        config = SessionConfig(session_id=self._session_ids(), budget=self.budget)
+        session_id = self._session_ids()
+        if self._live_reply is not None and self._live_credential is not None:
+            config = live_session(session_id, self._live_credential(), budget=self.budget)
+        else:
+            config = SessionConfig(session_id=session_id, budget=self.budget)
         return self.voice.start_session(config)
 
     def close_session(self, session_id: str) -> ConversationSnapshot | None:
@@ -314,7 +341,7 @@ class StreamingVoiceCoordinator:
         try:
             request = self._fixture_request(session_id, turn_id, fixture_id, language)
         except (UnknownFixtureError, StreamingInputError, ValidationError):
-            self._check_wiring(evidence_class)
+            self._check_wiring(evidence_class, session_id)
             error = StreamingInputError("the requested fixture is not an offered audio fixture")
             run = _Run(started=time.perf_counter())
             yield TurnFinished(
@@ -352,10 +379,10 @@ class StreamingVoiceCoordinator:
         """
         if not isinstance(request, VoiceTurnRequest):
             raise StreamingConfigurationError("streamed turns take a VoiceTurnRequest")
-        provider, descriptor = self._check_wiring(evidence_class)
+        provider, descriptor, kind, live = self._check_wiring(evidence_class, request.session_id)
         voice = self.voice
         turn_id = request.turn_id
-        run = _Run(started=time.perf_counter())
+        run = _Run(started=time.perf_counter(), kind=kind, live=live, provider=provider)
         reservation: TurnReservation | None = None
         record: StreamedTurnRecord | None = None
         self._active_turns += 1
@@ -581,8 +608,24 @@ class StreamingVoiceCoordinator:
         return validate_reply(reply, view, request.history)
 
     def _check_wiring(
-        self, evidence_class: EvidenceClass
-    ) -> tuple[IncrementalReplyPort, ProviderDescriptor]:
+        self, evidence_class: EvidenceClass, session_id: str | None = None
+    ) -> tuple[IncrementalReplyPort, ProviderDescriptor, ReasoningKind, bool]:
+        live_binding = self._live_reply
+        config = None
+        if live_binding is not None and session_id is not None:
+            try:
+                config = self.voice.store.session_config(session_id)
+            except UnknownSessionError:
+                config = None
+        if live_binding is not None and config is not None and config.mode is ExecutionMode.LIVE:
+            live_binding.check_requested(evidence_class)
+            adapter = live_binding.build(session_credential(config))
+            kind = (
+                ReasoningKind.MODEL_INFERENCE
+                if live_binding.real
+                else ReasoningKind.PROVIDER_CONTRACT_TEST_DOUBLE
+            )
+            return adapter, adapter.descriptor, kind, True
         binding = self._reply
         if evidence_class not in VOICE_EVIDENCE_CLASSES:
             raise StreamingConfigurationError("streamed turns produce only deterministic evidence")
@@ -599,7 +642,7 @@ class StreamingVoiceCoordinator:
             descriptor.mode is not ExecutionMode.DETERMINISTIC
         ):
             raise StreamingConfigurationError("the reply adapter must be deterministic reasoning")
-        return provider, descriptor
+        return provider, descriptor, binding.processing, False
 
     def _fixture_request(
         self, session_id: str, turn_id: str, fixture_id: str, language: str | None
@@ -636,7 +679,7 @@ class StreamingVoiceCoordinator:
             f"of session {request.session_id}: transcript ready, then {run.fragments} reply "
             f"fragment(s) by {descriptor.provider_id} yielded while reasoning was still running "
             f"(first after {first:.3f} ms), then the validated reply, validated output audio, and "
-            f"an atomic commit. {_NOT_LIVE}"
+            f"an atomic commit. {_LIVE_NOTE if run.live else _NOT_LIVE}"
         )
         turn = VoiceTurnRecord(
             record_id=record_id,
@@ -649,13 +692,15 @@ class StreamingVoiceCoordinator:
             transcript=run.transcript,
             context=run.context,
             reasoning_provider=descriptor,
-            reasoning_kind=self._reply.processing,
+            reasoning_kind=run.kind,
             reply=run.reply,
             synthesis=run.synthesis,
             conversation=snapshot,
             streaming_performed=True,
             timings=tuple(run.timings),
-            evidence=_evidence(record_id, evidence_class, summary),
+            live_calls=calls_of(run.provider),
+            **_flags(run, run.kind),
+            evidence=_evidence(record_id, evidence_class, summary, run),
         )
         return self._record(turn, run)
 
@@ -679,7 +724,7 @@ class StreamingVoiceCoordinator:
         summary = (
             f"Streamed voice turn {turn_id} {status} safely at the {run.stage} stage with code "
             f"{error.code} after {run.fragments} reply fragment(s) were streamed; conversation "
-            f"history unchanged. {_NOT_LIVE}"
+            f"history unchanged. {_LIVE_NOTE if run.live else _NOT_LIVE}"
         )
         turn = VoiceTurnRecord(
             record_id=record_id,
@@ -691,7 +736,7 @@ class StreamingVoiceCoordinator:
             transcript=run.transcript,
             context=run.context,
             reasoning_provider=descriptor if reached else None,
-            reasoning_kind=self._reply.processing if reached else None,
+            reasoning_kind=run.kind if reached else None,
             reply=run.reply,
             synthesis=run.synthesis,
             conversation=snapshot,
@@ -699,7 +744,9 @@ class StreamingVoiceCoordinator:
             timings=tuple(run.timings),
             failed_stage=run.stage,
             error=error,
-            evidence=_evidence(record_id, evidence_class, summary),
+            live_calls=calls_of(run.provider),
+            **_flags(run, run.kind if reached else None),
+            evidence=_evidence(record_id, evidence_class, summary, run),
         )
         return self._record(turn, run)
 
@@ -732,7 +779,36 @@ def _random_session_id() -> str:
     return f"ws-{secrets.token_hex(8)}"
 
 
-def _evidence(record_id: str, evidence_class: EvidenceClass, summary: str) -> EvidenceRecord:
+def _all_calls(run: _Run) -> tuple[LiveCall, ...]:
+    embedded = [record for record in (run.transcription, run.synthesis) if record is not None]
+    return (*calls_of(run.provider), *(c for record in embedded for c in record.live_calls))
+
+
+def _flags(run: _Run, kind: ReasoningKind | None) -> dict[str, bool]:
+    transcription, synthesis = run.transcription, run.synthesis
+    return {
+        "speech_recognition_performed": bool(
+            transcription is not None and transcription.speech_recognition_performed
+        ),
+        "speech_synthesis_performed": bool(
+            synthesis is not None and synthesis.speech_synthesis_performed
+        ),
+        "model_inference_performed": kind is ReasoningKind.MODEL_INFERENCE,
+        "live_provider_called": any(call.real_endpoint for call in _all_calls(run)),
+    }
+
+
+def _evidence(
+    record_id: str, evidence_class: EvidenceClass, summary: str, run: _Run | None = None
+) -> EvidenceRecord:
+    if run is not None and run.live:
+        return live_evidence(
+            evidence_id=f"ev-9-8-{record_id}",
+            requested=evidence_class,
+            calls=_all_calls(run),
+            requirement_ids=_REQUIREMENTS,
+            summary=summary,
+        )
     return EvidenceRecord(
         evidence_id=f"ev-9-7-{record_id}",
         evidence_class=evidence_class,

@@ -8,9 +8,14 @@ generated, validated output audio), the conversation snapshot, per-stage and end
 whether the turn committed, and the safe failure, with an ``EvidenceRecord``.
 
 ``speech_recognition_performed``, ``speech_synthesis_performed``, ``model_inference_performed``,
-and ``live_provider_called`` are always ``False``. ``streaming_performed`` is ``False`` for Story
-9.6 synchronous turns; only a turn run by the Story 9.7 streaming coordinator sets it, and such a
-record must be Story 9.7 evidence.
+and ``live_provider_called`` are ``False`` for deterministic turns. ``streaming_performed`` is
+``False`` for Story 9.6 synchronous turns; only a turn run by the Story 9.7 streaming coordinator
+sets it, and such a record must be Story 9.7 evidence.
+
+Story 9.8 live turns (synchronous or streamed) are Story 9.8 evidence. Their flags are derived
+from what actually ran: speech recognition and synthesis from the embedded speech records, model
+inference from the reasoning kind, and ``live_provider_called`` from the reported provider calls.
+``live_calls`` holds the reasoning adapter's calls; the embedded speech records hold their own.
 """
 
 from enum import StrEnum
@@ -22,11 +27,22 @@ from multimodal_voice_platform.contracts.conversation import AssistantReply
 from multimodal_voice_platform.contracts.errors import SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
 from multimodal_voice_platform.contracts.limits import LatencyStage
+from multimodal_voice_platform.contracts.live import (
+    LIVE_STORY,
+    MAX_LIVE_CALLS,
+    LiveCall,
+    check_live_evidence,
+    real_call_made,
+)
 from multimodal_voice_platform.contracts.modality import Identifier, ModalityInput, TrustLevel
 from multimodal_voice_platform.contracts.providers import ProviderDescriptor, ProviderPort
 from multimodal_voice_platform.contracts.reasoning import ObservationId
 from multimodal_voice_platform.contracts.session import ExecutionMode
-from multimodal_voice_platform.crossmodal.records import RESERVED_REASONING_KINDS, ReasoningKind
+from multimodal_voice_platform.crossmodal.records import (
+    LIVE_REASONING_KINDS,
+    RESERVED_REASONING_KINDS,
+    ReasoningKind,
+)
 from multimodal_voice_platform.speech.records import (
     SpeechOperation,
     SpeechProcessingKind,
@@ -111,8 +127,9 @@ class TranscriptView(BaseModel):
         if self.processing not in {
             SpeechProcessingKind.FIXTURE_PLAYBACK,
             SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE,
+            SpeechProcessingKind.SPEECH_RECOGNITION,
         }:
-            raise ValueError("Story 9.6 transcripts are fixture playback or a test double")
+            raise ValueError("transcripts are fixture playback, a test double, or live recognition")
         return self
 
 
@@ -169,10 +186,11 @@ class VoiceTurnRecord(BaseModel):
     reply: AssistantReply | None = None
     synthesis: SpeechRecord | None = None
     conversation: ConversationSnapshot | None = None
-    speech_recognition_performed: Literal[False] = False
-    speech_synthesis_performed: Literal[False] = False
-    model_inference_performed: Literal[False] = False
-    live_provider_called: Literal[False] = False
+    speech_recognition_performed: bool = False
+    speech_synthesis_performed: bool = False
+    model_inference_performed: bool = False
+    live_provider_called: bool = False
+    live_calls: tuple[LiveCall, ...] = Field(default=(), max_length=MAX_LIVE_CALLS)
     streaming_performed: bool = False
     timings: tuple[VoiceTiming, ...] = Field(min_length=1, max_length=len(VoiceStage))
     failed_stage: VoiceStage | None = None
@@ -193,6 +211,16 @@ class VoiceTurnRecord(BaseModel):
     def end_to_end_ms(self) -> float:
         """Measured wall-clock duration of the whole turn."""
         return next(t.duration_ms for t in self.timings if t.stage is VoiceStage.END_TO_END)
+
+    def all_live_calls(self) -> tuple[LiveCall, ...]:
+        """Every provider call of the turn: speech-to-text, reasoning, and text-to-speech.
+
+        Returns:
+            The calls in turn order.
+        """
+        before = self.transcription.live_calls if self.transcription is not None else ()
+        after = self.synthesis.live_calls if self.synthesis is not None else ()
+        return (*before, *self.live_calls, *after)
 
     def latency_metrics(self) -> tuple[tuple[LatencyStage, float], ...]:
         """Return measured durations keyed by the contract's latency stages.
@@ -224,6 +252,7 @@ class VoiceTurnRecord(BaseModel):
             raise ValueError("timings end with exactly one end_to_end measurement")
         self._validate_speech()
         self._validate_reasoning()
+        self._validate_flags()
         if self.committed:
             self._validate_committed()
         else:
@@ -249,17 +278,39 @@ class VoiceTurnRecord(BaseModel):
             if transcription.provider_processing is not self.transcript.processing:
                 raise ValueError("the transcript names its speech-to-text processing kind")
 
+    def _validate_flags(self) -> None:
+        transcription, synthesis = self.transcription, self.synthesis
+        recognized = transcription is not None and transcription.speech_recognition_performed
+        synthesized = synthesis is not None and synthesis.speech_synthesis_performed
+        if self.speech_recognition_performed != recognized:
+            raise ValueError("speech_recognition_performed must match the transcription record")
+        if self.speech_synthesis_performed != synthesized:
+            raise ValueError("speech_synthesis_performed must match the synthesis record")
+        if self.model_inference_performed != (self.reasoning_kind is ReasoningKind.MODEL_INFERENCE):
+            raise ValueError("model_inference_performed must match the reasoning kind")
+        if self.live_provider_called != real_call_made(self.all_live_calls()):
+            raise ValueError("live_provider_called must match the reported provider calls")
+        if self.live_calls and self.evidence.story != LIVE_STORY:
+            raise ValueError("only live turns report provider calls")
+        model = self.reasoning_kind is ReasoningKind.MODEL_INFERENCE
+        if any(call.real_endpoint != model for call in self.live_calls):
+            raise ValueError("real reasoning calls are exactly the model-backed reasoning calls")
+
     def _validate_reasoning(self) -> None:
         provider, kind = self.reasoning_provider, self.reasoning_kind
         if (provider is None) != (kind is None):
             raise ValueError("the reasoning provider and its kind are recorded together")
+        live = self.evidence.story == LIVE_STORY
+        if provider is not None and provider.port is not ProviderPort.REASONING:
+            raise ValueError("the reasoning provider must be a reasoning adapter")
+        if provider is not None and provider.mode is ExecutionMode.LIVE:
+            if not live or kind not in LIVE_REASONING_KINDS:
+                raise ValueError("live reasoning adapters run in live Story 9.8 turns only")
+            return
         if kind in RESERVED_REASONING_KINDS:
-            raise ValueError("model inference is not implemented in Story 9.6")
-        if provider is not None and (
-            provider.port is not ProviderPort.REASONING
-            or provider.mode is not ExecutionMode.DETERMINISTIC
-        ):
-            raise ValueError("the reasoning provider must be a deterministic reasoning adapter")
+            raise ValueError("model inference needs a live reasoning adapter")
+        if provider is not None and live:
+            raise ValueError("live turns reason through a live reasoning adapter")
         if self.reply is not None and provider is None:
             raise ValueError("a reply names the reasoning provider that produced it")
 
@@ -293,6 +344,12 @@ class VoiceTurnRecord(BaseModel):
 
     def _validate_evidence(self) -> None:
         evidence = self.evidence
+        if evidence.story == LIVE_STORY:
+            check_live_evidence(evidence, self.all_live_calls())
+            for record in (self.transcription, self.synthesis):
+                if record is not None and record.evidence.story != LIVE_STORY:
+                    raise ValueError("embedded speech records of a live turn are live runs")
+            return
         if evidence.evidence_class not in VOICE_EVIDENCE_CLASSES:
             raise ValueError("voice turns allow only deterministic evidence classes")
         if evidence.execution_mode is not ExecutionMode.DETERMINISTIC:

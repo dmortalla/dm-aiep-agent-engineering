@@ -7,9 +7,9 @@
 | Architecture | Frozen (human-approved Story 9.1 specification, 2026-10-14) |
 | ADRs | 9 accepted (ADR-009-001 to ADR-009-009) |
 | Requirements | 18 source-derived (17 groups) + 12 additive engineering |
-| Stories | 9.1 complete (design only); 9.2 complete (deterministic foundation); 9.3 complete (local document and vision understanding); 9.4 complete (audio and speech pipeline); 9.5 complete (cross-modal reasoning workflow); 9.6 complete (voice-assistant orchestration); 9.7 complete (real-time WebSocket streaming); 9.8 to 9.10 not started |
-| Implemented capabilities | Deterministic multimodal foundation (no-key fixture playback; no inference). Local document and vision understanding (validated ingestion, pixel analysis, document extraction and structure; no model inference). Audio and speech pipeline (validated PCM WAV decoding and signal measurement; STT and TTS through the provider ports with fixture-playback STT, which is not speech recognition, and tone-sequence TTS, which is not speech synthesis). Cross-modal reasoning workflow (typed observations from two to four modalities in one bounded context, related by rule-based deterministic reasoning with cited, validated findings; not model inference). Voice-assistant orchestration (synchronous turns from validated audio through STT, bounded conversational context, reasoning, TTS, and generated-audio validation to an atomic state commit, with bounded multi-turn state; fixture-playback STT, rule-based reasoning that is not model inference, and tone TTS that is not speech synthesis; nothing streamed). Real-time WebSocket streaming (a Starlette/Uvicorn gateway on loopback with a typed protocol; each voice turn streams the final transcript, incremental reply fragments produced before the reply exists, the completed reply, validated audio, its outcome, and latency metrics; fragments are rule-based reply acts, not model tokens; no authentication) |
-| Evidence obtained | 9.1: `design_documentation`. 9.2: `automated_test`. 9.3: `automated_test`. 9.4: `automated_test`. 9.5: `automated_test`. 9.6: `automated_test`. 9.7: `automated_test` (including loopback socket-level WebSocket tests) |
+| Stories | 9.1 complete (design only); 9.2 complete (deterministic foundation); 9.3 complete (local document and vision understanding); 9.4 complete (audio and speech pipeline); 9.5 complete (cross-modal reasoning workflow); 9.6 complete (voice-assistant orchestration); 9.7 complete (real-time WebSocket streaming); 9.8 complete (accepted live integration for Aâ€“E); 9.9 and 9.10 not started |
+| Implemented capabilities | Deterministic multimodal foundation (no-key fixture playback; no inference). Local document and vision understanding (validated ingestion, pixel analysis, document extraction and structure; no model inference). Audio and speech pipeline (validated PCM WAV decoding and signal measurement; STT and TTS through the provider ports with fixture-playback STT, which is not speech recognition, and tone-sequence TTS, which is not speech synthesis). Cross-modal reasoning workflow (typed observations from two to four modalities in one bounded context, related by rule-based deterministic reasoning with cited, validated findings; not model inference). Voice-assistant orchestration (synchronous turns from validated audio through STT, bounded conversational context, reasoning, TTS, and generated-audio validation to an atomic state commit, with bounded multi-turn state; fixture-playback STT, rule-based reasoning that is not model inference, and tone TTS that is not speech synthesis; nothing streamed). Real-time WebSocket streaming (a Starlette/Uvicorn gateway on loopback with a typed protocol; each voice turn streams the final transcript, incremental reply fragments produced before the reply exists, the completed reply, validated audio, its outcome, and latency metrics; fragments are rule-based reply acts, not model tokens; no authentication). Story 9.8 adds accepted live vision, speech recognition, speech synthesis, model reasoning, provider streaming, and one live voice turn over loopback WebSocket |
+| Evidence obtained | 9.1: `design_documentation`. 9.2: `automated_test`. 9.3: `automated_test`. 9.4: `automated_test`. 9.5: `automated_test`. 9.6: `automated_test`. 9.7: `automated_test` (including loopback socket-level WebSocket tests). 9.8: `automated_test` plus accepted `live_integration` for Aâ€“E |
 | Release | Unreleased |
 
 ## What exists
@@ -47,20 +47,31 @@
   `interface/`: client messages and turn events in the typed protocol, an incremental reply port
   and lazy rule-based adapter, the `StreamingVoiceCoordinator`, the Starlette WebSocket gateway, and
   the loopback Uvicorn server. See [STREAMING.md](STREAMING.md).
+- Story 9.8 in `contracts/live.py`, `live/`, and `adapters/openai/`, with explicit live
+  bindings in the speech, understanding, cross-modal, voice, and streaming services: OpenAI vision,
+  speech-to-text, text-to-speech, and streamed reasoning adapters, ephemeral BYOK live sessions,
+  redaction, failure translation, cost controls, the live evidence ladder, and a separately invoked
+  live acceptance runner. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
 - Contract, governance, fixture, adapter, ingestion, understanding, audio, speech, cross-modal,
-  voice-assistant, streaming, WebSocket (in-process and loopback socket), and security tests in
-  `tests/`.
+  voice-assistant, streaming, WebSocket (in-process and loopback socket), live-adapter (fake API),
+  and security tests in `tests/`.
 
 ## What does not exist yet
 
-No model-based vision or semantic document understanding (Story 9.3 runs no model inference); no
-OCR; no MP3 or WebM decoding; no speech recognition (Story 9.4 STT is fixture playback, which is
-not speech recognition) and no speech synthesis (Story 9.4 TTS is a tone sequence, which is not
-speech synthesis); no model-based reasoning (Story 9.5 reasoning is rule-based over a closed vocabulary, which is not model inference); no orchestration of genuine speech or model reasoning (Story 9.6 orchestrates the deterministic adapters only, synchronously, and nothing is streamed by its turns); no model token streaming (Story 9.7 streams rule-based reply fragments, not model tokens), no `transcript_partial` (no genuine partial transcription exists), and no WebSocket authentication, TLS, or deployment beyond loopback; no live adapters or BYOK; no Streamlit UI. The
-Story 9.2 deterministic adapters replay scripted output for committed fixtures and are not evidence
-that any of those capabilities work.
+Module 9 is incomplete. Stories 9.9 and 9.10 are not started. No Streamlit reviewer UI,
+Streamlit deployment, deployment verification, final production/security acceptance, or LinkedIn
+publication has occurred. WebSocket authentication and TLS remain later work. Semantic document
+understanding, OCR, MP3/WebM decoding, and genuine partial transcription remain unestablished.
+The accepted live evidence does not establish a production latency SLO or live multi-turn recall.
+
+## Story 9.8 accepted evidence
+
+Real-provider vision, speech-to-text, text-to-speech, model reasoning, and provider streaming are
+established. Earlier accepted live evidence includes one voice turn through STT -> streamed
+reasoning -> TTS over loopback WebSocket; this does not establish deployed or multi-turn live use.
+See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md) for the sanitized final C verification summary.
+Deterministic/no-key mode remains the default; its evidence never becomes live evidence.
 
 ## Next story
 
-Story 9.8 (Secure Opt-In Live Providers), whose dependency (9.2) is complete. Story 9.9 also
-depends on 9.8.
+Story 9.9: unified Streamlit reviewer experience (not started). This reconciliation does not begin it.

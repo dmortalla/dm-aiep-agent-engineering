@@ -20,6 +20,14 @@ class ErrorCode(StrEnum):
     LIVE_MODE_NOT_AUTHORIZED = "live_mode_not_authorized"
     PROTOCOL_ERROR = "protocol_error"
     INTERNAL_ERROR = "internal_error"
+    PROVIDER_AUTHENTICATION_FAILED = "provider_authentication_failed"
+    """Story 9.8: the live provider rejected the supplied credential."""
+    PROVIDER_PERMISSION_DENIED = "provider_permission_denied"
+    """Story 9.8: the credential lacks access to the configured model or operation."""
+    PROVIDER_RATE_LIMITED = "provider_rate_limited"
+    """Story 9.8: the live provider throttled the request or the account has no quota."""
+    PROVIDER_REFUSED = "provider_refused"
+    """Story 9.8: the live provider refused to produce the requested content."""
 
 
 class SafeError(BaseModel):

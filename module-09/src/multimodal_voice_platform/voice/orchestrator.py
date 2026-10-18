@@ -31,12 +31,18 @@ it does not stream partial transcripts, response deltas, or audio (Story 9.7).
 Authority (mode, budgets, limits, adapters) comes only from application code and the
 ``SessionConfig`` bound when the conversation was opened. Transcripts, history, and replies are
 untrusted data and never change it.
+
+Story 9.8: an assistant built with a live reasoning binding (and a speech service with live speech
+bindings) also accepts opted-in live sessions. A live session's turn runs live speech recognition,
+live model reasoning whose every cited act is still checked, and live speech synthesis whose audio
+is still validated locally. A live turn is Story 9.8 evidence; nothing silently falls back to the
+deterministic adapters.
 """
 
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -48,6 +54,7 @@ from multimodal_voice_platform.contracts.conversation import AssistantReply
 from multimodal_voice_platform.contracts.errors import ErrorCode, Module9Error, SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
 from multimodal_voice_platform.contracts.limits import MAX_AUDIO_BYTES
+from multimodal_voice_platform.contracts.live import LiveCall, calls_of, live_evidence
 from multimodal_voice_platform.contracts.modality import Identifier, Modality
 from multimodal_voice_platform.contracts.providers import (
     ProviderDescriptor,
@@ -70,6 +77,8 @@ from multimodal_voice_platform.crossmodal.service import (
     collect_reasoning_output,
 )
 from multimodal_voice_platform.ingestion.errors import IngestionError
+from multimodal_voice_platform.live.bindings import LiveBinding
+from multimodal_voice_platform.live.credentials import session_credential
 from multimodal_voice_platform.speech.errors import SpeechConfigurationError
 from multimodal_voice_platform.speech.records import (
     SpeechProcessingKind,
@@ -137,7 +146,13 @@ _KIND_NOTES: Final = {
     SpeechProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE: "a provider-contract test double",
     ReasoningKind.DETERMINISTIC_RULE_INFERENCE: "rule-based reasoning, not model inference",
     ReasoningKind.PROVIDER_CONTRACT_TEST_DOUBLE: "a provider-contract test double",
+    SpeechProcessingKind.SPEECH_RECOGNITION: "live speech recognition, untrusted",
+    SpeechProcessingKind.SPEECH_SYNTHESIS: "live speech synthesis, validated locally",
+    ReasoningKind.MODEL_INFERENCE: "live model reasoning, every act citation-checked",
 }
+_LIVE_NOTE: Final = (
+    "Live mode: provider calls are listed in the record without any credential, prompt, or payload."
+)
 _NO_LIVE: Final = (
     "Synchronous turn; nothing was streamed. No speech recognition, speech synthesis, language "
     "model, live provider, network, or credential was used."
@@ -160,6 +175,14 @@ class VoiceTurnRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=128)
     data: bytes = Field(min_length=1, max_length=MAX_AUDIO_BYTES, exclude=True, repr=False)
     language: str | None = Field(default=None, min_length=2, max_length=16)
+
+
+@dataclass(frozen=True)
+class _ReasoningChoice:
+    """The reasoning kind a turn records, and whether the turn is live."""
+
+    processing: ReasoningKind
+    live: bool
 
 
 class _SpeechStageFailed(Exception):
@@ -215,6 +238,7 @@ class VoiceAssistant:
         reasoning: ReasoningBinding | None = None,
         observation_limits: CrossModalLimits | None = None,
         clock: Callable[[], float] = time.monotonic,
+        live_reasoning: LiveBinding[Any] | None = None,
     ) -> None:
         """Create the assistant.
 
@@ -227,6 +251,8 @@ class VoiceAssistant:
             reasoning: Reasoning binding. Defaults to the deterministic conversation reasoner.
             observation_limits: Bounds for normalizing the current turn into an observation.
             clock: Monotonic clock in seconds, used for session timeouts.
+            live_reasoning: Live reasoning binding (Story 9.8), ``factory(credential)``. With it,
+                the assistant accepts opted-in live sessions; without it, they are refused.
 
         Raises:
             FixtureIntegrityError: If the default catalog fails verification.
@@ -243,7 +269,8 @@ class VoiceAssistant:
             max_output_chunks=self.limits.max_output_chunks,
             max_output_chars=self.limits.max_output_chars,
         )
-        self.store = ConversationStore(self.limits, clock)
+        self._live_reasoning = live_reasoning
+        self.store = ConversationStore(self.limits, clock, allow_live=live_reasoning is not None)
         self._runs = 0
 
     def start_session(self, session: SessionConfig) -> ConversationSnapshot:
@@ -355,14 +382,9 @@ class VoiceAssistant:
         """
         if not isinstance(request, VoiceTurnRequest):
             raise VoiceConfigurationError("voice turns take a VoiceTurnRequest")
-        binding = self._reasoning
-        _check_evidence_class(evidence_class, binding.processing)
-        provider = binding.factory()
+        provider, binding = self._wire_reasoning(request.session_id, evidence_class)
+        live = binding.live
         descriptor = provider.descriptor
-        if descriptor.port is not ProviderPort.REASONING or (
-            descriptor.mode is not ExecutionMode.DETERMINISTIC
-        ):
-            raise VoiceConfigurationError("the reasoning adapter must be deterministic")
         run = _Run()
         started = time.perf_counter()
         reservation: TurnReservation | None = None
@@ -404,19 +426,66 @@ class VoiceAssistant:
         except Module9Error as exc:
             safe = exc.to_safe_error(retryable=exc.code in _RETRYABLE_CODES)
             return self._unsuccessful(
-                request, run, started, descriptor, binding, safe, evidence_class
+                request, run, started, descriptor, binding, safe, evidence_class, calls_of(provider)
             )
         except _SpeechStageFailed as failure:
             return self._unsuccessful(
-                request, run, started, descriptor, binding, failure.error, evidence_class
+                request,
+                run,
+                started,
+                descriptor,
+                binding,
+                failure.error,
+                evidence_class,
+                calls_of(provider),
             )
         finally:
             if reservation is not None:
                 self.store.release(reservation)
         run.timings.append(VoiceTiming(stage=VoiceStage.END_TO_END, duration_ms=_elapsed(started)))
         return self._committed(
-            request, run, reservation, snapshot, descriptor, binding.processing, evidence_class
+            request,
+            run,
+            reservation,
+            snapshot,
+            descriptor,
+            binding.processing,
+            evidence_class,
+            live,
+            calls_of(provider),
         )
+
+    def _wire_reasoning(
+        self, session_id: str, evidence_class: EvidenceClass
+    ) -> tuple[Any, _ReasoningChoice]:
+        """Choose the deterministic or live reasoning adapter for a turn. No silent fallback."""
+        live_binding = self._live_reasoning
+        config = None
+        if live_binding is not None:
+            try:
+                config = self.store.session_config(session_id)
+            except UnknownSessionError:
+                config = None
+        if live_binding is not None and config is not None and config.mode is ExecutionMode.LIVE:
+            live_binding.check_requested(evidence_class)
+            provider = live_binding.build(session_credential(config))
+            kind = (
+                ReasoningKind.MODEL_INFERENCE
+                if live_binding.real
+                else ReasoningKind.PROVIDER_CONTRACT_TEST_DOUBLE
+            )
+            expected = ExecutionMode.LIVE
+            choice = _ReasoningChoice(processing=kind, live=True)
+        else:
+            binding = self._reasoning
+            _check_evidence_class(evidence_class, binding.processing)
+            provider = binding.factory()
+            expected = ExecutionMode.DETERMINISTIC
+            choice = _ReasoningChoice(processing=binding.processing, live=False)
+        descriptor = provider.descriptor
+        if descriptor.port is not ProviderPort.REASONING or descriptor.mode is not expected:
+            raise VoiceConfigurationError(f"the reasoning adapter must be {expected}")
+        return provider, choice
 
     async def _transcribe(
         self,
@@ -469,6 +538,8 @@ class VoiceAssistant:
         descriptor: ProviderDescriptor,
         kind: ReasoningKind,
         evidence_class: EvidenceClass,
+        live: bool = False,
+        calls: tuple[LiveCall, ...] = (),
     ) -> VoiceTurnRecord:
         record_id = self._next_id()
         transcription, synthesis, context = run.transcription, run.synthesis, run.context
@@ -486,7 +557,7 @@ class VoiceAssistant:
             f"{exchanges} earlier exchange(s) of bounded context; cited reply by "
             f"{descriptor.provider_id} ({_KIND_NOTES[kind]}); output audio by "
             f"{tts_id} ({_KIND_NOTES.get(tts_kind, tts_kind)}), decoded and validated locally. "
-            f"{_NO_LIVE}"
+            f"{_LIVE_NOTE if live else _NO_LIVE}"
         )
         return VoiceTurnRecord(
             record_id=record_id,
@@ -504,7 +575,11 @@ class VoiceAssistant:
             synthesis=synthesis,
             conversation=snapshot,
             timings=tuple(run.timings),
-            evidence=_evidence(record_id, evidence_class, summary),
+            live_calls=calls,
+            **_flags(transcription, synthesis, kind, calls),
+            evidence=_evidence(
+                record_id, evidence_class, summary, live, transcription, synthesis, calls
+            ),
         )
 
     def _unsuccessful(
@@ -513,9 +588,10 @@ class VoiceAssistant:
         run: _Run,
         started: float,
         descriptor: ProviderDescriptor,
-        binding: ReasoningBinding,
+        binding: ReasoningBinding | _ReasoningChoice,
         error: SafeError,
         evidence_class: EvidenceClass,
+        calls: tuple[LiveCall, ...] = (),
     ) -> VoiceTurnRecord:
         run.timings.append(VoiceTiming(stage=VoiceStage.END_TO_END, duration_ms=_elapsed(started)))
         status = TurnStatus.FAILED if error.code in _FAILED_CODES else TurnStatus.REJECTED
@@ -528,6 +604,8 @@ class VoiceAssistant:
         except UnknownSessionError:
             snapshot = None
         record_id = self._next_id()
+        live = isinstance(binding, _ReasoningChoice) and binding.live
+        kind = binding.processing if reached_reasoning else None
         return VoiceTurnRecord(
             record_id=record_id,
             session_id=request.session_id,
@@ -545,11 +623,18 @@ class VoiceAssistant:
             timings=tuple(run.timings),
             failed_stage=run.stage,
             error=error,
+            live_calls=calls,
+            **_flags(run.transcription, run.synthesis, kind, calls),
             evidence=_evidence(
                 record_id,
                 evidence_class,
                 f"Voice turn {request.turn_id} {status} safely at the {run.stage} stage with code "
-                f"{error.code}; conversation history unchanged. {_NO_LIVE}",
+                f"{error.code}; conversation history unchanged. "
+                f"{_LIVE_NOTE if live else _NO_LIVE}",
+                live,
+                run.transcription,
+                run.synthesis,
+                calls,
             ),
         )
 
@@ -667,7 +752,46 @@ def _elapsed(started: float) -> float:
     return max(0.0, round((time.perf_counter() - started) * 1000, 3))
 
 
-def _evidence(record_id: str, evidence_class: EvidenceClass, summary: str) -> EvidenceRecord:
+def _flags(
+    transcription: SpeechRecord | None,
+    synthesis: SpeechRecord | None,
+    kind: ReasoningKind | None,
+    calls: tuple[LiveCall, ...],
+) -> dict[str, bool]:
+    """Derive a turn's capability flags from what its embedded runs and reasoning actually did."""
+    embedded = [record for record in (transcription, synthesis) if record is not None]
+    every = [*calls, *(call for record in embedded for call in record.live_calls)]
+    return {
+        "speech_recognition_performed": bool(
+            transcription is not None and transcription.speech_recognition_performed
+        ),
+        "speech_synthesis_performed": bool(
+            synthesis is not None and synthesis.speech_synthesis_performed
+        ),
+        "model_inference_performed": kind is ReasoningKind.MODEL_INFERENCE,
+        "live_provider_called": any(call.real_endpoint for call in every),
+    }
+
+
+def _evidence(
+    record_id: str,
+    evidence_class: EvidenceClass,
+    summary: str,
+    live: bool = False,
+    transcription: SpeechRecord | None = None,
+    synthesis: SpeechRecord | None = None,
+    calls: tuple[LiveCall, ...] = (),
+) -> EvidenceRecord:
+    if live:
+        embedded = [record for record in (transcription, synthesis) if record is not None]
+        every = (*calls, *(call for record in embedded for call in record.live_calls))
+        return live_evidence(
+            evidence_id=f"ev-9-8-{record_id}",
+            requested=evidence_class,
+            calls=every,
+            requirement_ids=_REQUIREMENTS,
+            summary=summary,
+        )
     return EvidenceRecord(
         evidence_id=f"ev-9-6-{record_id}",
         evidence_class=evidence_class,

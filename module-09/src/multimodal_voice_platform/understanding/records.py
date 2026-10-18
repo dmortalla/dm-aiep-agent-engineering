@@ -4,10 +4,16 @@ An ``UnderstandingRecord`` shows what came in, which processing path ran, what k
 it was, the typed structured result or the safe failure, stage timings, and an ``EvidenceRecord``.
 It distinguishes processing kinds explicitly so that local extraction is never mistaken for model
 inference, and fixture playback (Story 9.2) is never mistaken for either.
+
+Story 9.8 adds live image understanding: the local analysis still runs and stays in ``vision`` and
+``image_analysis``; a live vision model's interpretation is kept separately in ``model_vision``,
+attributed to ``model_provider`` and labeled ``model_inference`` (real provider) or
+``provider_contract_test_double`` (test transport). Every provider call is reported in
+``live_calls`` and the evidence follows the live evidence ladder in ``contracts.live``.
 """
 
 from enum import StrEnum
-from typing import Final, Literal, Self
+from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -17,6 +23,13 @@ from multimodal_voice_platform.adapters.local.providers import LOCAL_DOCUMENT_ID
 from multimodal_voice_platform.contracts.errors import SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
 from multimodal_voice_platform.contracts.limits import LatencyStage
+from multimodal_voice_platform.contracts.live import (
+    LIVE_STORY,
+    MAX_LIVE_CALLS,
+    LiveCall,
+    check_live_evidence,
+    real_call_made,
+)
 from multimodal_voice_platform.contracts.modality import Identifier, Modality, ModalityInput
 from multimodal_voice_platform.contracts.providers import (
     DocumentResult,
@@ -39,6 +52,13 @@ class ProcessingKind(StrEnum):
     LOCAL_EXTRACTION = "local_extraction"
     LOCAL_STRUCTURAL_ANALYSIS = "local_structural_analysis"
     MODEL_INFERENCE = "model_inference"
+    PROVIDER_CONTRACT_TEST_DOUBLE = "provider_contract_test_double"
+
+
+LIVE_VISION_KINDS: Final = frozenset(
+    {ProcessingKind.MODEL_INFERENCE, ProcessingKind.PROVIDER_CONTRACT_TEST_DOUBLE}
+)
+"""What a Story 9.8 live vision adapter may declare: a real model, or a contract test double."""
 
 
 LOCAL_PROCESSING: Final = (
@@ -85,7 +105,8 @@ class StageTiming(BaseModel):
 class UnderstandingRecord(BaseModel):
     """Typed record of one image or document understanding run.
 
-    ``model_inference_performed`` and ``live_provider_called`` are always ``False`` in Story 9.3.
+    ``model_inference_performed`` and ``live_provider_called`` are ``False`` for local runs; a
+    Story 9.8 live run sets them from what actually completed and what reached the real provider.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -98,8 +119,11 @@ class UnderstandingRecord(BaseModel):
     path: ProcessingPath | None = None
     provider: ProviderDescriptor | None = None
     processing: tuple[ProcessingKind, ...] = ()
-    model_inference_performed: Literal[False] = False
-    live_provider_called: Literal[False] = False
+    model_inference_performed: bool = False
+    live_provider_called: bool = False
+    live_calls: tuple[LiveCall, ...] = Field(default=(), max_length=MAX_LIVE_CALLS)
+    model_provider: ProviderDescriptor | None = None
+    model_vision: VisionResult | None = None
     vision: VisionResult | None = None
     image_analysis: ImageAnalysis | None = None
     document: DocumentResult | None = None
@@ -121,10 +145,26 @@ class UnderstandingRecord(BaseModel):
         """
         if self.input is not None and self.input.modality is not self.modality:
             raise ValueError("record modality must match its input")
+        live = self.evidence.story == LIVE_STORY
+        if self.model_inference_performed != (ProcessingKind.MODEL_INFERENCE in self.processing):
+            raise ValueError("model_inference_performed must match the completed processing")
+        if self.live_provider_called != real_call_made(self.live_calls):
+            raise ValueError("live_provider_called must match the reported provider calls")
+        if (self.live_calls or self.model_provider is not None) and not live:
+            raise ValueError("only live runs involve a live provider")
+        model_kind = ProcessingKind.MODEL_INFERENCE in self.processing
+        if any(call.real_endpoint != model_kind for call in self.live_calls if self.model_vision):
+            raise ValueError("real provider calls are exactly the model-backed vision calls")
         if self.status is UnderstandingStatus.SUCCEEDED:
             self._validate_success()
         else:
-            outputs = (self.vision, self.image_analysis, self.document, self.document_analysis)
+            outputs = (
+                self.vision,
+                self.image_analysis,
+                self.document,
+                self.document_analysis,
+                self.model_vision,
+            )
             if self.error is None or any(output is not None for output in outputs):
                 raise ValueError("unsuccessful records carry an error and no outputs")
             if self.processing or self.provider is not None or self.path is not None:
@@ -144,8 +184,7 @@ class UnderstandingRecord(BaseModel):
             raise ValueError(f"{self.modality} records require the local {port} adapter")
         if provider.mode is not ExecutionMode.DETERMINISTIC:
             raise ValueError("local processing runs only in deterministic mode")
-        if self.processing != LOCAL_PROCESSING:
-            raise ValueError("local records claim only local extraction and structural analysis")
+        self._validate_model_vision()
         is_image = self.modality is Modality.IMAGE
         image_outputs = (self.vision, self.image_analysis)
         document_outputs = (self.document, self.document_analysis)
@@ -158,8 +197,33 @@ class UnderstandingRecord(BaseModel):
         if result is None or result.provider != provider:
             raise ValueError("the result must be attributed to the record's provider")
 
+    def _validate_model_vision(self) -> None:
+        model, provider = self.model_vision, self.model_provider
+        if model is None:
+            if provider is not None or self.processing != LOCAL_PROCESSING:
+                raise ValueError(
+                    "local records claim only local extraction and structural analysis"
+                )
+            return
+        if self.modality is not Modality.IMAGE or provider is None:
+            raise ValueError("model interpretation applies to images and names its provider")
+        if provider.port is not ProviderPort.VISION or provider.mode is not ExecutionMode.LIVE:
+            raise ValueError("model interpretation comes from a live vision provider")
+        if model.provider != provider:
+            raise ValueError("the model interpretation must be attributed to its provider")
+        kinds = self.processing[len(LOCAL_PROCESSING) :]
+        if (
+            self.processing[: len(LOCAL_PROCESSING)] != LOCAL_PROCESSING
+            or len(kinds) != 1
+            or kinds[0] not in LIVE_VISION_KINDS
+        ):
+            raise ValueError("live image records claim local processing then one model kind")
+
     def _validate_evidence(self) -> None:
         evidence = self.evidence
+        if evidence.story == LIVE_STORY:
+            check_live_evidence(evidence, self.live_calls)
+            return
         if evidence.evidence_class not in LOCAL_EVIDENCE_CLASSES:
             raise ValueError("local records allow only deterministic evidence classes")
         if evidence.execution_mode is not ExecutionMode.DETERMINISTIC:

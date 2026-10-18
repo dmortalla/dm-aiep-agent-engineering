@@ -46,6 +46,7 @@ planned for the listed story and is **not implemented yet**.
 | Sensitive content retention | Session-scoped references deleted at session end; conversations keep bounded text only | SEC-022 |
 | Conversation-state abuse (forged state, replayed or concurrent turns, unbounded history) | Session configuration bound by application code; turn requests carry no authority fields; committed turn IDs rejected on replay; one running turn per session; bounded retention, context, turns, and provider calls; history changes only by atomic commit | SEC-001, SEC-011, SEC-017, SEC-022 |
 | Error leakage | `SafeError` with code, bounded message, and retryable flag only | SEC-023 |
+| Live provider credential exposure, implicit live use, or cost blowout (Story 9.8) | Explicit live sessions and bindings only; `SecretStr` key passed only to a per-call client; translated errors without chaining; redaction; fixed endpoint; zero retries; per-operation call, token, size, and time budgets | SEC-013, SEC-016 to SEC-021 |
 | WebSocket abuse (cross-site hijacking, forged protocol fields, floods, slow or silent clients, oversized frames) | Exact-origin allowlist (empty by default); typed client messages with no authority fields; server-generated session IDs bound to the connection; connection, message, audio, fragment, event, and timeout bounds; compression off; disconnect cancels the turn without a commit. No authentication yet (Story 9.10) | SEC-008, SEC-011, SEC-014, SEC-015, SEC-022, SEC-023 |
 | Overstated evidence | `EvidenceRecord` validators; UI labels every result with its class | SEC-025 |
 | Ambiguous trust or validation | Reject rather than default | SEC-026 |
@@ -72,9 +73,9 @@ planned for the listed story and is **not implemented yet**.
 | SEC-016 | Bounded retry behavior | `max_retries` ceiling of 3 | Contract (bounds) | 9.1, 9.8 |
 | SEC-017 | No uncontrolled retry loops | Retries consume provider-call budget | Contract (bounds); 9.6 (each voice turn reserves its three provider calls against `max_provider_calls_per_session`; failed turns are not refunded; no automatic retries); 9.8 (enforcement) | 9.1, 9.6, 9.8, 9.10 |
 | SEC-018 | Secret redaction | `SecretStr`, excluded from dumps and repr | Contract | 9.1, 9.8 |
-| SEC-019 | No secrets in logs, traces, evidence, URLs, source control, or committed config | Credential never in emitted models; payload scanning tests | Planned | 9.8, 9.10 |
+| SEC-019 | No secrets in logs, traces, evidence, URLs, source control, or committed config | Credential never in emitted models; payload scanning tests | 9.8 redaction and emitted-payload tests; final acceptance 9.10 | 9.8, 9.10 |
 | SEC-020 | Explicit opt-in live credentials | Live requires `live_opt_in=True` and a credential | Contract | 9.1, 9.8 |
-| SEC-021 | Ephemeral user-supplied credentials | Session memory only, never persisted | Planned | 9.8, 9.9 |
+| SEC-021 | Ephemeral user-supplied credentials | Session memory only, never persisted | 9.8 ephemeral BYOK implemented; UI lifecycle acceptance 9.9 | 9.8, 9.9 |
 | SEC-022 | No unnecessary retention of sensitive content | Session-scoped references, deleted at session end | Deterministic content store (9.2: in-memory, released per session); 9.3 (uploads released before each call returns); 9.4 (audio uploads and generated audio released before each call returns); 9.6 (conversations retain bounded text only, never audio, and release it when the session closes or expires); 9.7 (WebSocket sessions closed and released when the connection ends; audio never echoed); 9.9/9.10 (UI) | 9.2, 9.3, 9.4, 9.6, 9.7, 9.9, 9.10 |
 | SEC-023 | Safe structured errors | `SafeError` model | Contract; 9.7 (only `SafeError` crosses the WebSocket; unexpected failures logged server-side and replaced by a fixed `internal_error`) | 9.1, 9.7 |
 | SEC-024 | Testable expected failure paths | Rejection tests for every contract | Contract (tests) | 9.1, 9.10 |
@@ -83,3 +84,15 @@ planned for the listed story and is **not implemented yet**.
 
 "Contract" means the typed model rejects the violation today and a test proves it. It does not mean
 the end-to-end runtime control exists. Runtime enforcement arrives with the listed stories.
+
+## Story 9.8 evidence boundary
+
+Accepted live integration establishes vision, STT, TTS, model reasoning, and provider streaming;
+it does not confer trust or authority on model output. Explicit live opt-in, ephemeral BYOK,
+secret redaction, fixed provider endpoint allowlisting, bounded provider calls/cost/time,
+`max_retries=0`, and no deterministic fallback remain mandatory. Pydantic and provenance checks
+fail closed. Shared-concept terms must occur literally as whole words, case-insensitively, in
+each cited observation's statement text; omit the finding if fewer than two terms qualify.
+Mocked/test-double/deterministic execution cannot claim `live_integration`. Credentials and raw
+sensitive provider payloads are excluded from repository evidence. Final production/security
+acceptance, WebSocket authentication, TLS, and deployment remain Story 9.10 work.

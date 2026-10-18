@@ -26,10 +26,18 @@ RESTRICTED_THIRD_PARTY = {
     "pypdf": {"adapters/local/document_parsing.py"},
     "starlette": {"interface/websocket.py"},
     "uvicorn": {"interface/server.py"},
-    "websockets": set(),
+    "websockets": {"live/acceptance.py"},
+    "openai": {"adapters/openai/client.py"},
+    "httpx2": {
+        "adapters/openai/__init__.py",
+        "adapters/openai/client.py",
+        "adapters/openai/speech.py",
+        "adapters/openai/vision.py",
+    },
 }
-"""Story 9.3 decoders and the Story 9.7 WebSocket framework and server, each allowed in exactly one
-source module (and in tests); the ``websockets`` client library is used by tests only."""
+"""Story 9.3 decoders, the Story 9.7 WebSocket framework and server, and the Story 9.8 OpenAI SDK
+and its HTTP client, each allowed only in the modules named (and in tests). The ``websockets``
+client is used by tests and by the separately invoked live acceptance runner only."""
 FORBIDDEN_MODULES = {"subprocess", "pty", "os.system"}
 FORBIDDEN_CALLS = {"eval", "exec", "system", "popen", "spawn"}
 
@@ -241,7 +249,7 @@ def test_story_9_7_claims_only_deterministic_websocket_streaming(
     governance: dict[str, Any],
 ) -> None:
     assert governance["story_9_7_evidence_class"] == EvidenceClass.AUTOMATED_TEST
-    assert governance["implemented_capabilities"] == [
+    assert governance["implemented_capabilities"][:6] == [
         "deterministic_multimodal_foundation",
         "local_document_vision_understanding",
         "local_audio_speech_pipeline",
@@ -271,14 +279,17 @@ def test_story_9_7_claims_only_deterministic_websocket_streaming(
         "ENG-007",
         "ENG-008",
     }
-    assert {rid for rid, status in statuses.items() if status == "partially-implemented"} == partial
-    assert {rid for rid, status in statuses.items() if status == "implemented"} == {"SRC-011"}
+    assert {statuses[rid] for rid in partial} == {"partially-implemented"}
+    assert {rid for rid, status in statuses.items() if status == "implemented"} == {
+        "SRC-011", "ENG-002"
+    }  # Story 9.8 now satisfies explicit opt-in ephemeral BYOK.
     assert set(statuses.values()) == {"designed", "partially-implemented", "implemented"}
-    for later in ("SRC-001", "SRC-018", "ENG-002", "ENG-003", "ENG-005", "ENG-012"):
+    assert statuses["SRC-018"] == "partially-implemented"
+    for later in ("SRC-001", "ENG-003", "ENG-005", "ENG-012"):
         assert statuses[later] == "designed", later
     stories = {story["id"]: story["status"] for story in governance["stories"]}
     assert stories["9.7"] == "complete-websocket-streaming"
-    assert {stories[sid] for sid in ("9.8", "9.9", "9.10")} == {"not-started"}
+    assert {stories[sid] for sid in ("9.9", "9.10")} == {"not-started"}
     streaming_doc = " ".join(_doc("STREAMING.md").lower().split())
     for phrase in (
         "not model tokens",
@@ -294,6 +305,70 @@ def test_story_9_7_claims_only_deterministic_websocket_streaming(
     for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
         text = " ".join(_doc(name).lower().split())
         assert "websocket" in text and "not model tokens" in text, name
+
+
+def test_story_9_8_accepted_live_evidence_preserves_conservative_scope(
+    governance: dict[str, Any],
+) -> None:
+    assert governance["story_9_8_evidence_class"] == EvidenceClass.LIVE_INTEGRATION
+    assert governance["story_9_8_evidence_classes"] == ["automated_test", "live_integration"]
+    assert governance["story_9_8_live_acceptance"] == "established"
+    assert governance["implemented_capabilities"][-1] == "openai_live_adapters_contract_tested"
+    assert governance["story_9_8_live_capabilities"] == {
+        "A_vision": "established", "B_speech_to_text": "established",
+        "C_model_reasoning": "established", "D_text_to_speech": "established",
+        "E_provider_streaming": "established",
+    }
+    assert governance["story_9_8_final_c_verification"] == {
+        "scope": "final_c_only_live_verification", "established": True,
+        "evidence_class": "live_integration", "real_endpoint": True,
+        "vision_succeeded": True, "reasoning_succeeded": True,
+        "streamed": True, "provider_output_events": 237,
+    }
+    statuses = {req["id"]: req["status"] for req in governance["requirements"]}
+    assert statuses["ENG-002"] == "implemented"
+    assert ("Live-provider mode is explicit opt-in; users may supply supported credentials "
+            "securely and ephemerally.") in _doc("REQUIREMENTS.md")
+    partial = {rid for rid, status in statuses.items() if status == "partially-implemented"}
+    assert partial == {
+        "ENG-001", "ENG-006", "ENG-007", "ENG-008",
+        *(f"SRC-{number:03d}" for number in range(2, 11)),
+        *(f"SRC-{number:03d}" for number in range(12, 19)),
+    }, "reviewer, partial STT, latency, and final acceptance obligations remain"
+    stories = {story["id"]: story["status"] for story in governance["stories"]}
+    assert stories["9.8"] == "complete-live-integration"
+    assert stories["9.9"] == stories["9.10"] == "not-started"
+    assert governance["module_completion"] == "incomplete"
+    assert governance["remaining_acceptance"] == dict.fromkeys(
+        ("streamlit_ui", "streamlit_deployment", "deployment_verification",
+         "production_security_acceptance", "linkedin_publication"), "not-started"
+    )
+    live_doc = " ".join(_doc("LIVE_PROVIDERS.md").lower().split())
+    for phrase in (
+        "story 9.8 is complete", "accepted `live_integration`", "237 provider output events",
+        "max_retries=0", "not individual tokens", "no fallback", "ephemeral byok",
+        "redaction", "call budget", "operation deadline", "untrusted", "fail-closed",
+        "whole word, case-insensitively", "fewer than two qualifying terms",
+        "module 9 is incomplete", "stories 9.9 and 9.10 are not started",
+        "streamlit reviewer ui is not implemented", "deployment verification",
+        "final production/security acceptance", "linkedin publication have not occurred",
+        "not a production slo", "partial transcripts",
+    ):
+        assert phrase in live_doc, phrase
+    for name in ("../README.md", "PROJECT_STATUS.md", "EVIDENCE_POLICY.md", "TRACEABILITY.md"):
+        text = " ".join(_doc(name).lower().split())
+        assert "story 9.8" in text and "live_integration" in text, name
+        for stale in ("live acceptance pending", "live acceptance has not run",
+                      "no `live_integration` evidence", "no real provider call has been made",
+                      "live execution unverified", "phase b pending"):
+            assert stale not in text, (name, stale)
+    policy = " ".join(_doc("EVIDENCE_POLICY.md").lower().split())
+    assert "mocked execution can never be `live_integration`" in policy
+    assert "deterministic-mode results can never be labeled `live_integration`" in policy
+    for path in [MODULE_ROOT / "README.md", *DOCS.rglob("*.md"), *DOCS.rglob("*.json")]:
+        text = path.read_text("utf-8")
+        assert not re.search(r"sk-(?:proj-)?[a-zA-Z0-9_-]{16,}", text), path
+        assert "-----BEGIN PRIVATE KEY-----" not in text, path
 
 
 def test_evidence_classes_are_distinct_and_match_contract(governance: dict[str, Any]) -> None:

@@ -52,12 +52,20 @@ turns. Each turn streams `turn_accepted`, `transcript_final`, one `response_delt
 fragment while reasoning is still running, `response_complete`, `audio_ready`, `turn_complete`,
 and latency metrics including time to first response. Fragments are whole rule-based reply acts,
 not model tokens, and are produced before the reply exists rather than split from a finished
-reply. Disconnects and timeouts cancel the running turn without committing it. There is no
-authentication, live provider, or reviewer UI yet. Story 9.7 evidence is `automated_test`,
+reply. Disconnects and timeouts cancel the running turn without committing it. Story 9.7 itself includes no
+authentication, live provider, or reviewer UI. Story 9.8 adds live providers below. Story 9.7 evidence is `automated_test`,
 including loopback socket-level WebSocket tests. See [docs/STREAMING.md](docs/STREAMING.md).
 
-No model-based vision, semantic document, speech recognition, speech synthesis, model-based
-reasoning, model token streaming, live-provider, or UI capability is implemented yet. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+**Story 9.8 (Secure Opt-In Live Providers) is complete, with accepted `live_integration` evidence.**
+OpenAI adapters for vision, speech-to-text, text-to-speech, and streamed reasoning sit behind the
+unchanged ports, reachable only from an explicit, opted-in live session with an ephemeral key.
+Deterministic tests exercise the real SDK over an in-process fake API (`automated_test`).
+Separately authorized real-provider verification established vision, speech-to-text, text-to-speech,
+model reasoning, and provider streaming (`live_integration`). See [docs/LIVE_PROVIDERS.md](docs/LIVE_PROVIDERS.md).
+
+Semantic document understanding and the Streamlit reviewer UI remain unverified or unimplemented.
+Module 9 is incomplete: Stories 9.9 and 9.10 are not started. Streamlit deployment, deployment
+verification, final production/security acceptance, and LinkedIn publication have not occurred. See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Documentation
 
@@ -75,6 +83,7 @@ reasoning, model token streaming, live-provider, or UI capability is implemented
 | [CROSS_MODAL.md](docs/CROSS_MODAL.md) | Story 9.5 cross-modal workflow, observations, bounded context, deterministic reasoning rules, records |
 | [VOICE_ASSISTANT.md](docs/VOICE_ASSISTANT.md) | Story 9.6 voice orchestration, conversation state and bounds, transaction semantics, conversation rules, records |
 | [STREAMING.md](docs/STREAMING.md) | Story 9.7 WebSocket gateway, streaming protocol, incremental streaming evidence, bounds, cancellation, latency metrics |
+| [LIVE_PROVIDERS.md](docs/LIVE_PROVIDERS.md) | Story 9.8 OpenAI live adapters, mode selection, ephemeral BYOK, redaction, failures, cost controls, evidence ladder, live acceptance |
 | [SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Threats and 26 security invariants |
 | [STORIES.md](docs/STORIES.md) | Stories 9.1 to 9.10 |
 | [DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Module completion criteria and quality gates |

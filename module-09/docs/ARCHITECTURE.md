@@ -25,8 +25,12 @@ which is not model inference; its turns are synchronous and stream nothing (see
 [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 adds streaming coordination (`streaming/`), the
 WebSocket streaming gateway and its loopback server (`interface/`), client messages and turn events
 in the streaming protocol, and an incremental reply port with a lazy rule-based adapter; its reply
-fragments are not model tokens (see [STREAMING.md](STREAMING.md)). No other runtime component
-below is implemented yet.
+fragments are not model tokens (see [STREAMING.md](STREAMING.md)). Story 9.8 adds the live
+adapters (`adapters/openai/`, OpenAI as the first live provider) behind the unchanged ports, the
+provider-neutral live core (`live/`, `contracts/live.py`), and explicit live bindings in the
+services; accepted real-provider evidence establishes vision, STT, TTS, model reasoning, and
+provider streaming without changing the frozen architecture (see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md)).
+No other runtime component below is implemented yet.
 
 ## Goal
 
@@ -206,7 +210,11 @@ module-09/
       fixture_data/                      committed conversation fixtures + manifest
     streaming/                           Story 9.7: streaming coordinator, limits, records
     interface/                           Story 9.7: WebSocket gateway (Starlette), loopback server (Uvicorn)
-    (adapters/live/, ui/)                later stories; not created yet
+    contracts/live.py                    Story 9.8: live call evidence and the live evidence ladder
+    live/                                Story 9.8: live config, credentials, bindings, redaction,
+                                         prompts, acceptance runner (provider-neutral)
+    adapters/openai/                     Story 9.8: OpenAI live adapters (provider-specific)
+    (ui/)                                Story 9.9; not created yet
   tests/                                 contract and governance tests
   docs/                                  requirements, architecture, ADRs, governance
 ```
@@ -221,5 +229,5 @@ These are implementation choices left to the owning story. They must fit the fro
 | Deterministic fixture formats and generation | 9.2 (decided: stdlib-generated PNG/WAV, plain text, Markdown; SHA-256 manifest) |
 | Image/document parsing libraries and magic-byte checks | 9.3 (decided: Pillow for PNG/JPEG/WebP, pypdf for PDF, stdlib Markdown/text parsing, stdlib magic-byte sniffing) |
 | Audio decoding library and sample formats | 9.4 (decided: standard library only; integer PCM WAV at 8/16/24/32 bits; MP3/WebM recognized but not decoded) |
-| Specific live providers and models | 9.8 |
+| Specific live providers and models | 9.8 (decided: OpenAI first, behind provider-neutral ports; Responses API for vision and reasoning, audio transcriptions and speech APIs; models configurable) |
 | Deployment target and packaging | 9.10 |

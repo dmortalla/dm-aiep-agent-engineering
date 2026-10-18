@@ -23,8 +23,14 @@ generation (not speech synthesis), and nothing is streamed (see
 gateway exercised over a loopback socket, and partially implements SRC-008, SRC-010, SRC-012,
 SRC-016, ENG-006, ENG-007, and ENG-008 with incremental streaming of rule-based reply fragments
 (not model tokens), measured stage and first-response latency, and transport bounds (see
-[STREAMING.md](STREAMING.md)). SRC-011 is the only requirement fully implemented; reviewer-visible
-presentation remains Story 9.9. Every other requirement is designed only.
+[STREAMING.md](STREAMING.md)). SRC-011 and ENG-002 are implemented. ENG-002's explicit opt-in, secure ephemeral BYOK contract is
+supported by deterministic security tests and accepted real-provider execution. Story 9.8 adds
+accepted live vision, STT, TTS, model reasoning, provider streaming, and one live voice turn.
+Source statuses remain partial where required reviewer demonstrations or final acceptance remain;
+SRC-006 additionally lacks genuine partial transcripts. SRC-012 has measured provider latency,
+not a production SLO. SRC-018 is partial because the platform core exists, but UI and production
+acceptance remain. Other designed requirements remain designed. Stories 9.9 and 9.10 are not
+started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).
 
 ## Source-derived requirements
 

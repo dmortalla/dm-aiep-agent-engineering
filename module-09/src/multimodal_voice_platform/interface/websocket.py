@@ -134,19 +134,26 @@ class GatewaySettings(BaseModel):
     @field_validator("evidence_class")
     @classmethod
     def validate_evidence(cls, value: EvidenceClass) -> EvidenceClass:
-        """Allow only the deterministic evidence classes voice turns may produce.
+        """Allow runtime evidence classes supported by streamed voice turns.
+
+        Live evidence is permitted at this interface boundary because the streaming
+        coordinator independently requires an explicitly live session and validates
+        the requested evidence class against its live provider binding.
 
         Args:
             value: Configured evidence class.
 
         Returns:
-            The unchanged class.
+            The unchanged runtime evidence class.
 
         Raises:
-            ValueError: If the class is not ``automated_test`` or ``deterministic_demo``.
+            ValueError: If the class is not valid runtime evidence.
         """
-        if value not in VOICE_EVIDENCE_CLASSES:
-            raise ValueError("streamed turns produce only deterministic evidence")
+        if value not in {
+            *VOICE_EVIDENCE_CLASSES,
+            EvidenceClass.LIVE_INTEGRATION,
+        }:
+            raise ValueError("streamed turns require runtime evidence")
         return value
 
 

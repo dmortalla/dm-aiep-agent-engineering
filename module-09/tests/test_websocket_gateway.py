@@ -27,6 +27,7 @@ from stream_builders import (
 )
 from voice_builders import REASONER_DOUBLE, TONE_WAV
 
+from multimodal_voice_platform.contracts.evidence import EvidenceClass
 from multimodal_voice_platform.contracts.providers import ReasoningChunk, ReasoningRequest
 from multimodal_voice_platform.contracts.streaming import parse_stream_event
 from multimodal_voice_platform.streaming import StreamingLimits
@@ -559,8 +560,10 @@ def test_gateway_settings_validate_origins_and_evidence() -> None:
     for bad in ("*", "https://*.example", "HTTPS://A.EXAMPLE", "file:///etc", "https://a/b"):
         with pytest.raises(ValueError):
             GatewaySettings(allowed_origins=frozenset({bad}))
-    with pytest.raises(ValueError):
-        GatewaySettings(evidence_class="live_integration")
+    assert (
+        GatewaySettings(evidence_class="live_integration").evidence_class
+        is EvidenceClass.LIVE_INTEGRATION
+    )
 
 
 # --- Security: injection, sanitization, no secrets -----------------------------------------------

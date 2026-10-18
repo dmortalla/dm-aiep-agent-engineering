@@ -175,15 +175,24 @@ class _Conversation:
 class ConversationStore:
     """In-memory, bounded conversations keyed by session ID. Owned by application code."""
 
-    def __init__(self, limits: VoiceLimits, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        limits: VoiceLimits,
+        clock: Callable[[], float] = time.monotonic,
+        *,
+        allow_live: bool = False,
+    ) -> None:
         """Create the store.
 
         Args:
             limits: Conversation bounds from application configuration.
             clock: Monotonic clock in seconds, used for session timeouts.
+            allow_live: Whether the owning assistant has live adapters (Story 9.8). Without them,
+                live sessions are refused.
         """
         self.limits = limits
         self._clock = clock
+        self._allow_live = allow_live
         self._sessions: dict[str, _Conversation] = {}
 
     def open(self, config: SessionConfig) -> ConversationSnapshot:
@@ -200,7 +209,7 @@ class ConversationStore:
             DuplicateSessionError: If the session is already active.
             ConversationLimitError: If the active-session bound is reached.
         """
-        if config.mode is not ExecutionMode.DETERMINISTIC:
+        if config.mode is not ExecutionMode.DETERMINISTIC and not self._allow_live:
             raise LiveVoiceUnavailableError(
                 "live voice providers are not available; use deterministic mode"
             )
@@ -244,6 +253,20 @@ class ConversationStore:
             UnknownSessionError: If no such session is active.
         """
         return self._snapshot(self._get(session_id), SessionStatus.ACTIVE)
+
+    def session_config(self, session_id: str) -> SessionConfig:
+        """Return the application-owned configuration bound to an active session.
+
+        Args:
+            session_id: The session.
+
+        Returns:
+            Its configuration, including any ephemeral live credential (never serialized).
+
+        Raises:
+            UnknownSessionError: If no such session is active.
+        """
+        return self._get(session_id).config
 
     @property
     def active_sessions(self) -> int:

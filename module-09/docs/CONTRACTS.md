@@ -16,7 +16,10 @@ port for voice turns, and implements the port with a deterministic conversation 
 [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md)). Story 9.7 extends `streaming.py` within protocol version 1
 (client messages, `turn_accepted`, `turn_complete`, `turn_id`, metric `measure`, audio digest) and
 `conversation.py` (`ReplyFragment`, `IncrementalReplyPort`), and adds five latency stages (see
-[STREAMING.md](STREAMING.md)). No live provider exists yet.
+[STREAMING.md](STREAMING.md)). Story 9.8 adds `live.py` (`LiveCall`, `ProviderUsage`, the live
+evidence ladder) and four provider error codes (`provider_authentication_failed`,
+`provider_permission_denied`, `provider_rate_limited`, `provider_refused`); live adapters implement
+the existing ports unchanged (see [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md)).
 
 | Module | Boundary | Key types | ADRs |
 |---|---|---|---|
@@ -28,6 +31,7 @@ port for voice turns, and implements the port with a deterministic conversation 
 | `evidence.py` | Evidence | `EvidenceClass`, `EvidenceRecord` | 009 |
 | `errors.py` | Safe errors | `ErrorCode`, `SafeError`, `Module9Error`, `StreamProtocolError` | 005, 007 |
 | `reasoning.py` | Structured reasoning I/O (Story 9.5) | `ObservationView`, `ObservedFact`, `Statement`, `FactOrigin`, `CrossModalFinding`, `FindingKind`, `ReasonerOutput` | 003, 006, 007 |
+| `live.py` | Live call evidence (Story 9.8) | `LiveCall`, `ProviderUsage`, `LiveCapability`, `live_evidence`, `check_live_evidence` | 004, 008, 009 |
 | `conversation.py` | Structured voice reply (Story 9.6); incremental reply (Story 9.7) | `AssistantReply`, `ReplyAct`, `ReplyActKind`, `ReplyFragment`, `IncrementalReplyPort` | 003, 007 |
 
 ## Modality contract
@@ -94,7 +98,7 @@ integer PCM WAV is decoded.
 
 - `ExecutionMode.DETERMINISTIC` is the default.
 - `LIVE` requires `live_opt_in=True`, a `LiveCredential`, and a provider in
-  `allowed_live_providers` (empty by default, so live fails closed until Story 9.8 configures it).
+  `allowed_live_providers` (empty by default; explicit Story 9.8 live sessions configure it).
 - Deterministic sessions reject credentials and opt-in flags, so a credential alone never selects
   live mode.
 - `LiveCredential.api_key` is a `SecretStr`. `SessionConfig.credential` is excluded from
@@ -225,3 +229,14 @@ request timeout cannot exceed the session timeout.
 See [EVIDENCE_POLICY.md](EVIDENCE_POLICY.md). `EvidenceRecord` ties each claim to a story, its
 requirement IDs, an evidence class, runtime and live flags, and the execution mode, and rejects
 contradictions.
+
+## Story 9.8 accepted contract evidence
+
+Accepted real-provider vision, STT, TTS, reasoning, and streaming evidence is `live_integration`;
+SDK execution over fake transport remains `automated_test`. Explicit opt-in ephemeral BYOK, fixed
+provider endpoint allowlisting, redaction, zero automatic live retries, bounded calls/tokens/time,
+and no deterministic fallback remain enforced. Provider/model output is untrusted and grants no
+authority. Pydantic and provenance validation remain fail-closed, including literal whole-word,
+case-insensitive shared-term membership in each cited observation's statement text; fewer than
+two qualifying terms means omitting `shared_concepts`. This evidence does not complete UI or
+production acceptance. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).

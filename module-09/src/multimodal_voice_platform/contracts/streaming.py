@@ -216,10 +216,12 @@ class TurnComplete(_StreamEventBase):
             raise ValueError("a rejected or failed turn names its failed stage")
         if self.evidence_class in {
             EvidenceClass.DESIGN_DOCUMENTATION,
-            EvidenceClass.LIVE_INTEGRATION,
             EvidenceClass.DEPLOYMENT_RELEASE,
         }:
-            raise ValueError("streamed turns carry deterministic runtime evidence only")
+            raise ValueError("streamed turns carry runtime evidence only")
+        live_class = self.evidence_class is EvidenceClass.LIVE_INTEGRATION
+        if live_class and self.execution_mode is not ExecutionMode.LIVE:
+            raise ValueError("live_integration turns ran in live execution mode")
         return self
 
 

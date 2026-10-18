@@ -5,16 +5,27 @@ Story 9.3 or 9.4 record), the normalized observations, the bounded context, whic
 ran and what kind of reasoning it performs, every finding with its citations, the derived
 conclusion, stage timings, and the safe failure, with an ``EvidenceRecord``. Reasoning kinds are
 explicit so that deterministic rule-based inference is never mistaken for model inference.
-``model_inference_performed`` and ``live_provider_called`` are always ``False`` in Story 9.5.
+``model_inference_performed`` and ``live_provider_called`` are ``False`` for deterministic runs.
+Story 9.8 live runs may use a live reasoning model (``model_inference``) or a contract test double
+over a test transport; they report every provider call made by the reasoning adapter in
+``live_calls`` (embedded Story 9.3 and 9.4 records report their own), and their evidence follows
+the live evidence ladder in ``contracts.live``.
 """
 
 from enum import StrEnum
-from typing import Final, Literal, Self
+from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from multimodal_voice_platform.contracts.errors import SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
+from multimodal_voice_platform.contracts.live import (
+    LIVE_STORY,
+    MAX_LIVE_CALLS,
+    LiveCall,
+    check_live_evidence,
+    real_call_made,
+)
 from multimodal_voice_platform.contracts.modality import Identifier, Modality, ModalityInput
 from multimodal_voice_platform.contracts.providers import ProviderDescriptor, ProviderPort
 from multimodal_voice_platform.contracts.reasoning import CrossModalFinding
@@ -41,7 +52,11 @@ class ReasoningKind(StrEnum):
 
 
 RESERVED_REASONING_KINDS: Final = frozenset({ReasoningKind.MODEL_INFERENCE})
-"""Model-based reasoning. Not implemented; reserved for the live-provider story (9.8)."""
+"""Model-based reasoning. Deterministic bindings refuse it; only a 9.8 live binding runs it."""
+LIVE_REASONING_KINDS: Final = frozenset(
+    {ReasoningKind.MODEL_INFERENCE, ReasoningKind.PROVIDER_CONTRACT_TEST_DOUBLE}
+)
+"""What a live reasoning adapter may be recorded as: a real model, or a contract test double."""
 
 
 class CrossModalStage(StrEnum):
@@ -138,8 +153,9 @@ class CrossModalRecord(BaseModel):
     context: ContextStats | None = None
     reasoning_provider: ProviderDescriptor | None = None
     reasoning_kind: ReasoningKind | None = None
-    model_inference_performed: Literal[False] = False
-    live_provider_called: Literal[False] = False
+    model_inference_performed: bool = False
+    live_provider_called: bool = False
+    live_calls: tuple[LiveCall, ...] = Field(default=(), max_length=MAX_LIVE_CALLS)
     findings: tuple[CrossModalFinding, ...] = ()
     conclusion: CrossModalConclusion | None = None
     timings: tuple[CrossModalTiming, ...] = Field(default=(), max_length=len(CrossModalStage))
@@ -176,17 +192,48 @@ class CrossModalRecord(BaseModel):
         self._validate_evidence()
         return self
 
+    def all_live_calls(self) -> tuple[LiveCall, ...]:
+        """Every provider call of the run: the reasoning adapter's and the embedded records'.
+
+        Returns:
+            The calls, reasoning calls first.
+        """
+        embedded = [
+            call
+            for outcome in self.outcomes
+            for record in (outcome.understanding, outcome.speech)
+            if record is not None
+            for call in record.live_calls
+        ]
+        return (*self.live_calls, *embedded)
+
     def _validate_reasoning(self) -> None:
         if (self.reasoning_provider is None) != (self.reasoning_kind is None):
             raise ValueError("records name their reasoning provider and its reasoning kind")
-        if self.reasoning_kind in RESERVED_REASONING_KINDS:
-            raise ValueError("model-based reasoning is not implemented in Story 9.5")
-        provider = self.reasoning_provider
-        if provider is not None and (
-            provider.port is not ProviderPort.REASONING
-            or provider.mode is not ExecutionMode.DETERMINISTIC
+        live = self.evidence.story == LIVE_STORY
+        if self.live_calls and not live:
+            raise ValueError("only live runs report provider calls")
+        if self.live_provider_called != real_call_made(self.all_live_calls()):
+            raise ValueError("live_provider_called must match the reported provider calls")
+        if self.model_inference_performed != (
+            self.reasoning_kind is ReasoningKind.MODEL_INFERENCE
         ):
-            raise ValueError("Story 9.5 reasoning providers are deterministic reasoning adapters")
+            raise ValueError("model_inference_performed must match the reasoning kind")
+        provider = self.reasoning_provider
+        if provider is None:
+            return
+        if provider.port is not ProviderPort.REASONING:
+            raise ValueError("records name a reasoning adapter")
+        if provider.mode is ExecutionMode.LIVE:
+            if not live or self.reasoning_kind not in LIVE_REASONING_KINDS:
+                raise ValueError("live reasoning adapters run in live Story 9.8 runs only")
+        elif live:
+            raise ValueError("live Story 9.8 runs reason through a live reasoning adapter")
+        elif self.reasoning_kind in RESERVED_REASONING_KINDS:
+            raise ValueError("model-based reasoning needs a live reasoning adapter")
+        model = self.reasoning_kind is ReasoningKind.MODEL_INFERENCE
+        if any(call.real_endpoint != model for call in self.live_calls):
+            raise ValueError("real reasoning calls are exactly the model-backed reasoning calls")
 
     def _validate_success(self, ids: set[str]) -> None:
         if self.error is not None or self.failed_stage is not None:
@@ -203,6 +250,9 @@ class CrossModalRecord(BaseModel):
 
     def _validate_evidence(self) -> None:
         evidence = self.evidence
+        if evidence.story == LIVE_STORY:
+            check_live_evidence(evidence, self.all_live_calls())
+            return
         if evidence.evidence_class not in CROSS_MODAL_EVIDENCE_CLASSES:
             raise ValueError("cross-modal records allow only deterministic evidence classes")
         if evidence.execution_mode is not ExecutionMode.DETERMINISTIC:

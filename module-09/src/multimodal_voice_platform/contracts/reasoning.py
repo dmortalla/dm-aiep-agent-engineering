@@ -58,13 +58,24 @@ FACT_ORIGINS: Final = frozenset({FactOrigin.LOCAL_MEASUREMENT, FactOrigin.LOCAL_
 
 STATEMENT_ORIGINS: Final = {
     Modality.TEXT: frozenset({FactOrigin.USER_PROVIDED}),
-    Modality.IMAGE: frozenset(),
+    Modality.IMAGE: frozenset(
+        {FactOrigin.MODEL_INFERENCE, FactOrigin.PROVIDER_CONTRACT_TEST_DOUBLE}
+    ),
     Modality.DOCUMENT: frozenset({FactOrigin.LOCAL_EXTRACTION}),
     Modality.AUDIO: frozenset(
-        {FactOrigin.FIXTURE_PLAYBACK, FactOrigin.PROVIDER_CONTRACT_TEST_DOUBLE}
+        {
+            FactOrigin.FIXTURE_PLAYBACK,
+            FactOrigin.PROVIDER_CONTRACT_TEST_DOUBLE,
+            FactOrigin.MODEL_INFERENCE,
+        }
     ),
 }
-"""Statement origins each modality can produce in Story 9.5. Model inference is not one of them."""
+"""Statement origins each modality can produce.
+
+Story 9.5 produced none for images and only fixture playback or test doubles for audio. Story 9.8
+adds statements from live models: an image's model interpretation and a recognized transcript,
+labeled ``model_inference`` (or ``provider_contract_test_double`` over a test transport). Facts
+stay local measurements and extractions only: a model never produces a fact."""
 
 
 class ObservedFact(BaseModel):

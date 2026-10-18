@@ -26,13 +26,14 @@ Rules, enforced by `EvidenceRecord` in `contracts/evidence.py`:
 | Activation | Always available | `live_opt_in=True` plus a user-supplied credential |
 | Network | None | Allowlisted providers only |
 | Cost | None | Bounded by `ResourceBudget` |
-| Evidence | `automated_test`, `deterministic_demo` | `live_integration` |
+| Evidence | `automated_test`, `deterministic_demo` | `live_integration` for real execution; `automated_test` for contract test doubles |
 
 ## Reviewer-visible results invariant
 
 Every material capability must ultimately show its real output in the Streamlit UI, labeled with
 its execution mode and evidence class, next to concise guidance on how to run it and what the
-result demonstrates (ADR-009-009). A capability without reviewer-visible evidence is not done.
+result demonstrates (ADR-009-009). Module completion requires this reviewer-visible evidence. Backend story completion does not
+imply that Story 9.9 UI acceptance is complete.
 
 ## Story 9.1 classification
 
@@ -83,7 +84,7 @@ Each class of Story 9.4 behavior is kept distinct:
 | Fixture-playback transcript | Deterministic pipeline evidence; not speech recognition |
 | Tone-sequence audio | Real deterministic audio generation; not speech synthesis |
 | Provider-contract test doubles | Port-boundary and failure-handling evidence only (`automated_test`) |
-| External STT or TTS provider | None yet; would be `live_integration` (Story 9.8) |
+| External STT or TTS provider | Outside Story 9.4; accepted `live_integration` in Story 9.8 |
 
 Records name their processing kinds and reject `speech_recognition` and `speech_synthesis`. This
 evidence partially supports SRC-003, SRC-006, SRC-007, and ENG-006. See
@@ -102,7 +103,7 @@ class.
 | Fixture-playback transcript | Deterministic fixture evidence; not speech recognition |
 | Rule-based cross-modal inference | Genuine deterministic cross-modal reasoning evidence; not model inference |
 | Reasoning provider-contract test doubles | Provider-contract evidence only (`automated_test`) |
-| External reasoning model | None yet; would be `live_integration` (Story 9.8) |
+| External reasoning model | Outside Story 9.5; accepted `live_integration` in Story 9.8 |
 
 Records name their reasoning kind (`deterministic_rule_inference` or
 `provider_contract_test_double`) and reject `model_inference`. This evidence partially supports
@@ -125,7 +126,7 @@ test-double provider may only be `automated_test`.
 | Rule-based conversation reasoning | Deterministic rule-based reasoning; not model inference |
 | Tone-sequence output audio | Deterministic audio generation; not speech synthesis |
 | Stage and end-to-end timings | Local measurements of deterministic adapters; not production latency or real-time streaming |
-| External STT, reasoning, or TTS provider | None yet; would be `live_integration` (Story 9.8) |
+| External STT, reasoning, or TTS provider | Outside Story 9.6; accepted live voice-turn evidence in Story 9.8 |
 
 Records state `speech_recognition_performed`, `speech_synthesis_performed`,
 `model_inference_performed`, `live_provider_called`, and `streaming_performed` as `False`. This
@@ -145,9 +146,31 @@ distinct:
 | Rule-based reply fragments | Deterministic incremental streaming; not model tokens and not model inference |
 | Fixture-playback transcript, tone-sequence audio | Not speech recognition; not speech synthesis |
 | Latency metrics | Local measurements of deterministic adapters; not production or provider latency |
-| External streaming provider | None yet; would be `live_integration` (Story 9.8) |
+| External streaming provider | Outside Story 9.7; accepted `live_integration` in Story 9.8 |
 
 Streamed `VoiceTurnRecord`s set `streaming_performed` and must carry Story 9.7 evidence; the server
 records `deterministic_demo` for reviewer runs and tests record `automated_test`. This evidence
 implements SRC-011 and partially supports SRC-008, SRC-010, SRC-012, SRC-016, ENG-006, ENG-007, and
 ENG-008. See [STREAMING.md](STREAMING.md).
+
+## Story 9.8 classification
+
+Story 9.8 has completed **`automated_test` and accepted `live_integration` evidence**.
+The deterministic tests below remain separate from the real-provider verification. The real OpenAI SDK and the real adapters run
+against an in-process fake API, so request construction, parsing, streaming translation, failure
+translation, and redaction are exercised, but no real provider is called. The live evidence ladder
+(`contracts/live.py`) is enforced by every live-mode record:
+
+| What ran | Evidence class |
+|---|---|
+| A call reached the real provider endpoint | `live_integration` |
+| Live adapters over a contract test double | `automated_test` (live execution mode) |
+| Live session rejected before any provider call | `deterministic_demo` or `automated_test` (deterministic execution mode) |
+
+A binding that claims the real endpoint is checked against its adapter, so mocked execution can
+never be `live_integration`. Accepted live verification established A vision, B STT, C model
+reasoning, D TTS, and E provider streaming, including one live voice turn. The final C-only run
+succeeded with real-endpoint vision and streamed reasoning (237 provider output events).
+Original evidence remains outside the repository under `TECHADEMY/EVIDENCE`; no sensitive live
+payloads are copied into documentation. Measurements are not production latency SLOs.
+Stories 9.9 and 9.10 are not started; Module 9 is incomplete. See [LIVE_PROVIDERS.md](LIVE_PROVIDERS.md).

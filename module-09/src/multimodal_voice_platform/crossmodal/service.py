@@ -30,7 +30,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Final, Self
+from typing import Any, Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -41,6 +41,12 @@ from multimodal_voice_platform.adapters.reasoning.rule_reasoner import (
 from multimodal_voice_platform.contracts.errors import ErrorCode, Module9Error, SafeError
 from multimodal_voice_platform.contracts.evidence import EvidenceClass, EvidenceRecord
 from multimodal_voice_platform.contracts.limits import MAX_TEXT_CHARS
+from multimodal_voice_platform.contracts.live import (
+    LiveCall,
+    calls_of,
+    live_evidence,
+    real_call_made,
+)
 from multimodal_voice_platform.contracts.modality import Modality, ModalityInput
 from multimodal_voice_platform.contracts.providers import (
     ProviderDescriptor,
@@ -90,6 +96,8 @@ from multimodal_voice_platform.crossmodal.records import (
     ReasoningKind,
 )
 from multimodal_voice_platform.ingestion.errors import IngestionError
+from multimodal_voice_platform.live.bindings import LiveBinding
+from multimodal_voice_platform.live.credentials import session_credential
 from multimodal_voice_platform.speech.errors import SpeechConfigurationError
 from multimodal_voice_platform.speech.records import SpeechRecord, SpeechStatus
 from multimodal_voice_platform.speech.service import SpeechService
@@ -123,6 +131,11 @@ _KIND_NOTES: Final = {
     ),
 }
 _NO_LIVE: Final = "No language or multimodal model, live provider, network, or credential was used."
+_LIVE_KIND_NOTES: Final = {
+    ReasoningKind.MODEL_INFERENCE: (
+        "Live model reasoning; every cited statement and fact was checked by the application."
+    ),
+}
 _OUTCOME_STATUS: Final = {
     UnderstandingStatus.SUCCEEDED: OutcomeStatus.PROCESSED,
     UnderstandingStatus.REJECTED: OutcomeStatus.REJECTED,
@@ -249,6 +262,7 @@ class CrossModalWorkflow:
         reasoning: ReasoningBinding | None = None,
         understanding: UnderstandingService | None = None,
         speech: SpeechService | None = None,
+        live_reasoning: LiveBinding[Any] | None = None,
     ) -> None:
         """Create the workflow.
 
@@ -259,6 +273,9 @@ class CrossModalWorkflow:
             reasoning: Reasoning binding. Defaults to the deterministic rule-based reasoner.
             understanding: Image and document service. Defaults to the Story 9.3 service.
             speech: Audio service. Defaults to the Story 9.4 service (fixture-playback STT).
+            live_reasoning: Live reasoning binding (Story 9.8), ``factory(credential)``. Without
+                it, live sessions are refused. Live runs also need live-capable understanding and
+                speech services for the modalities they process.
 
         Raises:
             FixtureIntegrityError: If the default catalog fails verification.
@@ -272,6 +289,7 @@ class CrossModalWorkflow:
             factory=lambda: DeterministicCrossModalReasoner(max_findings=max_findings),
             processing=ReasoningKind.DETERMINISTIC_RULE_INFERENCE,
         )
+        self._live_reasoning = live_reasoning
         self._runs = 0
 
     async def run(
@@ -294,19 +312,30 @@ class CrossModalWorkflow:
         Raises:
             CrossModalConfigurationError: If the evidence class or reasoning wiring is invalid.
         """
-        binding = self._reasoning
-        self._check_evidence_class(evidence_class, binding.processing)
-        provider = binding.factory()
+        live_binding = self._live_reasoning if session.mode is ExecutionMode.LIVE else None
+        if live_binding is not None:
+            live_binding.check_requested(evidence_class)
+            provider = live_binding.build(session_credential(session))
+            kind = (
+                ReasoningKind.MODEL_INFERENCE
+                if live_binding.real
+                else ReasoningKind.PROVIDER_CONTRACT_TEST_DOUBLE
+            )
+        else:
+            binding = self._reasoning
+            self._check_evidence_class(evidence_class, binding.processing)
+            provider = binding.factory()
+            kind = binding.processing
+        live = live_binding is not None
         descriptor = provider.descriptor
-        if descriptor.port is not ProviderPort.REASONING or (
-            descriptor.mode is not ExecutionMode.DETERMINISTIC
-        ):
-            raise CrossModalConfigurationError("the reasoning adapter must be deterministic")
+        expected_mode = ExecutionMode.LIVE if live else ExecutionMode.DETERMINISTIC
+        if descriptor.port is not ProviderPort.REASONING or descriptor.mode is not expected_mode:
+            raise CrossModalConfigurationError(f"the reasoning adapter must be {expected_mode}")
         run = _Run()
         started = time.perf_counter()
         try:
             run.begin(CrossModalStage.VALIDATION)
-            if session.mode is not ExecutionMode.DETERMINISTIC:
+            if session.mode is not ExecutionMode.DETERMINISTIC and not live:
                 raise LiveReasoningUnavailableError(
                     "live reasoning providers are not available; use deterministic mode"
                 )
@@ -344,12 +373,22 @@ class CrossModalWorkflow:
             run.timings.append(
                 CrossModalTiming(stage=CrossModalStage.END_TO_END, duration_ms=_elapsed(started))
             )
-            return self._unsuccessful(session, run, exc, evidence_class)
+            return self._unsuccessful(
+                session, run, exc, evidence_class, live, calls_of(provider)
+            )
         run.timings.append(
             CrossModalTiming(stage=CrossModalStage.END_TO_END, duration_ms=_elapsed(started))
         )
         return self._succeeded(
-            session, run, descriptor, binding.processing, findings, conclusion, evidence_class
+            session,
+            run,
+            descriptor,
+            kind,
+            findings,
+            conclusion,
+            evidence_class,
+            live,
+            calls_of(provider),
         )
 
     @staticmethod
@@ -494,6 +533,8 @@ class CrossModalWorkflow:
         findings: tuple[CrossModalFinding, ...],
         conclusion: CrossModalConclusion,
         evidence_class: EvidenceClass,
+        live: bool = False,
+        calls: tuple[LiveCall, ...] = (),
     ) -> CrossModalRecord:
         partial = any(o.status is not OutcomeStatus.PROCESSED for o in run.outcomes)
         status = CrossModalStatus.PARTIAL if partial else CrossModalStatus.SUCCEEDED
@@ -507,7 +548,8 @@ class CrossModalWorkflow:
             f"{context.context_chars if context else 0} characters, and {descriptor.provider_id} "
             f"({kind}) produced {len(findings)} cited findings, {conclusion.cross_modal_findings} "
             f"relating two or more modalities; conclusion {conclusion.consistency}. "
-            f"{_KIND_NOTES[kind]} {_NO_LIVE}"
+            f"{_LIVE_KIND_NOTES.get(kind) or _KIND_NOTES[kind]} "
+            f"{_mode_note(live, _all_calls(run, calls))}"
         )
         return CrossModalRecord(
             record_id=record_id,
@@ -521,7 +563,10 @@ class CrossModalWorkflow:
             findings=findings,
             conclusion=conclusion,
             timings=tuple(run.timings),
-            evidence=_evidence(record_id, evidence_class, summary),
+            model_inference_performed=kind is ReasoningKind.MODEL_INFERENCE,
+            live_provider_called=real_call_made(_all_calls(run, calls)),
+            live_calls=calls,
+            evidence=_evidence(record_id, evidence_class, summary, live, _all_calls(run, calls)),
         )
 
     def _unsuccessful(
@@ -530,6 +575,8 @@ class CrossModalWorkflow:
         run: _Run,
         error: Module9Error,
         evidence_class: EvidenceClass,
+        live: bool = False,
+        calls: tuple[LiveCall, ...] = (),
     ) -> CrossModalRecord:
         failed = error.code in _FAILED_CODES
         status = CrossModalStatus.FAILED if failed else CrossModalStatus.REJECTED
@@ -545,11 +592,15 @@ class CrossModalWorkflow:
             timings=tuple(run.timings),
             failed_stage=run.stage,
             error=safe,
+            live_provider_called=real_call_made(_all_calls(run, calls)),
+            live_calls=calls,
             evidence=_evidence(
                 record_id,
                 evidence_class,
                 f"Cross-modal workflow {status} safely at the {run.stage} stage with code "
-                f"{safe.code}. {_NO_LIVE}",
+                f"{safe.code}. {_mode_note(live, _all_calls(run, calls))}",
+                live,
+                _all_calls(run, calls),
             ),
         )
 
@@ -622,7 +673,43 @@ def _elapsed(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 3)
 
 
-def _evidence(record_id: str, evidence_class: EvidenceClass, summary: str) -> EvidenceRecord:
+def _all_calls(run: _Run, calls: tuple[LiveCall, ...]) -> tuple[LiveCall, ...]:
+    embedded = [
+        call
+        for outcome in run.outcomes
+        for record in (outcome.understanding, outcome.speech)
+        if record is not None
+        for call in record.live_calls
+    ]
+    return (*calls, *embedded)
+
+
+def _mode_note(live: bool, calls: tuple[LiveCall, ...]) -> str:
+    if not live:
+        return _NO_LIVE
+    real = sum(call.real_endpoint for call in calls)
+    if real:
+        return f"Live mode: {real} call(s) to the real provider endpoint; no credential recorded."
+    if calls:
+        return "Live mode over provider contract test doubles; no real provider was called."
+    return "Live mode, but no provider call was made; only local processing ran."
+
+
+def _evidence(
+    record_id: str,
+    evidence_class: EvidenceClass,
+    summary: str,
+    live: bool = False,
+    calls: tuple[LiveCall, ...] = (),
+) -> EvidenceRecord:
+    if live:
+        return live_evidence(
+            evidence_id=f"ev-9-8-{record_id}",
+            requested=evidence_class,
+            calls=calls,
+            requirement_ids=_REQUIREMENTS,
+            summary=summary,
+        )
     return EvidenceRecord(
         evidence_id=f"ev-9-5-{record_id}",
         evidence_class=evidence_class,
