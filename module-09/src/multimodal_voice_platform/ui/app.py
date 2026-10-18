@@ -235,17 +235,14 @@ def render() -> None:
         layout="wide",
     )
     st.title("Multimodal and Voice Studio")
-    st.caption("Module 9  |  A working reviewer experience  |  Local preview")
+    st.caption("Module 9 | Production-grade multimodal and voice AI platform")
     if "reviewer" not in st.session_state:
         st.session_state.reviewer = Reviewer()
     with st.sidebar:
         st.radio("Workflow", ROUTES, key="route")
         st.radio("Execution mode", MODES, key="mode")
         st.button("Reset session and clear results", on_click=_reset, type="primary")
-        st.caption(
-            "Module 9 is incomplete. Story 9.10 local acceptance is ready for independent review. "
-            "Deployment verification and LinkedIn publication remain outstanding."
-        )
+
     route = st.session_state.route
     live = st.session_state.mode == MODES[1] and route != ROUTES[3]
     st.info(

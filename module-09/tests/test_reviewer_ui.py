@@ -74,7 +74,10 @@ def test_launch_is_no_key_default_and_rerender_never_executes(
     assert not test.text_input
     assert not calls
     assert "result" not in test.session_state
-    assert "Story 9.10" in " ".join(c.value for c in test.caption)
+    captions = " ".join(c.value for c in test.caption)
+    assert "Module 9 | Production-grade multimodal and voice AI platform" in captions
+    assert "Story 9.10" not in captions
+    assert "Local preview" not in captions
 
 
 def test_multimodal_sample_renders_authoritative_observations_and_evidence() -> None:
