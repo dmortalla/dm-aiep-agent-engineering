@@ -10,6 +10,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     # REQ-SEC-010 / ADR-007-011: guardrails-ai 0.10.1 is explicitly excluded.
     "guardrails-ai>=0.11,<0.12,!=0.10.1",
+    # Story 5 explicitly owns the HTTP resource supplied to public LangfuseAPI.
+    "httpx>=0.28,<1",
+    "langfuse>=4.17,<5",
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.6,<3",
 ]
@@ -28,6 +31,9 @@ packages = ["src/reliability_safety_observability"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-config --strict-markers"
+markers = [
+    "live_vendor: opt-in live vendor verification; skipped unless explicitly enabled",
+]
 
 [tool.ruff]
 target-version = "py312"
