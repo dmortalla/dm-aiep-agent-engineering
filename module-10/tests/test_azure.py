@@ -6,6 +6,7 @@ import io
 import json
 import subprocess
 import sys
+from itertools import permutations
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -1018,3 +1019,86 @@ def test_diagnosed_registry_and_dapr_combination() -> None:
                                       passwordSecretRef=None, username=None)
     settings["dapr"] = None
     assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+PROBE_ORDERS = list(permutations(range(3)))
+
+
+@pytest.mark.parametrize("app_order", PROBE_ORDERS)
+@pytest.mark.parametrize("revision_order", PROBE_ORDERS)
+def test_probe_order_permutations(app_order: tuple[int, ...],
+                                  revision_order: tuple[int, ...]) -> None:
+    """Every independent app/revision probe order passes without mutating observations."""
+    state = observed()
+    templates = [state["app"]["properties"]["template"],
+                 state["revisions"][0]["properties"]["template"]]
+    for template, order in zip(templates, (app_order, revision_order), strict=True):
+        probes = template["containers"][0]["probes"]
+        template["containers"][0]["probes"] = [probes[i] for i in order]
+    original = copy.deepcopy(state)
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert state == original
+
+
+@pytest.mark.parametrize("target", ["app", "revision", "both"])
+@pytest.mark.parametrize("damage", [
+    "missing-0", "missing-1", "missing-2", "duplicate-0", "duplicate-1", "duplicate-2",
+    "fourth", "unknown", "entry-null", "entry-list", "entry-scalar", "entry-empty",
+    "type-list", "type-absent", "type-null", "absent", "null", "mapping", "scalar",
+    "path", "port", "scheme", "initialDelaySeconds", "periodSeconds", "timeoutSeconds",
+    "failureThreshold", "successThreshold", "extra", "boolean-threshold",
+])
+def test_probe_order_security_boundaries(target: str, damage: str) -> None:
+    """Order compatibility preserves exact probe cardinality, fields, values and types."""
+    state = observed()
+    templates = []
+    if target in ("app", "both"):
+        templates.append(state["app"]["properties"]["template"])
+    if target in ("revision", "both"):
+        templates.append(state["revisions"][0]["properties"]["template"])
+    for template in templates:
+        item = template["containers"][0]
+        probes = item["probes"]
+        if damage.startswith("missing-"):
+            del probes[int(damage[-1])]
+        elif damage.startswith("duplicate-"):
+            index = int(damage[-1])
+            probes[(index + 1) % 3] = copy.deepcopy(probes[index])
+        elif damage == "fourth":
+            probes.append({"type": "Unexpected"})
+        elif damage == "unknown":
+            probes[0]["type"] = "Unexpected"
+        elif damage.startswith("entry-"):
+            probes[0] = {"entry-null": None, "entry-list": [], "entry-scalar": "Startup",
+                         "entry-empty": {}}[damage]
+        elif damage == "type-list":
+            probes[0]["type"] = []
+        elif damage == "type-null":
+            probes[0]["type"] = None
+        elif damage == "type-absent":
+            del probes[0]["type"]
+        elif damage == "absent":
+            del item["probes"]
+        elif damage in ("null", "mapping", "scalar"):
+            item["probes"] = {"null": None, "mapping": {}, "scalar": "Startup"}[damage]
+        elif damage in ("path", "port", "scheme"):
+            probes[0]["httpGet"][damage] = {"path": "/unapproved", "port": 9000,
+                                           "scheme": "HTTPS"}[damage]
+        elif damage == "extra":
+            probes[0]["unexpected"] = "unapproved"
+        elif damage == "boolean-threshold":
+            probes[0]["successThreshold"] = True
+        else:
+            probes[0][damage] += 1
+    original = copy.deepcopy(state)
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert state == original
+
+
+def test_probe_order_leaves_other_lists_positional() -> None:
+    """Neither ordinary lists nor nested container/rule lists acquire set semantics."""
+    first, second = {"name": "first"}, {"name": "second"}
+    assert not subset([first, second], [second, first])
+    assert not subset({"containers": [first, second]}, {"containers": [second, first]})
+    assert not subset({"rules": [first, second]}, {"rules": [second, first]})

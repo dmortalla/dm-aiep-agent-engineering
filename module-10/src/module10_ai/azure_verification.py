@@ -138,10 +138,34 @@ def validate_roles(state: dict, principal: str, registry_id: str, subscription: 
     require(assignment_ids[0] == assignment_ids[1], "RBAC observations disagree; rerun collection.")
 
 
-def validate_probes(actual: object, expected: list[dict]) -> None:
-    """Reject all unapproved probe fields, including destinations and custom headers."""
-    require(subset(actual, expected) and actual == expected,
-            "Probes must exactly match the approved paths, ports, timing and fields.")
+def validate_probes(actual: object, expected: list[dict]) -> list[dict]:
+    """Validate exact probe mappings by type and return a new canonically ordered list.
+
+    Only probe order is non-semantic. Type-strict subset matching plus exact
+    mapping equality rejects additional fields and bool/int substitutions.
+    """
+    message = "Probes must exactly match the approved paths, ports, timing and fields."
+    require(type(actual) is list and len(actual) == 3, message)
+    by_type = {}
+    for probe in actual:
+        require(type(probe) is dict and type(probe.get("type")) is str, message)
+        kind = probe["type"]
+        require(kind in ("Startup", "Readiness", "Liveness") and kind not in by_type, message)
+        by_type[kind] = probe
+    ordered = [by_type[probe["type"]] for probe in expected]
+    require(subset(ordered, expected) and ordered == expected, message)
+    return ordered
+
+
+def probe_template(actual: object, expected_probes: list[dict]) -> dict:
+    """Project only container probe ordering, retaining raw observations and all fields."""
+    require(type(actual) is dict and type(actual.get("containers")) is list,
+            "Template containers must be an observation list.")
+    containers = []
+    for item in actual["containers"]:
+        require(type(item) is dict, "Container must be an observation mapping.")
+        containers.append({**item, "probes": validate_probes(item.get("probes"), expected_probes)})
+    return {**actual, "containers": containers}
 
 
 def validate_state(config: AzureConfig, digest: str, state: dict,
@@ -248,8 +272,8 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         require(all(not r.get("username") and not r.get("passwordSecretRef")
                     for r in settings["registries"]),
                 "Registry password authentication is forbidden.")
-        template = props["template"]
         expected_container = container(image)
+        template = probe_template(props["template"], expected_container["probes"])
         # Azure may return 0.25 as a float (the contract uses a float too).
         require(subset(template["containers"], [expected_container])
                 and subset(template["scale"], scale())
@@ -257,7 +281,6 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                 and not template.get("initContainers") and not template.get("volumes")
                 and not template.get("serviceBinds"), "App compute/probes/scaling/image differs.")
         for item in template["containers"]:
-            validate_probes(item["probes"], expected_container["probes"])
             require(not any(item.get(key) for key in
                             ("env", "command", "args", "volumeMounts")),
                     "Runtime overrides are forbidden; deploy the accepted Docker workload.")
@@ -272,10 +295,9 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                 and active[0]["properties"]["runningState"] == "Running"
                 and active[0]["properties"]["trafficWeight"] == 100
                 and active[0]["properties"]["provisioningState"] == "Provisioned"
-                and subset(active[0]["properties"]["template"], template),
+                and subset(probe_template(active[0]["properties"]["template"],
+                                          expected_container["probes"]), template),
                 "Active revision is unhealthy, ambiguous or differs from the app template.")
-        for item in active[0]["properties"]["template"]["containers"]:
-            validate_probes(item["probes"], expected_container["probes"])
         fqdn = settings["ingress"]["fqdn"]
         require(isinstance(fqdn, str) and re.fullmatch(
             re.escape(n["app"]) + r"\.[a-z0-9-]+\.southcentralus\.azurecontainerapps\.io", fqdn
