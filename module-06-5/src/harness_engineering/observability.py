@@ -25,6 +25,7 @@ from harness_engineering.errors import (
     ContractValidationError,
     HarnessError,
 )
+from harness_engineering.governance_facts import GovernanceFacts
 from harness_engineering.latency import (
     Cohort,
     Duration,
@@ -98,6 +99,7 @@ class EventKind(StrEnum):
 
     STARTED = "started"
     FINISHED = "finished"
+    GOVERNANCE = "governance"
 
 
 class TelemetryEvent(LatencyData):
@@ -118,6 +120,7 @@ class TelemetryEvent(LatencyData):
     elapsed_seconds: Duration | None = None
     evidence: EvidenceClass
     timing: TimingSource
+    governance: GovernanceFacts | None = None
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -130,7 +133,13 @@ class TelemetryEvent(LatencyData):
     @model_validator(mode="after")
     def coherent(self) -> "TelemetryEvent":
         """Reject contradictory or oversized records before local retention."""
-        if self.kind is EventKind.STARTED:
+        if self.kind is EventKind.GOVERNANCE:
+            if (self.governance is None or self.outcome is not None
+                    or self.elapsed_seconds is not None):
+                raise ValueError("Governance projections require only typed governance facts.")
+        elif self.governance is not None:
+            raise ValueError("Span events cannot carry governance facts.")
+        elif self.kind is EventKind.STARTED:
             if self.outcome is not None or self.elapsed_seconds is not None:
                 raise ValueError("Start events cannot claim completion.")
         elif self.outcome is None or self.elapsed_seconds is None:
@@ -241,6 +250,16 @@ class TelemetrySession:
         return self._sink
 
     @property
+    def identity(self) -> WorkflowIdentity:
+        """Return immutable attribution, never an execution-authority handle."""
+        return self._identity
+
+    @property
+    def evidence(self) -> EvidenceClass:
+        """Return the bootstrap classification for compatible safe projections."""
+        return self._evidence
+
+    @property
     def failures(self) -> int:
         """Count rejected timing/event observations without source diagnostics."""
         with self._lock:
@@ -270,6 +289,7 @@ class TelemetrySession:
         self, measurement: Measurement, kind: EventKind, trace: TraceContext,
         parent: str | None, step_index: int | None, outcome: Outcome | None = None,
         seconds: float | None = None,
+        governance: GovernanceFacts | None = None,
     ) -> None:
         # Serialize assignment and sink admission together so concurrent completions
         # cannot reorder sequence IDs. Failures retain no exception or payload.
@@ -283,11 +303,23 @@ class TelemetrySession:
                     outcome=outcome, step_index=step_index, trace=trace,
                     parent_span_id=parent, elapsed_seconds=seconds, evidence=self._evidence,
                     timing=self._timing,
+                    governance=governance,
                 )
                 self._sink.emit(event)
         except Exception:
             # Local sink boundary only: report loss via a fixed counter, never
             # retry work or leak a storage/validation exception into business logic.
+            self._failed()
+
+    def record_governance(self, facts: GovernanceFacts) -> None:
+        """Project safe facts without callbacks, timings, authority or new cohorts."""
+        try:
+            checked = GovernanceFacts.model_validate(facts)
+            trace = TraceContext(trace_id=self._root, span_id=uuid4().hex[:16])
+            self._emit(Measurement.ACTION, EventKind.GOVERNANCE, trace, None, None,
+                       governance=checked)
+        except Exception:
+            # Projection-only boundary: count loss without affecting authoritative state.
             self._failed()
 
     def call(

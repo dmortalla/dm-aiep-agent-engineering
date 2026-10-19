@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from harness_engineering.config import HarnessConfig
+from harness_engineering.cost_governance import require_real_monetary_admission
 from harness_engineering.domain import RuntimeBudget
 from harness_engineering.errors import (
     AuthorityViolationError,
@@ -28,6 +29,7 @@ from harness_engineering.providers import (
     ProviderTimeoutError,
     _units,
 )
+from harness_engineering.usage import UsageFacts, UsageState
 
 
 class ProviderConfigurationError(ContractValidationError):
@@ -164,6 +166,8 @@ class _Vendor:
                         raise ProviderConfigurationError(
                             "Anthropic authentication is not configured."
                         )
+                    if self._transport is None:
+                        require_real_monetary_admission()
                     raw = self._call(client, value, context)
         except sdk.APITimeoutError:
             failure = (ProviderTimeoutError, "SDK timeout; discard provider result.")
@@ -196,11 +200,16 @@ class _Vendor:
             # Raise outside the SDK except scope: no secret-bearing exception context survives.
             kind, message = failure
             raise kind(message) from _SanitizedCause(kind.__name__)
-        context.checkpoint()
         response_type = sdk.types.responses.Response if self._sdk == "openai" else sdk.types.Message
         if type(raw) is not response_type:
             _reject()
-        data = _payload(raw)
+        try:
+            data = _payload(raw)
+        except ProviderOutputRejected:
+            context._usage.report(UsageFacts(state=UsageState.MALFORMED))
+            raise
+        _usage(data.get("usage"), context, total=self._sdk == "openai")
+        context.checkpoint()
         text = self._text(data, context)
         if not text or _units(text) > context.max_output_tokens:
             raise ProviderOutputRejected("Provider text is empty or exceeds the application bound.")
@@ -256,7 +265,6 @@ class OpenAIProvider(_Vendor):
             or message.get("phase") not in (None, "final_answer")
         ):
             _reject()
-        _usage(data.get("usage"), context, total=True)
         return _blocks(message.get("content"), "output_text", {"annotations", "logprobs"})
 
 
@@ -290,7 +298,6 @@ class AnthropicProvider(_Vendor):
             )
         ):
             _reject()
-        _usage(data.get("usage"), context, total=False)
         return _blocks(data.get("content"), "text", {"citations"})
 
 
@@ -356,17 +363,28 @@ def _blocks(value: object, kind: str, empty_fields: set[str]) -> str:
 
 
 def _usage(value: object, context: ProviderCallContext, *, total: bool) -> None:
-    if type(value) is not dict:
-        _reject()
-    for key, limit in (
-        ("input_tokens", context._max_context_tokens),
-        ("output_tokens", context.max_output_tokens),
-    ):
-        count = value.get(key)
-        if type(count) is not int or not 0 <= count <= limit:
+    try:
+        allowed = {"input_tokens", "output_tokens", "input_tokens_details", "output_tokens_details",
+                   "total_tokens"} if total else {
+                       "cache_creation", "cache_creation_input_tokens", "cache_read_input_tokens",
+                       "inference_geo", "input_tokens", "output_tokens", "output_tokens_details",
+                       "server_tool_use", "service_tier",
+                   }
+        if type(value) is not dict or set(value) - allowed:
             _reject()
-    if total and (
-        type(value.get("total_tokens")) is not int
-        or value["total_tokens"] != (value["input_tokens"] + value["output_tokens"])
-    ):
+        facts = UsageFacts(
+            state=UsageState.REPORTED, input_tokens=value.get("input_tokens"),
+            output_tokens=value.get("output_tokens"),
+        )
+        if (facts.input_tokens > context._max_context_tokens
+                or facts.output_tokens > context.max_output_tokens
+                or (total and (type(value.get("total_tokens")) is not int
+                               or value["total_tokens"] != (
+                                   facts.input_tokens + facts.output_tokens)))):
+            _reject()
+    except (ValidationError, ProviderOutputRejected):
+        context._usage.report(UsageFacts(
+            state=UsageState.MISSING if value is None else UsageState.MALFORMED,
+        ))
         _reject()
+    context._usage.report(facts)

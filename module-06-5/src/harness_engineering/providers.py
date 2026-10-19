@@ -9,23 +9,28 @@ Python callbacks are trusted code; timeout rejects results, not external effects
 from __future__ import annotations
 
 from collections import deque
+from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 from math import isfinite
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from time import monotonic
 from typing import TYPE_CHECKING, Literal, Protocol
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from harness_engineering.anomaly_signals import AnomalyDetector
 from harness_engineering.config import HarnessConfig
-from harness_engineering.domain import RuntimeBudget
+from harness_engineering.cost_governance import FixtureLedger, ProviderAlias
+from harness_engineering.domain import RuntimeBudget, WorkflowIdentity
 from harness_engineering.errors import (
     AuthorityViolationError,
     BudgetExceededError,
     ContractValidationError,
     HarnessError,
 )
+from harness_engineering.governance_facts import GovernanceKind
 from harness_engineering.latency import Measurement, Outcome
 from harness_engineering.lifecycle_controls import OffSwitch
 from harness_engineering.observability import (
@@ -34,6 +39,7 @@ from harness_engineering.observability import (
     bind_trace,
     current_trace,
 )
+from harness_engineering.usage import UsageCapture, UsageReceipt, UsageState
 
 if TYPE_CHECKING:
     from harness_engineering.guardrails_adapter import GuardrailsTextValidator
@@ -117,6 +123,7 @@ class ProviderCallContext:
         self._max_context_tokens = 12_000
         self._live_allowed = False
         self._trace_context: TraceContext | None = None
+        self._usage = UsageCapture()
 
     @property
     def trace_context(self) -> TraceContext | None:
@@ -180,6 +187,9 @@ class ProviderRuntime:
         live_config: HarnessConfig | None = None,
         guardrails: GuardrailsTextValidator | None = None,
         telemetry: TelemetrySession | None = None,
+        ledger: FixtureLedger | None = None,
+        identity: WorkflowIdentity | None = None,
+        anomalies: AnomalyDetector | None = None,
     ) -> None:
         """Snapshot trusted configuration, independently gating optional live bindings.
 
@@ -193,6 +203,9 @@ class ProviderRuntime:
                 budget matching this runtime. Never inferred from credentials.
             guardrails: Optional exact local Guardrails text validator from trusted bootstrap.
             telemetry: Optional exact application-owned local telemetry session.
+            ledger: Optional dedicated fixture-only exposure/token authority.
+            identity: Optional trusted workflow attribution, reconciled with ledger.
+            anomalies: Optional advisory-only provider event observer.
 
         Raises:
             ContractValidationError: For invalid bootstrap or unsupported adapters.
@@ -251,6 +264,58 @@ class ProviderRuntime:
         if telemetry is not None and type(telemetry) is not TelemetrySession:
             raise ContractValidationError("Bind an application-owned telemetry session.")
         self._telemetry = telemetry
+        self._identity = WorkflowIdentity.model_validate(
+            (WorkflowIdentity() if identity is None else identity).model_dump()
+        )
+        self._provider_alias = (
+            "fake" if type(self._provider) is FakeProvider else self._provider._sdk
+        )
+        if ledger is not None:
+            if type(ledger) is not FixtureLedger or self._live_allowed:
+                raise ContractValidationError("Bind a fixture ledger only to offline execution.")
+            p = ledger.policy
+            if b.max_cost_usd is not None:
+                if not isfinite(b.max_cost_usd):
+                    raise ContractValidationError("Fixture cost configuration must be finite.")
+                legacy_cap = int((Decimal(str(b.max_cost_usd)) * 1_000_000).to_integral_value(
+                    rounding=ROUND_FLOOR,
+                ))
+                if p.cap_units > legacy_cap:
+                    raise ContractValidationError("Fixture ledger exceeds the configured cost cap.")
+            if identity is None:
+                self._identity = WorkflowIdentity(workflow_id=p.workflow_id, thread_id=p.thread_id)
+            if (p.workflow_id != self._identity.workflow_id
+                    or p.thread_id != self._identity.thread_id
+                    or p.tokens.step_count != len(action_ids)
+                    or p.action_ids != action_ids
+                    or p.tokens.input_per_call != b.max_context_tokens
+                    or p.tokens.output_per_call != b.max_output_tokens
+                    or p.tokens.workflow_attempts > b.max_provider_attempts
+                    or p.tokens.attempts_per_step > b.max_retries_per_action + 1
+                    or p.tariff.provider is not ProviderAlias(self._provider_alias)
+                    or (self._provider_alias != "fake"
+                        and self._provider._model != p.tariff.model)):
+                raise ContractValidationError("Fixture ledger conflicts with provider bounds.")
+            ledger.snapshot()
+        self._ledger = ledger
+        if telemetry is not None:
+            if identity is None and ledger is None:
+                self._identity = telemetry.identity
+            elif self._identity != telemetry.identity:
+                raise ContractValidationError("Usage, ledger and telemetry identity must agree.")
+        if anomalies is not None and type(anomalies) is not AnomalyDetector:
+            raise ContractValidationError("Bind an exact advisory anomaly detector.")
+        if anomalies is not None:
+            try:
+                anomalies.bind_fixture(self._identity)
+            except ValueError:
+                raise ContractValidationError(
+                    "Anomaly projection identity/evidence conflicts with provider accounting."
+                ) from None
+        self._anomalies = anomalies
+        self._advisory_failures = 0
+        self._usage_receipts: deque[UsageReceipt] = deque(maxlen=8)
+        self._usage_channels: deque[tuple[UUID, UsageCapture]] = deque(maxlen=8)
         self._deadline = monotonic() + b.workflow_deadline_seconds
         self._attempts = 0
         self._actions = dict.fromkeys(action_ids, 0)
@@ -274,11 +339,41 @@ class ProviderRuntime:
         Worker completion after timeout never creates a second completion sample.
         """
         if self._telemetry is None:
-            return self._generate(request, action_id=action_id)
+            return self._generate_observed(request, action_id=action_id)
         return self._telemetry.call(
-            Measurement.PROVIDER, lambda: self._generate(request, action_id=action_id),
+            Measurement.PROVIDER, lambda: self._generate_observed(request, action_id=action_id),
             classify=lambda _: Outcome.SUCCEEDED,
         )
+
+    def _advisory(self, kind: GovernanceKind) -> None:
+        if self._anomalies is not None:
+            try:
+                self._anomalies.observe(kind)
+            except Exception:
+                # Advisory event observation cannot change execution/authority.
+                self._advisory_failures += 1
+
+    @property
+    def advisory_failures(self) -> int:
+        """Count rule-observation failures without diagnostics or hidden retries."""
+        return self._advisory_failures
+
+    def _generate_observed(self, request: object, *, action_id: str) -> ModelResult:
+        try:
+            return self._generate(request, action_id=action_id)
+        except AuthorityViolationError:
+            self._advisory(GovernanceKind.DENIAL_BURST)
+            raise
+
+    @property
+    def usage_receipts(self) -> tuple[UsageReceipt, ...]:
+        """Return immutable bounded numeric claims, distinct from verified billing."""
+        return tuple(self._usage_receipts)
+
+    @property
+    def late_usage_attempts(self) -> tuple[UUID, ...]:
+        """Identify late receipt arrivals; they never rewrite caller evidence or exposure."""
+        return tuple(attempt for attempt, channel in self._usage_channels if channel.late)
 
     def _generate(self, request: object, *, action_id: str = "model") -> ModelResult:
         """Validate input, invoke once, filter output and return untrusted text.
@@ -301,6 +396,12 @@ class ProviderRuntime:
         if not self._slot.acquire(blocking=False):
             raise BudgetExceededError("Provider worker is active; do not start another attempt.")
         launched = False
+        charged = False
+        completed = False
+        reservation = None
+        context = None
+        attempt_id = uuid4()
+        failure_state = None
         try:
             try:
                 value = ModelRequest.model_validate(request)
@@ -323,8 +424,15 @@ class ProviderRuntime:
                 raise BudgetExceededError("Workflow provider-attempt budget exhausted.")
             if self._actions[action_id] >= b.max_retries_per_action + 1:
                 raise BudgetExceededError("Application action retry budget exhausted.")
+            step_index = tuple(self._actions).index(action_id) + 1
+            if self._ledger is not None:
+                reservation = self._ledger.reserve(step_index)
+                attempt_id = reservation.attempt_id
             self._attempts += 1
             self._actions[action_id] += 1
+            charged = True
+            if self._actions[action_id] > 1:
+                self._advisory(GovernanceKind.RETRY_BURST)
             self._audit.append(ProviderEvent.STARTED)
             result: Queue[ModelResult | BaseException] = Queue(maxsize=1)
 
@@ -394,10 +502,38 @@ class ProviderRuntime:
                 raise outcome
             context.checkpoint()
             self._audit.append(ProviderEvent.VALIDATED)
+            completed = True
             return outcome
+        except ProviderTimeoutError:
+            failure_state = UsageState.TIMEOUT
+            raise
+        except AuthorityViolationError:
+            failure_state = (
+                UsageState.CANCELLED if self._off_switch.is_active() else UsageState.UNAVAILABLE
+            )
+            raise
         finally:
             if not launched:
                 self._slot.release()
+            if charged and context is not None:
+                fallback = failure_state or (
+                    UsageState.TIMEOUT if context._cancelled.is_set()
+                    else UsageState.CANCELLED if self._off_switch.is_active()
+                    else UsageState.LOCAL if completed and self._provider_alias == "fake"
+                    else UsageState.UNAVAILABLE
+                )
+                facts = context._usage.close(fallback)
+                receipt = UsageReceipt(
+                    workflow_id=self._identity.workflow_id, thread_id=self._identity.thread_id,
+                    attempt_id=attempt_id, step_index=step_index, provider=self._provider_alias,
+                    local_input_bytes=_units(value.prompt), usage=facts,
+                )
+                self._usage_receipts.append(receipt)
+                self._usage_channels.append((attempt_id, context._usage))
+                if self._ledger is not None and reservation is not None:
+                    self._ledger.settle(reservation, facts)
+                if not completed:
+                    self._advisory(GovernanceKind.PROVIDER_FAILURE_BURST)
 
 
 def _units(text: str) -> int:
