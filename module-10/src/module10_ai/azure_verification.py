@@ -70,6 +70,42 @@ def identifier(value: object) -> str:
         raise VerificationError("Require a canonical nonzero UUID identifier.") from exc
 
 
+def resource_id(value: object) -> str:
+    """Validate subscription-scoped IDs used by this contract and normalize casing.
+
+    Full paths retain every segment; no trimming, suffix matching or arbitrary
+    string normalization is permitted. Raw observation mappings remain untouched.
+    """
+    segment = r"[A-Za-z0-9_().-]+"
+    provider_path = rf"/providers/{segment}(?:/{segment}/{segment})+"
+    pattern = (rf"/subscriptions/([0-9A-Fa-f-]+)"
+               rf"(?:/resourceGroups/{segment}(?:{provider_path})?|{provider_path})")
+    require(type(value) is str and re.fullmatch(pattern, value, re.IGNORECASE | re.ASCII)
+            is not None, "Require a complete subscription-scoped Azure resource ID.")
+    require(all(part not in (".", "..") for part in value.split("/")),
+            "Require a complete subscription-scoped Azure resource ID.")
+    identifier(value.split("/")[2])
+    return value.lower()
+
+
+def identity_entries(actual: object, expected: list[dict]) -> bool:
+    """Compare copied identity references while keeping all other fields exact."""
+    if type(actual) is not list or len(actual) != len(expected):
+        return False
+    projected = []
+    for entry in actual:
+        if type(entry) is not dict or "identity" not in entry:
+            return False
+        projected.append({**entry, "identity": resource_id(entry["identity"])})
+    required = [{**entry, "identity": resource_id(entry["identity"])} for entry in expected]
+    return subset(projected, required)
+
+
+def dapr_disabled(value: object) -> bool:
+    """Accept absent/null or explicitly disabled Dapr, rejecting ambiguous values."""
+    return value is None or (type(value) is dict and value.get("enabled") is False)
+
+
 def validate_roles(state: dict, principal: str, registry_id: str, subscription: str) -> None:
     """Require both complete CLI lists to agree on exactly the permitted assignment.
 
@@ -86,8 +122,8 @@ def validate_roles(state: dict, principal: str, registry_id: str, subscription: 
                 "Require complete subscription and inherited RBAC lists with only AcrPull.")
         role = roles[0]
         require(identifier(role["principalId"]) == principal
-                and role["scope"].lower() == registry_id.lower()
-                and role["roleDefinitionId"].lower() == expected_role.lower()
+                and resource_id(role["scope"]) == resource_id(registry_id)
+                and resource_id(role["roleDefinitionId"]) == resource_id(expected_role)
                 and role["principalType"] == "ServicePrincipal"
                 and not role.get("condition")
                 and not role.get("delegatedManagedIdentityResourceId"),
@@ -98,7 +134,7 @@ def validate_roles(state: dict, principal: str, registry_id: str, subscription: 
                 and assignment_id.lower().startswith(prefix.lower()),
                 "RBAC assignment identity/scope differs.")
         identifier(assignment_id[len(prefix):])
-        assignment_ids.append(assignment_id.lower())
+        assignment_ids.append(resource_id(assignment_id))
     require(assignment_ids[0] == assignment_ids[1], "RBAC observations disagree; rerun collection.")
 
 
@@ -142,12 +178,12 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         require(group["name"] == n["group"] and canonical_region(group["location"]) == REGION
                 and subset(group["tags"], TAGS), "Resource-group ownership/region differs.")
         group_id = f"/subscriptions/{subscription}/resourceGroups/{n['group']}"
-        require(group["id"].lower() == group_id.lower(),
+        require(resource_id(group["id"]) == resource_id(group_id),
                 "Resource group is outside the independently expected subscription.")
         prefix = group_id + "/providers/"
         for key, kind in kinds.items():
             item = state[key]
-            require(item["id"].lower() == (prefix + kind + "/" + n[key]).lower()
+            require(resource_id(item["id"]) == resource_id(prefix + kind + "/" + n[key])
                     and item["name"] == n[key] and canonical_region(item["location"]) == REGION
                     and subset(item["tags"], TAGS), "Resource ownership/region/tags differ.")
         registry = state["registry"]
@@ -183,11 +219,15 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         validate_roles(state, principal, registry["id"], subscription)
         app = state["app"]
         require(app["identity"]["type"] == "UserAssigned"
-                and set(app["identity"]["userAssignedIdentities"]) == {identity_id},
+                and type(app["identity"]["userAssignedIdentities"]) is dict
+                and len(app["identity"]["userAssignedIdentities"]) == 1
+                and {resource_id(key) for key in app["identity"]["userAssignedIdentities"]}
+                == {resource_id(identity_id)},
                 "Container App identity differs.")
         props = app["properties"]
-        require(props.get("environmentId", props.get("managedEnvironmentId"))
-                == state["environment"]["id"] and props["workloadProfileName"] == "Consumption"
+        require(resource_id(props.get("environmentId", props.get("managedEnvironmentId")))
+                == resource_id(state["environment"]["id"])
+                and props["workloadProfileName"] == "Consumption"
                 and props["provisioningState"] == "Succeeded", "App environment/state differs.")
         settings = props["configuration"]
         require(type(settings["ingress"]) is dict, "Ingress must be an observation mapping.")
@@ -197,11 +237,11 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         require(settings["activeRevisionsMode"] == "Single"
                 and settings["maxInactiveRevisions"] == 2
                 and subset(observed_ingress, ingress(config.reviewer_cidr))
-                and subset(settings["registries"], [{"server": n["registry"] + ".azurecr.io",
-                                                      "identity": identity_id}])
-                and subset(settings["identitySettings"], [{"identity": identity_id,
+                and identity_entries(settings["registries"], [
+                    {"server": n["registry"] + ".azurecr.io", "identity": identity_id}])
+                and identity_entries(settings["identitySettings"], [{"identity": identity_id,
                                                            "lifecycle": "None"}])
-                and not settings.get("secrets") and not settings.get("dapr", {}).get("enabled"),
+                and not settings.get("secrets") and dapr_disabled(settings.get("dapr")),
                 "App ingress/identity/revisions/security differs.")
         require(not settings["ingress"].get("additionalPortMappings")
                 and not settings["ingress"].get("customDomains"), "Unexpected ingress exposure.")

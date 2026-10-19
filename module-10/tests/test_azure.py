@@ -930,3 +930,91 @@ def test_interactive_channel_ignores_redirected_data(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(sys, "stdin", io.StringIO("untrusted observed state"))
     monkeypatch.setattr(deployment.getpass, "getpass", lambda *a: SUBSCRIPTION)
     assert deployment.private_subscription() == SUBSCRIPTION
+
+
+@pytest.mark.parametrize("field", ["registries", "identitySettings", "app", "environment"])
+@pytest.mark.parametrize("uppercase", [False, True])
+def test_resource_id_case_compatibility(field: str, uppercase: bool) -> None:
+    """Full identity/environment paths accept case alone without changing raw evidence."""
+    state = observed()
+    app = state["app"]
+    if field == "app":
+        entries = app["identity"]["userAssignedIdentities"]
+        key = next(iter(entries))
+        app["identity"]["userAssignedIdentities"] = {key.upper() if uppercase else key: {}}
+    elif field == "environment":
+        key = "environmentId" if "environmentId" in app["properties"] else "managedEnvironmentId"
+        value = app["properties"][key]
+        app["properties"][key] = value.upper() if uppercase else value
+    else:
+        entry = app["properties"]["configuration"][field][0]
+        if uppercase:
+            entry["identity"] = entry["identity"].upper()
+    original = copy.deepcopy(state)
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert state == original
+
+
+@pytest.mark.parametrize("bad", [None, True, 0, [], {}, "", "suffix", "trailing", "space",
+                                 "subscription", "group", "provider", "type", "name", "path"])
+def test_registry_identity_fail_closed(bad: object) -> None:
+    """Malformed IDs and any changed authority/path segment cannot pass."""
+    state = observed()
+    entry = state["app"]["properties"]["configuration"]["registries"][0]
+    value = entry["identity"]
+    parts = value.split("/")
+    index = {"subscription": 2, "group": 4, "provider": 6, "type": 7, "name": 8}
+    if isinstance(bad, str) and bad in index:
+        parts[index[bad]] = "different"
+        bad = "/".join(parts)
+    elif bad == "suffix":
+        bad = value.split("/providers/")[1]
+    elif bad == "trailing":
+        bad = value + "/"
+    elif bad == "space":
+        bad = " " + value
+    elif bad == "path":
+        bad = value + "/extra/name"
+    entry["identity"] = bad
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("value", [None, {"enabled": False}])
+def test_disabled_dapr_observations(value: object) -> None:
+    """Diagnosed null and explicit false are disabled; the fixture also covers absence."""
+    state = observed()
+    state["app"]["properties"]["configuration"]["dapr"] = value
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("value", [True, False, 0, "", "false", [], {},
+                                 {"enabled": True}, {"enabled": None}, {"enabled": 0}])
+def test_unrecognized_dapr_fails_closed(value: object) -> None:
+    """Falsey scalars and mappings without explicit boolean false cannot disable Dapr."""
+    state = observed()
+    state["app"]["properties"]["configuration"]["dapr"] = value
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("server", ["upper", "suffix"])
+def test_registry_hostname_stays_exact(server: str) -> None:
+    """Resource-ID compatibility must not relax hostname or generic subset comparisons."""
+    state = observed()
+    entry = state["app"]["properties"]["configuration"]["registries"][0]
+    original = entry["server"]
+    entry["server"] = original.upper() if server == "upper" else original + ".example"
+    assert not subset({"identity": "ABC"}, {"identity": "abc"})
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+def test_diagnosed_registry_and_dapr_combination() -> None:
+    """The original short-circuit failure is repaired with both Azure differences present."""
+    state = observed()
+    settings = state["app"]["properties"]["configuration"]
+    settings["registries"][0].update(identity=state["identity"]["id"].upper(),
+                                      passwordSecretRef=None, username=None)
+    settings["dapr"] = None
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
