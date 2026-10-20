@@ -4,13 +4,13 @@ import json
 import os
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
-from harness_engineering import _offline_observability_worker as worker
 from harness_engineering import observability_adapters as adapters
 from harness_engineering.domain import EvidenceClass, WorkflowIdentity
 from harness_engineering.governance_facts import GovernanceFacts, GovernanceKind
@@ -46,14 +46,29 @@ def source() -> TelemetrySession:
     return result
 
 
+def sdk_probe(vendor: Vendor, events: tuple, phase: str = "serialize") -> dict:
+    """Run each SDK lifecycle in a fresh process, just like production flush."""
+    pytest.importorskip(vendor.value)
+    environment = {"LANGSMITH_CONFIG_FILE": os.devnull,
+                   "LANGFUSE_MEDIA_UPLOAD_ENABLED": "false"}
+    if "SYSTEMROOT" in os.environ:
+        environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", str(Path(__file__).with_name("observability_sdk_probe.py")),
+         vendor.value, phase], input=json.dumps([e.model_dump(mode="json") for e in events]),
+        text=True, capture_output=True, timeout=10, check=True, env=environment,
+    )
+    parsed = json.loads(result.stdout)
+    assert parsed["network_attempts"] == 0
+    return parsed
+
+
 @pytest.mark.parametrize("vendor", list(Vendor))
 def test_genuine_sdk_serialization_privacy_and_correlation(vendor: Vendor) -> None:
     pytest.importorskip(vendor.value)
     telemetry = source()
     events = telemetry.sink.snapshot()
-    projection = (worker.langsmith_projection if vendor is Vendor.LANGSMITH
-                  else worker.langfuse_projection)
-    records = projection(events)
+    records = sdk_probe(vendor, events)["records"]
     encoded = json.dumps(records)
     assert SECRET not in encoded
     assert str(telemetry.identity.workflow_id) in encoded
@@ -221,35 +236,16 @@ def test_fixture_boundary_rejects_live_evidence(evidence: EvidenceClass) -> None
 def test_actual_sdk_method_failures_are_normalized(
     phase: str, vendor: Vendor, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sdk = pytest.importorskip(vendor.value)
-    if vendor is Vendor.LANGSMITH:
-        target = sdk.Client
-        method = {"construction": "__init__", "create": "create_run", "update": "update_run",
-                  "flush": "flush", "close": "close"}[phase]
-        projection = worker.langsmith_projection
-    else:
-        target = sdk.LangfuseSpan if phase == "update" else sdk.Langfuse
-        method = {"construction": "__init__", "create": "start_observation", "update": "end",
-                  "flush": "flush", "close": "shutdown"}[phase]
-        projection = worker.langfuse_projection
-        # Each direct SDK seam test gets a fresh isolated resource registry.
-        from langfuse._client.resource_manager import LangfuseResourceManager
+    result = sdk_probe(vendor, source().sink.snapshot(), phase)
+    assert result["failure"] == phase
+    assert SECRET not in json.dumps(result)
 
-        LangfuseResourceManager.reset()
 
-    def fail(*args: object, **kwargs: object) -> None:
-        raise RuntimeError(SECRET)
-
-    monkeypatch.setattr(target, method, fail)
-    try:
-        with pytest.raises(worker.ProjectionFailure) as caught:
-            projection(source().sink.snapshot())
-        assert str(caught.value) == phase
-        assert caught.value.__cause__ is None
-        assert caught.value.__suppress_context__
-    finally:
-        if vendor is Vendor.LANGFUSE:
-            LangfuseResourceManager.reset()
+def test_langfuse_lifecycle_limitation_and_repeatable_fresh_processes() -> None:
+    events = source().sink.snapshot()
+    assert sdk_probe(Vendor.LANGFUSE, events, "repeat")["repeat_failure"] == "flush"
+    for _ in range(2):
+        assert len(sdk_probe(Vendor.LANGFUSE, events)["records"]) == len(events)
 
 
 @pytest.mark.parametrize("vendor", list(Vendor))

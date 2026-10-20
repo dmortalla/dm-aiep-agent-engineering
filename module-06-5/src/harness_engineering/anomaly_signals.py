@@ -18,6 +18,8 @@ RULES = MappingProxyType(
         GovernanceKind.DENIAL_BURST: 3,
         GovernanceKind.PROVIDER_FAILURE_BURST: 3,
         GovernanceKind.BUDGET_SPIKE: 1,
+        GovernanceKind.EXCESSIVE_COMPRESSION: 1,
+        GovernanceKind.TOOL_FREQUENCY: 10,
     }
 )
 
@@ -52,11 +54,14 @@ class AnomalySignal(LatencyData):
 
 
 class AnomalyDetector:
-    """Four rules, 60-second windows, <=64 timestamps per rule and <=64 signals.
+    """Six rules, 60-second windows, <=64 timestamps per rule and <=64 signals.
 
     Trusted application boundaries feed one observation per actual event. Retry,
     denial and provider-failure rules need 2/3/3 events respectively. Budget-spike
     observation means a reservation >=25% of the cap (checked by the ledger).
+    Excessive compression means >=90% estimated token removal; tool frequency
+    means ten trusted call observations in 60 seconds. These are advisory
+    engineering defaults, not permissions, execution limits or quality verdicts.
     A rule re-arms only after its rolling count drops below threshold. No
     telemetry read, routing callback, model content or user dimensions exist.
     """
@@ -132,3 +137,12 @@ class AnomalyDetector:
         """Return immutable signals; retention is bounded independently of telemetry."""
         with self._lock:
             return tuple(self._signals)
+
+    def observe_compression(self, source_tokens: int, compressed_tokens: int) -> None:
+        """Observe bounded accepted compression counts without retaining content."""
+        if (type(source_tokens) is not int or type(compressed_tokens) is not int
+                or not 1 <= source_tokens <= 12_000
+                or not 0 <= compressed_tokens <= 12_000):
+            raise ValueError("Compression observations require bounded integer counts.")
+        if compressed_tokens * 10 <= source_tokens:
+            self.observe(GovernanceKind.EXCESSIVE_COMPRESSION)

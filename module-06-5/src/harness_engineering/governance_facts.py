@@ -18,6 +18,8 @@ class GovernanceKind(StrEnum):
     DENIAL_BURST = "denial_burst"
     PROVIDER_FAILURE_BURST = "provider_failure_burst"
     BUDGET_SPIKE = "budget_spike"
+    EXCESSIVE_COMPRESSION = "excessive_compression"
+    TOOL_FREQUENCY = "tool_frequency"
 
 
 class GovernanceFacts(LatencyData):
@@ -56,6 +58,8 @@ class GovernanceFacts(LatencyData):
                 GovernanceKind.DENIAL_BURST: 3,
                 GovernanceKind.PROVIDER_FAILURE_BURST: 3,
                 GovernanceKind.BUDGET_SPIKE: 1,
+                GovernanceKind.EXCESSIVE_COMPRESSION: 1,
+                GovernanceKind.TOOL_FREQUENCY: 10,
             }[self.kind]
             if (
                 self.observation_count is None
