@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "name": "module-06-5-agent-behaviour-v1",
+  "cases": [
+    {
+      "case_id": "planning.dependency-priority-order",
+      "expected": {
+        "values": {
+          "initial_ready": [
+            "research",
+            "metadata"
+          ],
+          "after_research_ready": [
+            "analyze",
+            "metadata"
+          ],
+          "execution_order": [
+            "research",
+            "analyze",
+            "draft",
+            "review",
+            "metadata"
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "planning.invalid-plans-rejected",
+      "expected": {
+        "values": {
+          "cycle_rejected": true,
+          "missing_dependency_rejected": true,
+          "unsupported_action_rejected": true,
+          "oversized_plan_rejected": true,
+          "valid_plan_accepted": true
+        }
+      }
+    },
+    {
+      "case_id": "context.budget-compression-memory",
+      "expected": {
+        "values": {
+          "estimated_input_tokens": 126,
+          "available_input_tokens": 150,
+          "within_budget": true,
+          "selected_provenance": [
+            "fixture://current"
+          ],
+          "omitted_item_count": 2,
+          "compression_source_tokens": 108,
+          "compression_result_tokens": 42,
+          "sliding_window_provenance": [
+            "fixture://history-2",
+            "fixture://current"
+          ],
+          "short_term_route": "short_term",
+          "long_term_route": "long_term_eligible"
+        }
+      }
+    },
+    {
+      "case_id": "permissions.denial-matrix",
+      "expected": {
+        "values": {
+          "outcomes": [
+            "allow=executed",
+            "missing-permission=authority_refused",
+            "scope=authority_refused",
+            "malformed-input=contract_rejected",
+            "payload-bound=bound_refused",
+            "self-authorization=contract_rejected",
+            "context-injection=authority_refused",
+            "blocklist=authority_refused",
+            "approval-required=authority_refused",
+            "decision-token=contract_rejected"
+          ],
+          "handler_calls": [
+            "allow=1",
+            "missing-permission=0",
+            "scope=0",
+            "malformed-input=0",
+            "payload-bound=0",
+            "self-authorization=0",
+            "context-injection=0",
+            "blocklist=0",
+            "approval-required=0",
+            "decision-token=0"
+          ],
+          "all_expectations_met": true
+        }
+      }
+    },
+    {
+      "case_id": "permissions.injection-inert",
+      "expected": {
+        "values": {
+          "self_authorization": "contract_rejected",
+          "context_injection": "authority_refused",
+          "decision_token": "contract_rejected",
+          "handler_calls": 0
+        }
+      }
+    },
+    {
+      "case_id": "mcp.discovery-validation-boundary",
+      "expected": {
+        "values": {
+          "passed": true,
+          "scenarios": [
+            "trust-boundary",
+            "current-controls",
+            "application-input",
+            "stale-discovery",
+            "malformed-discovery",
+            "untrusted-results",
+            "spent-budget",
+            "workflow-deadline",
+            "protocol-timeout",
+            "executor-timeout"
+          ],
+          "total_checks": 32,
+          "candidate_grants_authority": false,
+          "unbound_tool_calls": 0,
+          "external_service_calls": 0,
+          "provider_calls": 0
+        }
+      }
+    },
+    {
+      "case_id": "lifecycle.retry-backoff",
+      "expected": {
+        "values": {
+          "phase": "completed",
+          "stop_reason": null,
+          "completed": [
+            "audit",
+            "collect",
+            "report"
+          ],
+          "total_attempts": 5,
+          "inline_boundaries_checked": 5,
+          "backoff_delays": [
+            "0.100",
+            "0.200"
+          ],
+          "waits_recorded": 2
+        }
+      }
+    },
+    {
+      "case_id": "lifecycle.circuit-breaker",
+      "expected": {
+        "values": {
+          "phase": "safe_stop",
+          "stop_reason": "circuit_open",
+          "completed": [],
+          "total_attempts": 2,
+          "inline_boundaries_checked": 2,
+          "circuit_phase": "open",
+          "step_invocations": 2
+        }
+      }
+    },
+    {
+      "case_id": "lifecycle.fallback-degradation",
+      "expected": {
+        "values": {
+          "phase": "completed",
+          "stop_reason": null,
+          "completed": [
+            "audit",
+            "collect",
+            "report"
+          ],
+          "total_attempts": 4,
+          "inline_boundaries_checked": 4,
+          "fallback_tasks": [
+            "audit"
+          ],
+          "fallback_calls": 1,
+          "results": [
+            "degraded",
+            "preferred",
+            "preferred"
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "lifecycle.deadline-hard-stop",
+      "expected": {
+        "values": {
+          "phase": "safe_stop",
+          "stop_reason": "deadline_exhausted",
+          "completed": [
+            "audit",
+            "collect"
+          ],
+          "total_attempts": 2,
+          "inline_boundaries_checked": 3
+        }
+      }
+    },
+    {
+      "case_id": "lifecycle.authority-input-rejected",
+      "expected": {
+        "values": {
+          "authority_fields_rejected": [
+            true,
+            true
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "off-switch.cancellation",
+      "expected": {
+        "values": {
+          "phase": "safe_stop",
+          "stop_reason": "cancelled",
+          "completed": [
+            "audit"
+          ],
+          "total_attempts": 1,
+          "inline_boundaries_checked": 2,
+          "executed": [
+            "audit"
+          ],
+          "provider_denied": true,
+          "provider_attempts": 0
+        }
+      }
+    },
+    {
+      "case_id": "provider-safety.output-validation",
+      "expected": {
+        "values": {
+          "hostile_result_trust": "untrusted_model",
+          "hostile_result_grants_authority": false,
+          "hostile_text_echoed": false,
+          "filter_rejected": true,
+          "rejection_leaked_content": false,
+          "workflow_phase": "safe_stop",
+          "workflow_stop_reason": "step_failure",
+          "workflow_attempts": 1,
+          "workflow_provider_attempts": 1,
+          "inline_boundaries_checked": 1
+        }
+      }
+    },
+    {
+      "case_id": "recovery.crash-resume-idempotent",
+      "expected": {
+        "values": {
+          "interruption_point": "after_external_commit_before_completion_checkpoint",
+          "reservation_visible_before_invocation": true,
+          "recovery_passes": 3,
+          "final_phases": [
+            "completed",
+            "completed",
+            "completed"
+          ],
+          "effect_invocations": 1,
+          "external_commits": 1,
+          "replay_invocations": 0
+        }
+      }
+    },
+    {
+      "case_id": "approval.async-gate",
+      "expected": {
+        "values": {
+          "suspended": [
+            "approve=True",
+            "deny=True",
+            "self=True",
+            "model=True",
+            "forged=True",
+            "stale=True",
+            "off_switch=True"
+          ],
+          "authorization": [
+            "approve=accepted",
+            "deny=accepted",
+            "self=rejected",
+            "model=rejected",
+            "forged=rejected",
+            "stale=rejected",
+            "off_switch=accepted"
+          ],
+          "resume": [
+            "approve=completed",
+            "deny=rejected",
+            "self=rejected",
+            "model=rejected",
+            "forged=rejected",
+            "stale=rejected",
+            "off_switch=rejected"
+          ],
+          "executed": [
+            "approve=prepare+protected",
+            "deny=prepare",
+            "self=prepare",
+            "model=prepare",
+            "forged=prepare",
+            "stale=prepare",
+            "off_switch=prepare"
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "cost.hard-budget-alerts",
+      "expected": {
+        "values": {
+          "fixture_unit": "fixture_micro_usd_not_billing",
+          "cap_units": 160,
+          "committed_units": 120,
+          "outstanding_units": 40,
+          "warnings": [
+            "80",
+            "100"
+          ],
+          "hard_cap_denied": true,
+          "recovery_preserved": true,
+          "usage_receipts": 3,
+          "anomaly_kinds": [
+            "budget_spike",
+            "denial_burst",
+            "excessive_compression",
+            "provider_failure_burst",
+            "retry_burst",
+            "tool_frequency"
+          ]
+        }
+      }
+    }
+  ]
+}
