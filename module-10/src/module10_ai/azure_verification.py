@@ -273,17 +273,23 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                     for r in settings["registries"]),
                 "Registry password authentication is forbidden.")
         expected_container = container(image)
-        template = probe_template(props["template"], expected_container["probes"])
-        # Azure may return 0.25 as a float (the contract uses a float too).
-        require(subset(template["containers"], [expected_container])
-                and subset(template["scale"], scale())
-                and template["terminationGracePeriodSeconds"] == 15
-                and not template.get("initContainers") and not template.get("volumes")
-                and not template.get("serviceBinds"), "App compute/probes/scaling/image differs.")
-        for item in template["containers"]:
-            require(not any(item.get(key) for key in
-                            ("env", "command", "args", "volumeMounts")),
-                    "Runtime overrides are forbidden; deploy the accepted Docker workload.")
+
+        def validate_template(actual: object) -> None:
+            """Check each Azure projection against the same trusted material contract."""
+            template = probe_template(actual, expected_container["probes"])
+            # Azure may return 0.25 as a float (the contract uses a float too).
+            require(subset(template["containers"], [expected_container])
+                    and subset(template["scale"], scale())
+                    and template["terminationGracePeriodSeconds"] == 15
+                    and not template.get("initContainers") and not template.get("volumes")
+                    and not template.get("serviceBinds"),
+                    "App compute/probes/scaling/image differs.")
+            for item in template["containers"]:
+                require(not any(item.get(key) for key in
+                                ("env", "command", "args", "volumeMounts")),
+                        "Runtime overrides are forbidden; deploy the accepted Docker workload.")
+
+        validate_template(props["template"])
         revision = props["latestRevisionName"]
         require(re.fullmatch(re.escape(n["app"]) + r"--[a-z0-9-]{1,64}", revision) is not None
                 and props["latestReadyRevisionName"] == revision,
@@ -294,10 +300,9 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                 and active[0]["properties"]["healthState"] == "Healthy"
                 and active[0]["properties"]["runningState"] == "Running"
                 and active[0]["properties"]["trafficWeight"] == 100
-                and active[0]["properties"]["provisioningState"] == "Provisioned"
-                and subset(probe_template(active[0]["properties"]["template"],
-                                          expected_container["probes"]), template),
+                and active[0]["properties"]["provisioningState"] == "Provisioned",
                 "Active revision is unhealthy, ambiguous or differs from the app template.")
+        validate_template(active[0]["properties"]["template"])
         fqdn = settings["ingress"]["fqdn"]
         require(isinstance(fqdn, str) and re.fullmatch(
             re.escape(n["app"]) + r"\.[a-z0-9-]+\.southcentralus\.azurecontainerapps\.io", fqdn

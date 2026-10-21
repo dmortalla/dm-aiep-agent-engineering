@@ -1102,3 +1102,87 @@ def test_probe_order_leaves_other_lists_positional() -> None:
     assert not subset([first, second], [second, first])
     assert not subset({"containers": [first, second]}, {"containers": [second, first]})
     assert not subset({"rules": [first, second]}, {"rules": [second, first]})
+
+
+@pytest.mark.parametrize("difference", ["ephemeralStorage", "revisionSuffix", "cooldownPeriod",
+                                      "pollingInterval", "all"])
+@pytest.mark.parametrize("omit", [False, True])
+def test_revision_default_projection_compatibility(difference: str, omit: bool) -> None:
+    """Server-filled app defaults need not appear in the revision's material projection."""
+    state = observed()
+    app = state["app"]["properties"]["template"]
+    revision = state["revisions"][0]["properties"]["template"]
+    fields = [(("containers", 0, "resources", "ephemeralStorage"), "1Gi"),
+              (("revisionSuffix",), ""), (("scale", "cooldownPeriod"), 300),
+              (("scale", "pollingInterval"), 30)]
+    for path, default in fields:
+        if difference not in (path[-1], "all"):
+            continue
+        app_target, revision_target = app, revision
+        for key in path[:-1]:
+            app_target, revision_target = app_target[key], revision_target[key]
+        app_target[path[-1]] = default
+        if not omit:
+            revision_target[path[-1]] = None
+    # Match the diagnosed mixed projection exactly in the compound case.
+    if difference == "all" and not omit:
+        del revision["containers"][0]["resources"]["ephemeralStorage"]
+    original = copy.deepcopy(state)
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert state == original
+
+
+@pytest.mark.parametrize("target", ["revision", "both"])
+@pytest.mark.parametrize("path,value", [
+    (("containers", 0, "image"), "unapproved:image"),
+    (("containers", 0, "name"), "foreign"),
+    (("containers", 0, "resources", "cpu"), 0.5),
+    (("containers", 0, "resources", "cpu"), "0.25"),
+    (("containers", 0, "resources", "memory"), "1Gi"),
+    (("scale", "minReplicas"), 1),
+    (("scale", "maxReplicas"), 3),
+    (("scale", "rules", 0, "http", "metadata", "concurrentRequests"), "5"),
+    (("scale", "rules", 0, "http", "metadata", "concurrentRequests"), 4),
+    (("terminationGracePeriodSeconds",), 30),
+    (("initContainers",), [{"name": "unapproved"}]),
+    (("volumes",), [{"name": "unapproved"}]),
+    (("serviceBinds",), [{"name": "unapproved"}]),
+    (("containers", 0, "env"), [{"name": "UNAPPROVED", "value": "synthetic"}]),
+    (("containers", 0, "command"), ["unapproved"]),
+    (("containers", 0, "args"), ["unapproved"]),
+    (("containers", 0, "volumeMounts"), [{"volumeName": "unapproved"}]),
+])
+def test_revision_material_contract_drift(target: str, path: tuple, value: object) -> None:
+    """Revision drift fails even when both projections agree on unapproved material values."""
+    state = observed()
+    templates = [state["revisions"][0]["properties"]["template"]]
+    if target == "both":
+        templates.append(state["app"]["properties"]["template"])
+    for template in templates:
+        item = template
+        for key in path[:-1]:
+            item = item[key]
+        item[path[-1]] = copy.deepcopy(value)
+    original = copy.deepcopy(state)
+    with pytest.raises(VerificationError):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+    assert state == original
+
+
+@pytest.mark.parametrize("field,value", [
+    ("name", "other"), ("healthState", "Unhealthy"), ("runningState", "ScaledToZero"),
+    ("runningState", None), ("trafficWeight", 0), ("provisioningState", "Failed"),
+    ("active", False), ("ambiguous", True),
+])
+def test_revision_material_repair_preserves_state_gate(field: str, value: object) -> None:
+    """Material projection compatibility cannot relax any of the six revision-state operands."""
+    state = observed()
+    revision = state["revisions"][0]
+    if field == "ambiguous":
+        state["revisions"].append(copy.deepcopy(revision))
+    elif field == "name":
+        revision["name"] = CONFIG.names["app"] + "--other"
+    else:
+        revision["properties"][field] = value
+    with pytest.raises(VerificationError, match="Active revision is unhealthy"):
+        validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
