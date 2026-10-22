@@ -616,6 +616,12 @@ def test_windows_cli_avoids_batch_shell(monkeypatch: pytest.MonkeyPatch, tmp_pat
         deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
 
 
+def expected_registry() -> str:
+    """Independently derive the approved registry ID exactly as the collector does."""
+    return (f"/subscriptions/{SUBSCRIPTION}/resourceGroups/" + CONFIG.names["group"]
+            + "/providers/Microsoft.ContainerRegistry/registries/" + CONFIG.names["registry"])
+
+
 def collector_double(state: dict, calls: list) -> object:
     """Adapt synthetic observations to real collector commands without calling Azure."""
     def read(command: tuple[str, ...], *args: str, subscription: str) -> object:
@@ -632,8 +638,11 @@ def collector_double(state: dict, calls: list) -> object:
         if command == ("role", "assignment", "list"):
             assert "--assignee-object-id" in args and "--include-groups" in args
             assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
+            assert args[args.index("--resource-group") + 1] == ""
             if "--all" in args:
+                assert "--scope" not in args
                 return copy.deepcopy(state["roles"])
+            assert args[args.index("--scope") + 1] == expected_registry()
             assert "--include-inherited" in args
             return copy.deepcopy(state["inherited_roles"])
         if command == ("containerapp", "revision", "list"):
@@ -798,6 +807,32 @@ def test_cli_forbids_invalid_scope_and_subscription_override(
     monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
     with pytest.raises(VerificationError):
         deployment.az_read(("role", "assignment", "list"), *args, subscription=SUBSCRIPTION)
+
+
+def test_rbac_reads_stay_cli_valid_against_operator_defaults(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both RBAC reads stay valid regardless of the operator's az default group.
+
+    azure-cli can apply a configured or parameter-persisted default group;
+    an injected group fails the --all read and the --scope read. The verifier
+    overrides it explicitly without removing least- or scope-binding arguments.
+    """
+    calls = []
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
+    deployment.collect(CONFIG, DIGEST, SUBSCRIPTION)
+    reads = [args for command, args, _ in calls
+             if command == ("role", "assignment", "list")]
+    assert len(reads) == 2
+    for args in reads:
+        assert not ("--all" in args and "--scope" in args)
+        assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
+        assert "--include-groups" in args
+        assert args[args.index("--resource-group") + 1] == ""
+    wide = next(args for args in reads if "--all" in args)
+    narrow = next(args for args in reads if "--scope" in args)
+    assert "--scope" not in wide
+    assert narrow[narrow.index("--scope") + 1] == expected_registry()
+    assert "--include-inherited" in narrow and "--all" not in narrow
 
 
 def test_cli_explicit_subscription_ignores_default(monkeypatch: pytest.MonkeyPatch) -> None:

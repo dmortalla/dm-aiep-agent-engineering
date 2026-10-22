@@ -126,9 +126,16 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str) -> dic
                          f"Microsoft.ContainerRegistry/registries/{n['registry']}")
     require(type(registry_id) is str and registry_id.lower() == expected_registry.lower(),
             "Registry observation is outside the expected subscription/resource group.")
+    # azure-cli can apply the operator's configured default resource group or
+    # parameter-persisted group to this command. An injected group makes a --all read
+    # fail with "group or scope are not required when --all is used" and makes the
+    # scoped read fail as redundant. The CLI treats an empty value as no group on
+    # both paths, so overriding it keeps the two reads contract-valid regardless
+    # of operator CLI defaults, as with the explicit --subscription binding.
     role_args = ("--assignee-object-id", principal, "--include-groups",
                  "--fill-principal-name", "false",
-                 "--fill-role-definition-name", "false")
+                 "--fill-role-definition-name", "false",
+                 "--resource-group", "")
     state["roles"] = read(("role", "assignment", "list"), *role_args, "--all")
     state["inherited_roles"] = read(("role", "assignment", "list"), *role_args,
                                     "--scope", expected_registry, "--include-inherited")
