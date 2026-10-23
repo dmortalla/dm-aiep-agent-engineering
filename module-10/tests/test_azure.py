@@ -638,7 +638,7 @@ def collector_double(state: dict, calls: list) -> object:
         if command == ("role", "assignment", "list"):
             assert "--assignee-object-id" in args and "--include-groups" in args
             assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
-            assert args[args.index("--resource-group") + 1] == ""
+            assert "--resource-group" not in args and "" not in args
             if "--all" in args:
                 assert "--scope" not in args
                 return copy.deepcopy(state["roles"])
@@ -809,13 +809,16 @@ def test_cli_forbids_invalid_scope_and_subscription_override(
         deployment.az_read(("role", "assignment", "list"), *args, subscription=SUBSCRIPTION)
 
 
-def test_rbac_reads_stay_cli_valid_against_operator_defaults(
+def test_rbac_reads_omit_resource_group_and_keep_required_bindings(
         monkeypatch: pytest.MonkeyPatch) -> None:
-    """Both RBAC reads stay valid regardless of the operator's az default group.
+    """Both RBAC reads omit --resource-group while keeping their required bindings.
 
-    azure-cli can apply a configured or parameter-persisted default group;
-    an injected group fails the --all read and the --scope read. The verifier
-    overrides it explicitly without removing least- or scope-binding arguments.
+    azure-cli rejects an empty group value as a usage error, and a non-empty
+    group conflicts with the --all read and is redundant with --scope. The
+    verifier therefore omits the flag entirely and keeps the least-authority
+    read shape: subscription binding, principal and --include-groups on both
+    reads, --all without a scope on the wide read, and the registry scope with
+    --include-inherited on the narrow read.
     """
     calls = []
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
@@ -824,10 +827,11 @@ def test_rbac_reads_stay_cli_valid_against_operator_defaults(
              if command == ("role", "assignment", "list")]
     assert len(reads) == 2
     for args in reads:
+        assert "--resource-group" not in args
+        assert "" not in args
         assert not ("--all" in args and "--scope" in args)
         assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
         assert "--include-groups" in args
-        assert args[args.index("--resource-group") + 1] == ""
     wide = next(args for args in reads if "--all" in args)
     narrow = next(args for args in reads if "--scope" in args)
     assert "--scope" not in wide
