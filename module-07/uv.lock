@@ -260,8 +260,10 @@ dependencies = [
     { name = "guardrails-ai" },
     { name = "httpx" },
     { name = "langfuse" },
+    { name = "langsmith" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "requests" },
 ]
 
 [package.optional-dependencies]
@@ -276,8 +278,10 @@ requires-dist = [
     { name = "guardrails-ai", specifier = "!=0.10.1,>=0.11,<0.12" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "langfuse", specifier = ">=4.17,<5" },
+    { name = "langsmith", specifier = ">=0.14.8,<0.15" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-settings", specifier = ">=2.6,<3" },
+    { name = "requests", specifier = ">=2.32,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6,<8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14,<1" },

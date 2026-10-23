@@ -13,8 +13,14 @@ dependencies = [
     # Story 5 explicitly owns the HTTP resource supplied to public LangfuseAPI.
     "httpx>=0.28,<1",
     "langfuse>=4.17,<5",
+    # Story 6: real LangSmith evaluation-evidence adapter dependency; the
+    # locked 0.14.8 resolution is reused; no extras, no model SDK.
+    "langsmith>=0.14.8,<0.15",
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.6,<3",
+    # Story 6: the adapter-owned requests session transport, contradicted only
+    # otherwise; locked 2.34.2 resolution reused.
+    "requests>=2.32,<3",
 ]
 
 [project.optional-dependencies]
