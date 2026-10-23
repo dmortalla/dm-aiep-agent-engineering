@@ -75,7 +75,12 @@ st.write("Deterministic means fixed local fixtures exercising accepted services.
 st.write("Optional OpenAI, Anthropic, Mem0, Guardrails, LangSmith, Langfuse and Helicone "
          "capabilities are not exercised as live services. No credentials are requested. "
          "Fixture costs are not verified billing; local latency is not production performance.")
-st.caption("Engineering complete through Story 12 Slice 1; module-wide release "
-           "reconciliation (Slice 2) is pending independent review. "
-           "No independent engineering-release acceptance, hosted-service, deployment "
-           "or production-readiness claim.")
+st.caption("Module 6.5 engineering release-readiness is independently accepted and "
+           "published to GitHub. The Streamlit deployment is undergoing final live "
+           "verification. No live-provider, hosted-service or production-readiness claim.")
+
+st.divider()
+st.caption(
+    "Developed from Techademy AI Engineering program requirements. "
+    "Independent implementation, engineering enhancements, and deployment."
+)

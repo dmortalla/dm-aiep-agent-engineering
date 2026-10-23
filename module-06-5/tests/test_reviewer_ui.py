@@ -90,7 +90,10 @@ def test_status_caption_reflects_accepted_state_without_stale_claims() -> None:
     for stale in ("Story 11 remains incomplete", "Slice 3 is outstanding",
                   "Builder candidate only"):
         assert stale not in source
-    assert "release" in source and "pending independent review" in source
+    assert "engineering release-readiness is independently accepted" in source
+    assert "published to GitHub" in source
+    assert "deployment is undergoing final live" in source
+    assert "pending independent review" not in source
     assert "deployment" in source and "production-readiness claim" in source
 
 
@@ -245,3 +248,30 @@ def test_workspace_cleanup_and_slot_release_after_service_defect(
             run_demo(Demo.PLANNING)
     finally:
         service._RUN_LOCK.release()
+
+def test_module_65_live_closeout_presentation_contract() -> None:
+    """Keep deployed reviewer labels, status, and Techademy attribution truthful."""
+    service_source = (
+        Path(__file__).parents[1]
+        / "src"
+        / "harness_engineering"
+        / "reviewer_service.py"
+    ).read_text(encoding="utf-8")
+    app_source = APP.read_text(encoding="utf-8")
+
+    assert 'MCP = "7 · MCP capability boundary"' in service_source
+    assert 'REGRESSION = "8 · Evaluation and regression"' in service_source
+    assert 'MCP = "MCP capability boundary"' not in service_source
+    assert 'REGRESSION = "Evaluation and regression"' not in service_source
+
+    assert "engineering release-readiness is independently accepted" in app_source
+    assert "Streamlit deployment is undergoing final live" in app_source
+    assert "pending independent review" not in app_source
+    assert (
+        "Developed from Techademy AI Engineering program requirements."
+        in app_source
+    )
+    assert (
+        "Independent implementation, engineering enhancements, and deployment."
+        in app_source
+    )

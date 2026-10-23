@@ -30,8 +30,8 @@ class Demo(StrEnum):
     RECOVERY = "4 · Crash recovery"
     APPROVAL = "5 · Human approval"
     OBSERVABILITY = "6 · Traces and cost dashboard"
-    MCP = "MCP capability boundary"
-    REGRESSION = "Evaluation and regression"
+    MCP = "7 · MCP capability boundary"
+    REGRESSION = "8 · Evaluation and regression"
 
 
 @dataclass(frozen=True)
