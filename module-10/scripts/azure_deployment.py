@@ -47,6 +47,48 @@ def destination(path: Path) -> Path:
     return resolved
 
 
+GROUP_STATE_FAILURES = ("group or scope are not required when --all is used",
+                        "usage error: --resource-group can't be an empty string")
+GROUP_STATE_REDUNDANT = re.compile(
+    r'Resource group "[^"]*" is redundant because scope is supplied')
+
+
+def group_state_interference(stderr: str) -> bool:
+    """Classify known operator-local CLI default/persistence contract failures.
+
+    Args:
+        stderr: Captured Azure CLI diagnostic, never echoed or written anywhere.
+
+    Returns:
+        True only for the three fixed resource-group injection failure messages.
+    """
+    return GROUP_STATE_REDUNDANT.search(stderr) is not None or any(
+        message in stderr for message in GROUP_STATE_FAILURES)
+
+
+def child_environment() -> dict[str, str]:
+    """Build Azure CLI child state with application-owned default neutralization.
+
+    The parent environment is preserved; only this child copy neutralizes the
+    operator-local resource-group default (``defaults.group``) and disables the
+    CLI local context for the resolved username so persisted
+    ``resource_group_name`` state cannot be injected. Other CLI configuration,
+    authentication and token locations stay untouched.
+    """
+    environment = dict(os.environ)
+    environment.update(AZURE_CORE_COLLECT_TELEMETRY="no", AZURE_EXTENSION_USE_DYNAMIC_INSTALL="no",
+                       AZURE_LOGGING_ENABLE_LOG_FILE="false", AZURE_DEFAULTS_GROUP="")
+    try:
+        context_user = getpass.getuser().upper()
+    except (OSError, KeyError):
+        # Preserve the CLI's own fail-safe behavior; never fabricate a username
+        # variable from a failed lookup.
+        context_user = ""
+    if context_user:
+        environment["AZURE_LOCAL_CONTEXT_" + context_user] = "off"
+    return environment
+
+
 def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
     """Run only fixed read-only CLI operations, with timeout and minimized failures.
 
@@ -59,7 +101,10 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
         Parsed observations in memory, never raw printed evidence.
 
     Raises:
-        VerificationError: CLI, timeout, response size or JSON parsing fails.
+        VerificationError: CLI, timeout, response size, JSON parsing or the
+            known operator-local resource-group default/persistence contract
+            failures. The state-interference class is sanitized and actionable;
+            unrelated failures keep the generic non-echoing message.
     """
     if command not in READ_COMMANDS:
         raise VerificationError("Azure mutation/unknown CLI operation is forbidden.")
@@ -78,16 +123,23 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
         if not runtime.is_file():
             raise VerificationError("Require Azure MSI Python runtime; batch execution forbidden.")
         prefix = [str(runtime), "-IBm", "azure.cli"]
-    environment = dict(os.environ)
-    environment.update(AZURE_CORE_COLLECT_TELEMETRY="no", AZURE_EXTENSION_USE_DYNAMIC_INSTALL="no",
-                       AZURE_LOGGING_ENABLE_LOG_FILE="false")
+    environment = child_environment()
     try:
         result = subprocess.run(
             [*prefix, *command, *args, "--subscription", subscription,
              "--only-show-errors", "--output", "json"],
             capture_output=True, text=True, check=False, timeout=90, env=environment,
         )
-        if result.returncode or len(result.stdout.encode()) > 1_048_576:
+        if result.returncode:
+            if group_state_interference(result.stderr):
+                raise VerificationError(
+                    "Azure CLI resource-group defaults or parameter persistence interfered "
+                    "with deterministic verifier reads; clear the operator-local az "
+                    "defaults or persisted group state and rerun. No acceptance evidence "
+                    "was recorded.")
+            raise VerificationError(
+                "Azure read failed; inspect access, extensions and resource state.")
+        if len(result.stdout.encode()) > 1_048_576:
             raise VerificationError(
                 "Azure read failed; inspect access, extensions and resource state.")
         return json.loads(result.stdout)
@@ -126,11 +178,13 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str) -> dic
                          f"Microsoft.ContainerRegistry/registries/{n['registry']}")
     require(type(registry_id) is str and registry_id.lower() == expected_registry.lower(),
             "Registry observation is outside the expected subscription/resource group.")
-    # An explicit group is not contract-valid on either read: an empty value is
-    # rejected by the CLI as a usage error, a non-empty value conflicts with the
-    # --all read ("group or scope are not required when --all is used") and is
-    # redundant with --scope on the scoped read. Omit the flag entirely, like
-    # relying on the explicit --subscription binding for account-default isolation.
+    # An explicit group is not contract-valid on either read: an empty argv value
+    # is rejected by the CLI as a usage error, a non-empty value conflicts with
+    # the --all read ("group or scope are not required when --all is used") and
+    # is redundant with --scope on the scoped read. The flag stays omitted and
+    # the child environment neutralizes defaults.group/local-context state so
+    # no operator-local CLI value can be injected, as with the explicit
+    # --subscription binding for account-default isolation.
     role_args = ("--assignee-object-id", principal, "--include-groups",
                  "--fill-principal-name", "false",
                  "--fill-role-definition-name", "false")

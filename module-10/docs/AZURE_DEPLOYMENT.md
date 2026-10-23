@@ -283,7 +283,19 @@ RBAC verification requires two successful complete lists for the pull principal:
 with `--scope` set to the independently derived registry ID plus
 `--include-inherited`. Both use `--assignee-object-id`, `--include-groups` and
 disabled principal/role display-name enrichment. `--scope` and `--all` are never
-combined. Azure CLI consumes list pagination; raw page envelopes, missing/empty
+combined, and `--resource-group` is never supplied. Verifier CLI reads run as
+separate child processes whose copy of the operator environment is locally
+overridden (only, never in any CLI config, file or the parent process) to
+neutralize `defaults.group` and disable the CLI local context for the resolved
+username, so persisted `resource_group_name` state cannot be injected either;
+authentication and token locations are untouched. If the CLI still reports one
+of its three known group-injection contract failures (a group conflicting with
+`--all`, redundant with `--scope`, or an empty-string group usage error), the
+verifier raises a sanitized actionable error naming operator-local resource-group
+defaults or parameter persistence as the interference, states that no acceptance
+evidence was recorded, and fails closed with no success output; unrelated CLI
+failures keep the generic non-echoing error. Azure CLI consumes list pagination;
+raw page envelopes, missing/empty
 lists, malformed assignments, extra authority or disagreeing assignment IDs fail.
 The subscription-wide view detects sibling resources and other resource groups;
 the scoped view includes inherited subscription/management-group authority.

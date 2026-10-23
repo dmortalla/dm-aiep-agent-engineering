@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 from itertools import permutations
@@ -850,6 +851,167 @@ def test_cli_explicit_subscription_ignores_default(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(deployment.subprocess, "run", run)
     assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION) == {}
+
+
+RBAC_WIDE_ARGS = ("--assignee-object-id", PRINCIPAL, "--include-groups",
+                  "--fill-principal-name", "false",
+                  "--fill-role-definition-name", "false", "--all")
+RBAC_NARROW_ARGS = ("--assignee-object-id", PRINCIPAL, "--include-groups",
+                    "--fill-principal-name", "false",
+                    "--fill-role-definition-name", "false",
+                    "--scope", expected_registry(), "--include-inherited")
+
+
+def rbac_child_reads(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
+    """Run both RBAC types through the real az_read boundary and record child state."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    environments = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        environments.append(dict(kwargs["env"]))
+        assert "--resource-group" not in command and "" not in command
+        assert command[command.index("--subscription") + 1] == SUBSCRIPTION
+        assert "--assignee-object-id" in command and "--include-groups" in command
+        assert command[command.index("--fill-principal-name") + 1] == "false"
+        assert command[command.index("--fill-role-definition-name") + 1] == "false"
+        if "--all" in command:
+            assert "--scope" not in command and "--include-inherited" not in command
+        else:
+            assert command[command.index("--scope") + 1] == expected_registry()
+            assert "--include-inherited" in command and "--all" not in command
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(deployment.subprocess, "run", run)
+    assert deployment.az_read(("role", "assignment", "list"), *RBAC_WIDE_ARGS,
+                              subscription=SUBSCRIPTION) == {}
+    assert deployment.az_read(("role", "assignment", "list"), *RBAC_NARROW_ARGS,
+                              subscription=SUBSCRIPTION) == {}
+    assert len(environments) == 2
+    return environments
+
+
+def test_rbac_reads_survive_injected_defaults_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An operator defaults.group cannot reach either RBAC read through the child CLI."""
+    monkeypatch.setenv("AZURE_DEFAULTS_GROUP", "synthetic-default-group")
+    monkeypatch.setattr(deployment.getpass, "getuser", lambda: "reviewer")
+    environments = rbac_child_reads(monkeypatch)
+    for environment in environments:
+        assert environment["AZURE_DEFAULTS_GROUP"] == ""
+        assert environment["AZURE_LOCAL_CONTEXT_REVIEWER"] == "off"
+    assert os.environ["AZURE_DEFAULTS_GROUP"] == "synthetic-default-group"
+    assert os.environ.get("AZURE_LOCAL_CONTEXT_REVIEWER") is None
+
+
+def test_rbac_reads_survive_injected_persisted_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An operator persisted resource_group_name cannot alter either RBAC read.
+
+    Local context, not argv, is the persistence injection channel: this models
+    its enabled operator-side state through the same username-scoped variable
+    the CLI reads, and requires the child override to be exactly off.
+    """
+    monkeypatch.setattr(deployment.getpass, "getuser", lambda: "reviewer")
+    monkeypatch.setenv("AZURE_LOCAL_CONTEXT_REVIEWER", "on")
+    monkeypatch.setenv("AZURE_DEFAULTS_GROUP", "synthetic-persisted-group")
+    environments = rbac_child_reads(monkeypatch)
+    for environment in environments:
+        assert environment["AZURE_LOCAL_CONTEXT_REVIEWER"] == "off"
+        assert environment["AZURE_DEFAULTS_GROUP"] == ""
+    assert os.environ["AZURE_LOCAL_CONTEXT_REVIEWER"] == "on"
+    assert os.environ["AZURE_DEFAULTS_GROUP"] == "synthetic-persisted-group"
+
+
+def test_rbac_child_local_context_fails_safe_without_username(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed username lookup fabricates no local-context authority and reads stay valid."""
+    for key in (key for key in os.environ if key.startswith("AZURE_LOCAL_CONTEXT_")):
+        monkeypatch.delenv(key)
+
+    def unavailable() -> str:
+        raise OSError("No user name could be determined.")
+
+    monkeypatch.setattr(deployment.getpass, "getuser", unavailable)
+    environments = rbac_child_reads(monkeypatch)
+    for environment in environments:
+        assert environment["AZURE_DEFAULTS_GROUP"] == ""
+        assert not [key for key in environment if key.startswith("AZURE_LOCAL_CONTEXT_")]
+    assert not [key for key in os.environ if key.startswith("AZURE_LOCAL_CONTEXT_")]
+
+
+@pytest.mark.parametrize("stderr", [
+    "group or scope are not required when --all is used",
+    'Resource group "synthetic-foreign-group" is redundant because scope is supplied',
+    "usage error: --resource-group can't be an empty string",
+], ids=["all-conflict", "redundant", "empty-group"])
+def test_residual_group_state_failure_is_sanitized(stderr: str,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    """Known operator-local CLI-state contract failures get one sanitized actionable error."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    monkeypatch.setattr(deployment.subprocess, "run",
+                        lambda command, **kwargs: subprocess.CompletedProcess(
+                            command, 2, "", stderr))
+    with pytest.raises(VerificationError) as error:
+        deployment.az_read(("role", "assignment", "list"), *RBAC_WIDE_ARGS,
+                           subscription=SUBSCRIPTION)
+    message = str(error.value)
+    assert "resource-group defaults or parameter persistence" in message
+    assert "No acceptance evidence" in message
+    for leak in (SUBSCRIPTION, PRINCIPAL, "synthetic-foreign-group", "unrequired",
+                 "usage error", "can't be an empty string", "is redundant because",
+                 "not required when"):
+        assert leak not in message
+
+
+def test_unrelated_cli_failure_stays_generic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the fixed local-state contract messages get the classification treatment."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    monkeypatch.setattr(deployment.subprocess, "run", lambda command, **kwargs:
+                        subprocess.CompletedProcess(command, 3, "",
+                                                    "unrelated sensitive diagnostic"))
+    with pytest.raises(VerificationError, match="Azure read failed; inspect access") as error:
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
+    assert "sensitive" not in str(error.value)
+
+
+@pytest.mark.parametrize("stderr", [
+    "group or scope are not required when --all is used",
+    'Resource group "synthetic-foreign-group" is redundant because scope is supplied',
+    "usage error: --resource-group can't be an empty string",
+], ids=["all-conflict", "redundant", "empty-group"])
+def test_residual_group_state_failure_records_no_evidence(stderr: str,
+                                                         monkeypatch: pytest.MonkeyPatch,
+                                                         tmp_path: Path,
+                                                         capsys: pytest.CaptureFixture) -> None:
+    """Residual default-state interference through main leaves no artifact and echoes nothing."""
+    double = collector_double(observed(), [])
+    output = tmp_path / "no-acceptance.json"
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+
+    real_az_read = deployment.az_read
+
+    def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
+        if command == ("role", "assignment", "list"):
+            monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+            monkeypatch.setattr(deployment.subprocess, "run", lambda cmd, **kw:
+                                subprocess.CompletedProcess(cmd, 2, "", stderr))
+            return real_az_read(command, *args, subscription=subscription)
+        return double(command, *args, subscription=subscription)
+
+    monkeypatch.setattr(deployment, "az_read", az_read)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
+                        "--verify-cloud", "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert "resource-group defaults or parameter persistence" in transcript
+    assert "No acceptance evidence" in transcript
+    for leak in (SUBSCRIPTION, PRINCIPAL, "synthetic-foreign-group", "usage error",
+                 "can't be an empty string", "is redundant because", "not required when"):
+        assert leak not in transcript
 
 
 @pytest.mark.parametrize("view", ["roles", "inherited_roles"])

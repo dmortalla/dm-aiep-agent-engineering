@@ -286,3 +286,78 @@ files remain the repair's entire scope; only this verification record was update
 No Azure operation, provider registration, RBAC mutation, image publication, Git
 push/merge/tag, deployment or Story 10.10 work occurred. Fresh independent semantic
 acceptance and genuine human-controlled Azure evidence remain deferred.
+
+## RBAC default-stability repair — 2026-10-23
+
+Repair baseline HEAD: `8f6d1450f626449ac3960d274fff83d62bd39378` (Module 10
+content unchanged from `1666e99…` by an intervening foreign module-07 commit
+that also touched nothing under Module 10), with candidate
+`130955f37af873c3fa8ca54c72021ae81957c5ec` verified as an ancestor (merge-base
+exit 0), the module-10 scripts/tests/docs-tracked content byte-identical to that
+candidate before this repair (`git diff 130955f HEAD -- module-10` empty), no
+later Module 10 commit, and a clean Module 10 working tree with empty staging
+before mutation. Foreign concurrent work outside Module 10 is untouched.
+
+The two prior fixes left `--resource-group` omitted from both RBAC reads, but the
+Azure CLI can still inject `resource_group_name` from the operator's configured
+group default (``defaults.group``) or from persisted parameter/local-context
+state. On the subscription-wide `--all` read such an injected group fails with
+"group or scope are not required when --all is used" before sibling-authority
+detection can run; the scoped read fails as redundant. Local operator CLI state
+therefore still breathes nondeterminism into verification.
+
+The repair, per the independent adversarial review contract:
+
+1. `az_read` now builds its child environment through a `child_environment()`
+   boundary that preserves `os.environ` and only overrides the child copy:
+   `AZURE_DEFAULTS_GROUP=""` (neutralizing `defaults.group`) and
+   `AZURE_LOCAL_CONTEXT_<USERNAME>="off"`, where `<USERNAME>` is
+   `getpass.getuser().upper()`, disabling local context/persistence. A failed
+   username lookup fabricates no username variable and keeps the CLI's own
+   fail-safe behavior. Nothing under `~/.azure/config`, `az configure` defaults,
+   param-persist state, local-context files or the parent process environment is
+   changed, and `AZURE_CONFIG_DIR` isolation is not used so operator auth/token
+   state is untouched. All argv and read allowlist semantics remain as accepted.
+2. On a nonzero CLI exit code, the three known operator-local contract failure
+   messages (`--all` conflict, scope-redundant group, empty-string group usage
+   error) are classified into one distinct, sanitized, actionable
+   `VerificationError` that names resource-group defaults or parameter
+   persistence as the interference and states that no acceptance evidence was
+   recorded. Raw stderr, group names, subscription/principal/credential values
+   and arbitrary CLI output are never echoed; other failures keep the existing
+   generic non-echoing message and verification still fails closed.
+
+New effective-behavior regressions (no `--resource-group` or empty elements in
+RBAC argv, both reads keep `--all`/registry-scope+`--include-inherited`,
+`--assignee-object-id`, `--include-groups`, both fill flags and the explicit
+`--subscription` binding) cover: injected `defaults.group`, injected persisted
+group state, failed username resolution, the sanitized residual-state error at
+the CLI boundary and through the full `main()` entry point without an evidence
+file, and preserved generic handling of unrelated CLI failures. The child-state
+assertions fail against the candidate 130955f implementation (verified
+externally: its child environment contains no `AZURE_DEFAULTS_GROUP` and the
+classification functions are absent). Existing argv assertions were retained
+unchanged; `--all` was not replaced by a subscription scope.
+
+Independent local repair gates (Python 3.12.14, pytest 8.4.2, external basetemp
+and bytecode under parent `TECHADEMY/EVIDENCE/module10-story109-default-stability-20261022`):
+
+1. `python -m ruff check . --no-cache`: all checks passed, exit 0.
+2. `python -m pytest tests/test_azure.py -q`: **707 passed in 4.46s**.
+3. `python -m pytest -p no:cacheprovider --basetemp <external-evidence-directory>`:
+   **922 passed, one existing Starlette warning in 20.49s**, exit 0. The known
+   intermittent Streamlit AppTest timeout did not occur.
+4. `python -m compileall -q src tests scripts ui`: passed, exit 0; bytecode redirected
+   to external evidence with `PYTHONPYCACHEPREFIX`.
+5. Existing `pipeline.validate_contract()`: passed, exit 0.
+
+Requirements: review contract/R4 semantics addressed locally. Product experience:
+a deterministic verifier regardless of operator CLI defaults, plus the documented
+sanitized resolution error. Real functionality: effective child-state and
+failure-classification regressions pass; cloud execution remains unverified.
+Reliability: both RBAC read shapes fail closed and deterministically. Security:
+child-only neutralization with no access/state/config mutation and no new echo
+surface. Cost: unchanged. Evidence: offline regressions only; genuine cloud
+verification remains deferred. Deployment/no cloud mutation unchanged. No
+production-grade completion claim is made; this is a bounded DEFAULT-STABILITY
+repair, and Story 10.10 work does not start.
