@@ -1371,9 +1371,9 @@ def test_revision_material_contract_drift(target: str, path: tuple, value: objec
 
 
 @pytest.mark.parametrize("field,value", [
-    ("name", "other"), ("healthState", "Unhealthy"), ("runningState", "ScaledToZero"),
-    ("runningState", None), ("trafficWeight", 0), ("provisioningState", "Failed"),
-    ("active", False), ("ambiguous", True),
+    ("name", "other"), ("healthState", "Unhealthy"), ("runningState", "Degraded"),
+    ("runningState", "SyntheticState"), ("runningState", None), ("trafficWeight", 0),
+    ("provisioningState", "Failed"), ("active", False), ("ambiguous", True),
 ])
 def test_revision_material_repair_preserves_state_gate(field: str, value: object) -> None:
     """Material projection compatibility cannot relax any of the six revision-state operands."""
@@ -1387,3 +1387,20 @@ def test_revision_material_repair_preserves_state_gate(field: str, value: object
         revision["properties"][field] = value
     with pytest.raises(VerificationError, match="Active revision is unhealthy"):
         validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+@pytest.mark.parametrize("running_state", ["Running", "ScaledToZero"])
+def test_revision_running_states_from_approved_contract(running_state: str) -> None:
+    """Only the minReplicas==0-compatible running states pass, without mutating observations.
+
+    ScaledToZero is the legitimate idle state produced by the approved deployment
+    contract (azure_contract.scale, minReplicas == 0); a healthy, provisioned,
+    fully weighted active revision in that state must not fail acceptance or
+    trigger any warm-up workaround. Running remains the warm serving state.
+    """
+    state = observed()
+    state["revisions"][0]["properties"]["runningState"] = running_state
+    original = copy.deepcopy(state)
+    expected_fqdn = CONFIG.names["app"] + ".synthetic.southcentralus.azurecontainerapps.io"
+    assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION) == expected_fqdn
+    assert state == original

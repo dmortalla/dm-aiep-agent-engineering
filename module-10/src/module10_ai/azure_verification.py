@@ -106,6 +106,13 @@ def dapr_disabled(value: object) -> bool:
     return value is None or (type(value) is dict and value.get("enabled") is False)
 
 
+# The approved deployment contract (azure_contract.scale, minReplicas == 0) makes
+# ScaledToZero a legitimate idle running state for a healthy, provisioned, fully
+# weighted active revision. Only these two acceptance-compatible states pass;
+# unknown, malformed, transitional, degraded or failed values fail closed.
+LEGITIMATE_RUNNING_STATES = ("Running", "ScaledToZero")
+
+
 def validate_roles(state: dict, principal: str, registry_id: str, subscription: str) -> None:
     """Require both complete CLI lists to agree on exactly the permitted assignment.
 
@@ -298,7 +305,7 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
         active = [r for r in revisions if r["properties"]["active"]]
         require(len(active) == 1 and active[0]["name"] == revision
                 and active[0]["properties"]["healthState"] == "Healthy"
-                and active[0]["properties"]["runningState"] == "Running"
+                and active[0]["properties"]["runningState"] in LEGITIMATE_RUNNING_STATES
                 and active[0]["properties"]["trafficWeight"] == 100
                 and active[0]["properties"]["provisioningState"] == "Provisioned",
                 "Active revision is unhealthy, ambiguous or differs from the app template.")

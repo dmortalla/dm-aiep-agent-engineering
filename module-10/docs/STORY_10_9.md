@@ -295,8 +295,13 @@ that also touched nothing under Module 10), with candidate
 `130955f37af873c3fa8ca54c72021ae81957c5ec` verified as an ancestor (merge-base
 exit 0), the module-10 scripts/tests/docs-tracked content byte-identical to that
 candidate before this repair (`git diff 130955f HEAD -- module-10` empty), no
-later Module 10 commit, and a clean Module 10 working tree with empty staging
-before mutation. Foreign concurrent work outside Module 10 is untouched.
+later Module 10 commit, and a Module 10 working tree whose tracked content was
+clean of unstaged mutation. Correction (recorded 2026-10-23): that repair session
+did not start from empty project-wide staging; it inherited a complete staged
+implementation of the same default-stability contract from an interrupted prior
+session, independently reviewed and verified that pre-work against the review
+contract and all gates before committing it. Foreign concurrent work outside
+Module 10 is untouched.
 
 The two prior fixes left `--resource-group` omitted from both RBAC reads, but the
 Azure CLI can still inject `resource_group_name` from the operator's configured
@@ -361,3 +366,52 @@ surface. Cost: unchanged. Evidence: offline regressions only; genuine cloud
 verification remains deferred. Deployment/no cloud mutation unchanged. No
 production-grade completion claim is made; this is a bounded DEFAULT-STABILITY
 repair, and Story 10.10 work does not start.
+
+## Scale-to-zero verifier contract repair — 2026-10-23
+
+A bounded, human-authorized live verifier run failed before HTTPS/Monitor
+acceptance with `runningState = "ScaledToZero"` on the single active revision
+(`activeRevisionCount == 1`, `healthState = Healthy`,
+`provisioningState = Provisioned`). Read-only diagnosis established that this is
+a legitimate running state of the approved deployment contract
+(`azure_contract.scale`, `minReplicas == 0`, `maxReplicas == 2`), yet
+`validate_state` required `runningState == "Running"` — the verifier rejected
+the intentional idle state its own contract produces. Existing tests reinforced
+the defect by parametrizing `ScaledToZero` as an invalid mutation.
+
+The repair changes only the running-state gate in
+`module-10/src/module10_ai/azure_verification.py`: an active revision's
+`runningState` must now be one of `LEGITIMATE_RUNNING_STATES = ("Running",
+"ScaledToZero")`, the acceptance-compatible states of the `minReplicas == 0`
+contract. Unknown, malformed (`None`), transitional, degraded or failed values
+still fail closed, and the combined invariant message is unchanged because the
+remaining revision invariants were not relaxed. All independent invariants are
+preserved exactly one active revision; active identity equal to
+`latestRevisionName`; `latestReadyRevisionName` equal to the latest revision;
+`healthState == "Healthy"`; `trafficWeight == 100`;
+`provisioningState == "Provisioned"`; and material-template validation of both
+the app template and the active revision template. The accepted
+`c648b41` RBAC default/persistence isolation repair (child-only
+`AZURE_DEFAULTS_GROUP`/local-context neutralization, `--all` and registry-scope
+read semantics, sanitized group-state diagnostics) is untouched. The deployment
+contract was not changed to accommodate the verifier, and no warm-replica
+workaround was introduced.
+
+New deterministic regressions: `test_revision_running_states_from_approved_contract`
+accepts both `Running` and `ScaledToZero` for an otherwise valid observation and
+asserts the observation is never mutated; the invalid-state gate parametrize
+now exercises `Degraded`, `SyntheticState` and `None` as unapproved running
+states. Baseline regression proof: run against `c648b41`'s
+`azure_verification.py` in an isolated source-resolution harness,
+`ScaledToZero` acceptance failed with the production contradiction while all
+unapproved-state cases still failed closed, and the same tests pass only against
+the repaired verifier.
+
+Gates (Windows venv via WSL interop, external basetemp and bytecode under
+`/tmp/opencode`): ruff clean; focused `tests/test_azure.py` 710 passed; full
+suite 925 passed with one pre-existing Starlette warning; compileall exit 0;
+`pipeline.validate_contract()` passed. `AZURE_DEPLOYMENT.md` was corrected in
+the one sentence that described the defective gate so operator guidance matches
+the repaired verifier. No Azure operation, live HTTPS request, Monitor query,
+resource mutation or Story 10.10 work occurred; Story 10.9 acceptance remains
+deferred to independent review plus separately authorized live verification.

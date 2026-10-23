@@ -211,11 +211,14 @@ review and teardown; a failed command does not mean zero incurred cost.
 ## Human verification and reviewer evidence
 
 Run from the permitted reviewer egress IP. Verify the app is stable and ready;
-on a scaled-to-zero or activating revision, allow one cold-start readiness request
-with a 30-second timeout, then wait at most 60 seconds before rerunning verification.
-Do not create unbounded polling or verification traffic. The strict revision gate
-expects Healthy/Running; scale-to-zero is an intentional idle state and must be
-activated before this acceptance run. A bounded human warm-up, if needed:
+on a scaled-to-zero revision, allow one cold-start readiness request with a
+30-second timeout, then wait at most 60 seconds before rerunning verification.
+Do not create unbounded polling or verification traffic. The strict revision
+gate accepts Healthy/Running and Healthy/ScaledToZero: a scaled-to-zero idle
+state is a legitimate result of the approved minReplicas == 0 deployment
+contract and is validated as such, so no warm-up is required for the verifier
+itself; warm-up guidance applies only to the interactive health request below.
+A bounded human warm-up, if needed:
 
 ```powershell
 $fqdn = az containerapp show --resource-group $names.group --name $names.app --query properties.configuration.ingress.fqdn --output tsv
