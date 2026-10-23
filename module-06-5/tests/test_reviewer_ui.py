@@ -84,6 +84,16 @@ def test_startup_guidance_and_allowlisted_choices(monkeypatch: pytest.MonkeyPatc
     assert not at.code
 
 
+def test_status_caption_reflects_accepted_state_without_stale_claims() -> None:
+    """The reviewer status stays truthful as stories are accepted and closed."""
+    source = APP.read_text(encoding="utf-8")
+    for stale in ("Story 11 remains incomplete", "Slice 3 is outstanding",
+                  "Builder candidate only"):
+        assert stale not in source
+    assert "release" in source and "pending independent review" in source
+    assert "deployment" in source and "production-readiness claim" in source
+
+
 @pytest.mark.parametrize("demo", tuple(Demo))
 def test_real_headless_demonstrations(demo: Demo, offline: list[int]) -> None:
     at = app()

@@ -73,7 +73,9 @@ Helicone routing is authorized or exercised by this implementation.
 Story 11 closeout: Slices 1–2 were independently accepted and committed
 (`fa7d24872826ffa835d24976a4c92d1f84fdc709`, `9853ac6afc24ddba82363a195149e3a3138c194d`);
 Slice 3 closeout/traceability reconciliation is recorded in
-`docs/STORY_11_SLICE_3.md`. Story 12 and module release remain outstanding.
+`docs/STORY_11_SLICE_3.md`. Story 12 Slice 1 was independently accepted and
+committed at `1666e99`; module-wide release reconciliation is the current
+Slice 2 candidate and module release remains subject to independent review.
 Evidence is `deterministic` and `local_integration` only; no live-provider,
 hosted-service, deployment, genuine-identity, verified-billing or
 production-latency claim is made.
@@ -92,3 +94,165 @@ production-latency claim is made.
 ENG-006/ENG-007 are standing governance requirements and remain active for
 Story 12. Story 11 scope is closed; Module 6.5 module-wide release evidence is
 not claimed.
+
+## Story 12 Slice 1 — composed integration evidence — independently accepted
+
+Story 12 Slice 1 (`1666e99`, "feat(module-06-5): add end-to-end harness story
+board") was independently accepted and committed on 2026-10-22. It executes the
+accepted Story 2–11 services in one deterministic, credential-free composed run
+(`src/harness_engineering/story_board.py`) across four disjoint identity
+segments: the governed core workflow (planning, scheduling, context budget and
+compression, memory routing, capability selection versus independent
+authorization, per-attempt reauthorized tool execution, provider retry-then-
+fallback, ledger TIMEOUT settle, reopen equality and hard-cap denial, anomaly
+arming); the in-process MCP SDK memory transport (discovery without implicit
+trust, trusted binding, denial and off-switch redlines, clean close of the
+server/session life); the durable approval lifecycle (confidence suspension, an
+independently constructed store recording the human decision, exactly-once
+consumption, replay refusal, and an out-of-band direct-consumption redline);
+and recovery after commit (verified fresh recovery with zero effect replays,
+idempotent on repeat).
+
+Verification: `tests/test_story_board.py` (5 tests: measured facts,
+reproducibility across fresh directories, fail-closed directory reuse,
+evidence-model tamper rejection, sanitized CLI failure) plus the full module
+suite (1,756 passing at the slice record date). `StoryBoardEvidence` enforces
+exactly 31 `CheckEvidence` items in the fixed `_CHECK_IDS` order and fixed
+non-claims, validated in order, so missing, extra or reordered measurements
+cannot validate. The record is `docs/STORY_12_SLICE_1.md`.
+
+Evidence-class terminology: the story board uses labels
+`deterministic_fixture` and `local_integration` for its emitted evidence. These
+map directly onto the approved classes `deterministic` (fixed local fixtures)
+and `local-integration` (local SQLite persistence and the in-process MCP SDK
+memory transport). No new, higher-assurance category is created or implied, and
+no live-provider or deployment evidence exists in this module.
+
+## Story 12 Slice 2 — module-wide release reconciliation
+
+This section reconciles the complete accepted implementation against all 69
+approved requirements without amending any approved requirement wording. Story
+counts: 62 source-derived (`REQ-OBJ`, `REQ-PLAN`, `REQ-CTX`, `REQ-COMP`,
+`REQ-TOOL`, `REQ-EXEC`, `REQ-REC`, `REQ-HITL`, `REQ-MCP`, `REQ-OBS`,
+`REQ-EVAL`, `REQ-COST`, `REQ-SAFE`, `REQ-TECH`, `REQ-LAB`, `REQ-DEL`) plus 7
+additive (`ENG-001` through `ENG-007`). Requirements accepted in the Story 10
+and Story 11 sections above (REQ-OBS-001..003, REQ-COST-001..004,
+REQ-TECH-004/005/007, REQ-LAB-006, REQ-DEL-004/005, ENG-001..007) are closed by
+those tables; the matrix below closes the remainder. Paths are relative to
+`module-06-5`.
+
+| Requirement | Implementation evidence | Verification / reviewer evidence |
+| --- | --- | --- |
+| REQ-OBJ-001 | Composed governed runtime: `orchestration.py` lifecycle over the accepted planning/context/tool/provider/persistence services; `story_board.py` closes the end-to-end path | `test_orchestration_integrated.py`, `test_story_board.py`; accepted `STORY_12_SLICE_1.md` (31 in-order checks) |
+| REQ-PLAN-001..003, REQ-LAB-001 | `planning.py` (`PlanningEngine` decomposition, dependency graph, `PriorityScheduler`); `planning_lab.py` (`run_planning_lab()` service) | `test_planning_engine.py` (including the `run_planning_lab()` service run), `test_planning_scheduler.py`, `test_planning.py`; Streamlit reviewer demonstration 1; story board segment 1 deterministic order/dependency checks |
+| REQ-CTX-001..003, REQ-COMP-001..003, REQ-TECH-002, REQ-LAB-002 | `context.py` (construction, budget, summarization compression, sliding window), `memory.py` (short-term state, long-term routing criteria, Mem0 adapter boundary) | `test_context.py`, `test_context_compression.py`, `test_memory.py`, `test_context_lab.py`; story board context/compression/routing facts |
+| REQ-TOOL-001..004, REQ-SAFE-002, REQ-SAFE-003, REQ-LAB-003 | `capabilities.py` (registry selection), `permissions.py` (scope policy, approval-required metadata, blocklists), `execution.py` (application-level bounded executor), `permission_lab.py` | `test_capabilities.py`, `test_permissions.py`, `test_execution.py`, `test_permission_lab.py`; story board governed-tool-authorization check (selection never grants authority) |
+| REQ-EXEC-001..004, REQ-SAFE-004, REQ-TECH-001 | `orchestration.py` (LangGraph-based finite lifecycle, bounded retry with exponential backoff, circuit-breaker, fallback, hard stops, deadlines, off-switch checks), `lifecycle_controls.py` (`OffSwitch`, `RunControls`) | `test_orchestration.py`, `test_orchestration_controls.py`, `test_orchestration_fallback_stops.py`; story board retry/fallback/off-switch redlines |
+| REQ-REC-001..004, REQ-DEL-002, REQ-LAB-004 | `persistence.py`, `recovery.py`, `effects.py` (committed-effect tracking, no-replay recovery, idempotent re-entry), `recovery_lab.py` | `test_persistence.py`, `test_recovery.py`, `test_effect_recovery.py`, `test_recovery_lab.py`; story board segment 4 `effect_replays=0` and idempotent repeat |
+| REQ-HITL-001..003, REQ-DEL-003, REQ-LAB-005 | `approvals.py` (confidence thresholds, exact-action binding), `approval_persistence.py` (durable store), `approval_lifecycle.py` (asynchronous suspend/resume), `approval_lab.py` | `test_approvals.py`, `test_approval_persistence.py`, `test_approval_lifecycle.py`, `test_approval_lab.py`; story board segment 3 suspension, independent decision, consumption-once, replay redline |
+| REQ-MCP-001..003, REQ-TECH-003 | `mcp_discovery.py`, `mcp_binding.py`, `mcp_local.py`, `mcp_lab.py` | `test_mcp_discovery.py`, `test_mcp_binding.py`, `test_mcp_local.py`, `test_mcp_lab.py`; story board segment 2 inert-discovery/trusted-binding/denial checks |
+| REQ-SAFE-001 | `providers.py` (`OutputFilter`, `ProviderOutputRejected`), `guardrails_adapter.py` (additive) | `test_providers.py`, `test_guardrails_adapter.py`; story board filtered-output check |
+| REQ-TECH-006 | `guardrails_adapter.py` (Guardrails AI schema validation; locked extra; never inference or authority) | `test_guardrails_adapter.py` real `guardrails` lifecycle tests; additive validation only, no hosted service |
+| REQ-TECH-008, REQ-TECH-009 | `vendor_providers.py` (`OpenAIProvider`, `AnthropicProvider` optional adapters behind the provider-neutral `providers.py` contracts) | `test_vendor_providers.py` credential-free adapter tests; adapters only, never exercised as live providers |
+| REQ-DEL-001 | The accepted runtime composition of Stories 2–11 (parallel services, each with its own tests) integrated by `story_board.py` | `test_story_board.py` composed evidence; individual service suites cited in the rows above |
+| ENG-002..ENG-005 | Untrusted-data validation with no model/agent authority feedback across the capabilities, permissions, execution, MCP, provider, guardrail, ledger, telemetry and golden-set boundaries; bounded retries, loops, calls, resources, latency and cost in the same accepted implementations; credential-free deterministic reviewer path | Failure/adversarial/zero-external-attempt coverage in the cited per-service suites plus `test_story_board.py` redlines; full module regression suites |
+
+### 69/69 closure ledger
+
+Every approved requirement identifier is closed by exactly one of: the Story 10
+table (REQ-OBS-001..003, REQ-COST-001..004, REQ-TECH-004, REQ-TECH-005,
+REQ-TECH-007, REQ-LAB-006, REQ-DEL-004), the Story 11 table (REQ-EVAL-001..003,
+REQ-DEL-005, ENG-001), the ENG-002..ENG-007 line in the Story 10 table, or the
+Story 12 Slice 2 matrix above. Individually enumerated: REQ-OBJ-001;
+REQ-PLAN-001, REQ-PLAN-002, REQ-PLAN-003; REQ-CTX-001, REQ-CTX-002,
+REQ-CTX-003; REQ-COMP-001, REQ-COMP-002, REQ-COMP-003; REQ-TOOL-001,
+REQ-TOOL-002, REQ-TOOL-003, REQ-TOOL-004; REQ-EXEC-001, REQ-EXEC-002,
+REQ-EXEC-003, REQ-EXEC-004; REQ-REC-001, REQ-REC-002, REQ-REC-003, REQ-REC-004;
+REQ-HITL-001, REQ-HITL-002, REQ-HITL-003; REQ-MCP-001, REQ-MCP-002, REQ-MCP-003;
+REQ-SAFE-001, REQ-SAFE-002, REQ-SAFE-003, REQ-SAFE-004; REQ-TECH-001,
+REQ-TECH-002, REQ-TECH-003, REQ-TECH-006, REQ-TECH-008, REQ-TECH-009;
+REQ-LAB-001, REQ-LAB-002, REQ-LAB-003, REQ-LAB-004, REQ-LAB-005; REQ-DEL-001,
+REQ-DEL-002, REQ-DEL-003. Count: 62 source-derived + 7 additive (ENG-001,
+ENG-002, ENG-003, ENG-004, ENG-005, ENG-006, ENG-007) = 69 of 69.
+`tests/test_release_reconciliation.py` verifies this closure mechanically (all
+69 identifiers present in this document).
+
+### Labs (6 of 6) and deliverables (5 of 5)
+
+All six labs are implemented, tested and reviewer-demonstrable. Four expose
+direct CLI evidence surfaces (`python -m harness_engineering.permission_lab`,
+`recovery_lab`, `approval_lab`, `observability_lab`, each with a real `main()`
+entry point); planning and context expose deterministic service functions
+(`run_planning_lab()`, `run_context_lab()`) and are reviewer-demonstrable
+through the accepted Streamlit demonstrations ("1 · Task planning" and
+"2 · Context compression" via `streamlit run streamlit_app.py`).
+
+| Lab (requirement) | Reviewer surface / primary implementation | Tests | Evidence class | Non-claim / limitation |
+| --- | --- | --- | --- | --- |
+| REQ-LAB-001 planning | `run_planning_lab()` service in `planning_lab.py` over `planning.py`; Streamlit reviewer demonstration 1 | `test_planning_engine.py` (includes the `run_planning_lab()` service run), `test_planning_scheduler.py`, `test_planning.py` | deterministic | fixed local fixture goals only |
+| REQ-LAB-002 context compression | `run_context_lab()` service in `context_lab.py` over `context.py`, `memory.py`; Streamlit reviewer demonstration 2 | `test_context_lab.py`, `test_context_compression.py`, `test_memory.py` | deterministic | token estimates are local heuristics, not model tokenizers |
+| REQ-LAB-003 permissions/sandbox | `python -m harness_engineering.permission_lab`; `capabilities.py`, `permissions.py`, `execution.py` | `test_permission_lab.py`, `test_permissions.py`, `test_execution.py` | deterministic | application-level sandbox boundary, not OS/container isolation |
+| REQ-LAB-004 recovery/resume | `python -m harness_engineering.recovery_lab`; `persistence.py`, `recovery.py`, `effects.py` | `test_recovery_lab.py`, `test_persistence.py`, `test_recovery.py`, `test_effect_recovery.py` | deterministic + local-integration (SQLite) | local trusted-filesystem evidence, not power-loss durability |
+| REQ-LAB-005 HITL approval gate | `python -m harness_engineering.approval_lab`; `approvals.py`, `approval_persistence.py`, `approval_lifecycle.py` | `test_approval_lab.py`, `test_approval_lifecycle.py`, `test_approval_persistence.py` | deterministic + local-integration (SQLite) | human identities/decisions are simulated fixtures |
+| REQ-LAB-006 observability/cost | `python -m harness_engineering.observability_lab`; `observability_lab.py` over `observability.py`, `telemetry_projections.py` | `test_observability_lab.py`, `test_observability.py`, `test_cost_governance.py`, `test_latency.py` | local-integration + deterministic | optional LangSmith/Langfuse projections are offline-boundary only (Story 10 rows) |
+
+Deliverable reconciliation: REQ-DEL-001 (runtime with full lifecycle control) —
+the Story 2–11 service composition, closed by `story_board.py`;
+REQ-DEL-002 (checkpointing/recovery) — `persistence.py`/`recovery.py`/`effects.py`
+with the Story 6 suites and story board segment 4; REQ-DEL-003 (HITL approval
+workflow) — the approval family with the Story 7 suites and story board segment
+3; REQ-DEL-004 (observability/cost dashboard) — Story 10 CLI presentation plus
+the accepted combined Streamlit reviewer experience (Story 11 table);
+REQ-DEL-005 (regression harness) — Story 11 table. Each is implemented and
+verified evidence, not architectural mapping alone.
+
+### Technologies (9 of 9)
+
+| Technology | Actual role | Path type | Implementation evidence | Verification | Classification | Non-claim |
+| --- | --- | --- | --- | --- | --- | --- |
+| LangGraph | Core typed lifecycle orchestration (`StateGraph` compiled and invoked) | deterministic core (critical path) | `orchestration.py` | `test_orchestration.py`, `test_orchestration_controls.py`, integrated/story-board suites | deterministic | no LangGraph cloud/server/platform services are used |
+| MCP SDK | Primary MCP integration boundary (in-process memory transport demonstrated end-to-end) | local integration (critical path) | `mcp_discovery.py`, `mcp_binding.py`, `mcp_local.py`, `story_board.py` segment 2 | MCP test suites; accepted story board | local-integration | no remote protocol, hosted MCP service or hostile-isolation claim |
+| OpenAI SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `OpenAIProvider` | `test_vendor_providers.py` (credential-free) | adapter | no live OpenAI provider verification; not on the deterministic reviewer path |
+| Anthropic SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `AnthropicProvider` | `test_vendor_providers.py` | adapter | no live Anthropic provider verification |
+| Guardrails AI | Additive local schema validation of provider output | optional adapter integration | `guardrails_adapter.py` | `test_guardrails_adapter.py` | adapter (locked extra) | not the sole security boundary; no hosted service |
+| Mem0 | Optional long-term semantic-memory adapter boundary; owns no recovery or authority | optional adapter integration | `memory.py` adapter seam | `test_memory.py` boundary tests | adapter | no live Mem0 service; never exercised as a hosted dependency |
+| LangSmith | Optional observability projection over a controlled offline transport | optional adapter integration | `observability_adapters.py`, `_offline_observability_worker.py` | `test_observability_adapters.py`, fresh-process probes | adapter | no hosted LangSmith verification |
+| Langfuse | Optional observability/OTel offline-boundary projection | optional adapter integration | same boundary | same tests; N2 fresh-process regression | adapter | no hosted Langfuse verification |
+| Helicone | Strict disabled header/configuration boundary; no transport exists | optional boundary (disabled) | `helicone_boundary.py` | `test_helicone_boundary.py` | adapter (offline contract only) | no live Helicone routing or provider rerouting |
+
+### Release non-claims (module-wide)
+
+- No live OpenAI or Anthropic provider verification; vendor SDKs are optional
+  adapters over provider-neutral contracts and are never exercised live.
+- No paid inference is required for any normal reviewer/CLI path; the approval
+  story board, all six labs and the reviewer interface run credential-free.
+- No hosted LangSmith or Langfuse verification; both project over offline
+  boundaries with zero external attempts.
+- No live Helicone provider routing; only the strict disabled header contract.
+- No live Mem0 service requirement; the adapter seam is optional and duty-free.
+- No external production MCP service claim; MCP evidence is the in-process SDK
+  memory transport plus local lab fixtures.
+- No genuine production identity/authentication claim; approval identities are
+  simulated fixtures and `HumanIdentity` data never enters evidence JSON.
+- Fixture monetary values are not provider prices; no verified billing exists.
+- Local deterministic latency cohorts are not production-latency certification;
+  the frozen p95 ≤ 5 s SLO is a local workflow target, and the 180 s deadline
+  remains a separate safety bound.
+- The application-level sandbox is not OS/container isolation.
+- Deployment evidence does not exist; engineering release for this module ends
+  at independently reviewed engineering acceptance and is distinct from
+  deployment verification, which has not occurred.
+
+Module 6.5 engineering release is a Slice 2 candidate pending independent
+review (`docs/STORY_12_SLICE_2.md`, `docs/RELEASE_READINESS.md`); deployment
+verification and final module closeout are separate later gates.
+
+## Release reconciliation status
+
+Story 12 Slice 2 established this module-wide reconciliation mechanically
+verified by `tests/test_release_reconciliation.py`: the 69-approved-requirement
+ledger, six-lab and five-deliverable coverage, nine technology roles with
+truthful classifications, preserved release non-claims, correct reference to
+the accepted Story 12 Slice 1 commit `1666e99`, and a status-consistent README
+and reviewer interface. Approved requirement wording and source mappings are
+unchanged. Evidence remains `deterministic` and `local-integration` only.
