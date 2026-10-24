@@ -6,9 +6,11 @@ Data path: deterministic run result -> application-owned ``LangSmithExportPlan``
 returns is untrusted and discarded except the bounded identifier/score
 comparison in the opt-in live verification branch.
 
-This is the only Module 7 file that imports the ``langsmith`` SDK (lazily)
-and ``requests``. The SDK client runs on an adapter-owned zero-retry,
-origin-checking ``requests`` session; retries are exactly zero at the adapter,
+This is the only Module 7 file that imports the ``langsmith`` SDK (lazily).
+``requests`` is imported here and in the Story 7 Helicone adapter (the
+accepted Story 7 contract's narrow exception; documentation-only correction).
+The SDK client runs on an adapter-owned zero-retry, origin-checking
+``requests`` session; retries are exactly zero at the adapter,
 session and SDK call levels. Response bodies are read with a fixed 1 MiB
 ceiling. OpenTelemetry providers, prompt caching and batch tracing threads are
 never created. Vendor output is never authoritative for any application
