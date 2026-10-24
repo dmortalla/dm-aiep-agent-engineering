@@ -1,5 +1,6 @@
 """Story 12 Slice 2: mechanical verification of the module-wide release contract."""
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -12,21 +13,68 @@ SRC = MODULE / "src" / "harness_engineering"
 TESTS = MODULE / "tests"
 REQ_IDS = re.compile(r"^(REQ-[A-Z]+-\d{3}|ENG-\d{3}):", re.MULTILINE)
 
+# Independent anchor for the human-approved 2026-10-10 baseline: captured from the
+# independently reviewer-verified candidate state, never derived from the
+# candidate document under test.
+APPROVED_BASELINE_IDS: tuple[str, ...] = (
+    "REQ-OBJ-001",
+    "REQ-PLAN-001", "REQ-PLAN-002", "REQ-PLAN-003",
+    "REQ-CTX-001", "REQ-CTX-002", "REQ-CTX-003",
+    "REQ-COMP-001", "REQ-COMP-002", "REQ-COMP-003",
+    "REQ-TOOL-001", "REQ-TOOL-002", "REQ-TOOL-003", "REQ-TOOL-004",
+    "REQ-EXEC-001", "REQ-EXEC-002", "REQ-EXEC-003", "REQ-EXEC-004",
+    "REQ-REC-001", "REQ-REC-002", "REQ-REC-003", "REQ-REC-004",
+    "REQ-HITL-001", "REQ-HITL-002", "REQ-HITL-003",
+    "REQ-MCP-001", "REQ-MCP-002", "REQ-MCP-003",
+    "REQ-OBS-001", "REQ-OBS-002", "REQ-OBS-003",
+    "REQ-EVAL-001", "REQ-EVAL-002", "REQ-EVAL-003",
+    "REQ-COST-001", "REQ-COST-002", "REQ-COST-003", "REQ-COST-004",
+    "REQ-SAFE-001", "REQ-SAFE-002", "REQ-SAFE-003", "REQ-SAFE-004",
+    "REQ-TECH-001", "REQ-TECH-002", "REQ-TECH-003", "REQ-TECH-004",
+    "REQ-TECH-005", "REQ-TECH-006", "REQ-TECH-007", "REQ-TECH-008",
+    "REQ-TECH-009", "REQ-LAB-001", "REQ-LAB-002", "REQ-LAB-003",
+    "REQ-LAB-004", "REQ-LAB-005", "REQ-LAB-006", "REQ-DEL-001",
+    "REQ-DEL-002", "REQ-DEL-003", "REQ-DEL-004", "REQ-DEL-005",
+    "ENG-001", "ENG-002", "ENG-003", "ENG-004", "ENG-005", "ENG-006",
+    "ENG-007",
+)
+BASELINE_DIGEST = "f9b938dce21e553025de89249d508f1aac66ea8ff0a2af6085c139ca1113646c"
 
-def _requirements() -> list[str]:
-    """Approved requirement identifiers exactly as the frozen baseline defines them."""
-    text = (DOCS / "REQUIREMENTS.md").read_text(encoding="utf-8")
-    ids = REQ_IDS.findall(text)
-    assert len(set(ids)) == 69
-    return ids
+
+def check_approved_baseline(requirements_text: str) -> None:
+    """The candidate must hold the approved 69 requirements unchanged, byte-exact,
+    plus exactly the corrective additive ENG-008 — nothing removed, invented,
+    weakened, duplicated, or added beyond the anchor.
+
+    The anchor is an explicit immutable identifier tuple plus a SHA-256 digest
+    over the canonical approved requirement lines, captured once from the
+    independently reviewer-verified baseline state; it is not derived from the
+    candidate document under test.
+    """
+    lines = [line.rstrip() for line in requirements_text.splitlines() if REQ_IDS.match(line)]
+    found_ids = [line[: line.index(":")] for line in lines]
+    approved_lines = [line for line in lines if not line.startswith("ENG-008:")]
+    assert set(found_ids) == set(APPROVED_BASELINE_IDS) | {"ENG-008"}, "baseline drift"
+    for identifier in APPROVED_BASELINE_IDS:
+        assert found_ids.count(identifier) == 1, f"baseline duplicate/removal: {identifier}"
+    digest = hashlib.sha256("\n".join(approved_lines).encode("utf-8")).hexdigest()
+    assert digest == BASELINE_DIGEST, "approved baseline wording mutated"
+
+
+def approved_baseline_ids() -> tuple[str, ...]:
+    """The 69 approved identifiers, anchored independently of the candidate."""
+    return APPROVED_BASELINE_IDS
+
+
+def test_requirements_hold_approved_baseline_plus_eng_008_only() -> None:
+    check_approved_baseline((DOCS / "REQUIREMENTS.md").read_text(encoding="utf-8"))
 
 
 def test_traceability_represents_all_69_approved_requirements() -> None:
     traceability = (DOCS / "TRACEABILITY.md").read_text(encoding="utf-8")
     assert "69 approved requirements" in traceability or "69-approved-requirement" in traceability
-    for requirement_id in _requirements():
+    for requirement_id in *approved_baseline_ids(), "ENG-008":
         assert requirement_id in traceability, f"unclosed: {requirement_id}"
-
 
 CLI_LABS = ("REQ-LAB-003", "REQ-LAB-004", "REQ-LAB-005", "REQ-LAB-006")
 SERVICE_LABS = {"REQ-LAB-001": "run_planning_lab", "REQ-LAB-002": "run_context_lab"}
@@ -207,14 +255,16 @@ def test_status_documents_match_acceptance_chronology() -> None:
     for document, required, absent in (
         (
             REPO / "docs" / "PROJECT_STATUS.md",
-            ("1666e99", "Story 12 Slice 2", "pending independent review",
+            ("1666e99", "d4d2fd0", "ENG-008", "dual-mode",
+             "deployment verification separate"),
+            ("closeout performed, pending independent review",
              "deployment not started"),
-            ("closeout performed, pending independent review",),
         ),
         (
             DOCS / "RELEASE_READINESS.md",
-            ("1666e99", "69 of 69", "pending independent review", "non-claim"),
-            ("deployment complete", "production-ready now"),
+            ("1666e99", "69 of 69", "ENG-008", "human-authorized"),
+            ("deployment complete", "production-ready now",
+             "provider-level production readiness claimed"),
         ),
     ):
         text = document.read_text(encoding="utf-8")
@@ -230,10 +280,41 @@ def test_root_readme_carries_substantive_module_section() -> None:
     section = readme.split("## Module 6.5 - Harness Engineering")[1].split("---")[0]
     for entry in ("streamlit run streamlit_app.py", "story board", "LangGraph",
                   "off-switch", "checkpointing", "human-approval", "MCP SDK",
-                  "regression", "release reconciliation", "pending independent review",
+                  "regression", "release reconciliation", "ENG-008",
                   "Deployment verification", "No live OpenAI"):
         assert entry in section, f"README section missing: {entry}"
     roadmap_row = next(
         line for line in readme.splitlines() if line.startswith("| 6.5 |")
     )
     assert "✅ Complete" not in roadmap_row
+
+
+def _tampered_requirements(mutation: str) -> str:
+    """Real candidate text with exactly one adversarial baseline mutation."""
+    text = (DOCS / "REQUIREMENTS.md").read_text(encoding="utf-8")
+    return text.replace(
+        *{
+            "deleted": ("REQ-SAFE-002: The system shall support action blocklists.\n", ""),
+            "weakened": (
+                "REQ-SAFE-004: The runtime shall provide an explicit off-switch"
+                " or kill-switch protocol.",
+                "REQ-SAFE-004: The runtime may provide an off-switch where"
+                " convenient.",
+            ),
+            "invented": (
+                "REQ-HITL-001:",
+                "REQ-HITL-009: The runtime shall auto-approve guarded actions.\nREQ-HITL-001:",
+            ),
+            "unauthorized": (
+                "## Freeze rule",
+                "ENG-009: The module may silently drop an additive requirement.\n\n## Freeze rule",
+            ),
+        }[mutation]
+    )
+
+
+@pytest.mark.parametrize("mutation", ("deleted", "weakened", "invented", "unauthorized"))
+def test_baseline_guard_rejects_adversarial_mutations(mutation: str) -> None:
+    """Deletion, wording weakening, invention, and unauthorized additions each fail."""
+    with pytest.raises(AssertionError):
+        check_approved_baseline(_tampered_requirements(mutation))

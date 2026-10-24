@@ -256,3 +256,58 @@ truthful classifications, preserved release non-claims, correct reference to
 the accepted Story 12 Slice 1 commit `1666e99`, and a status-consistent README
 and reviewer interface. Approved requirement wording and source mappings are
 unchanged. Evidence remains `deterministic` and `local-integration` only.
+Story 12 was closed and the module-wide reconciliation accepted (commit
+`d4d2fd0`; reviewer-UI reconciliation `7ce1bd8`). On 2026-10-23 the corrective
+additive ENG-008 restored the production-grade dual-mode invariant (ADR 002),
+with completion tracked by Story 13 and the section above; no provider-level
+production-readiness claim exists and live-provider evidence remains none.
+
+## Corrective dual-mode contract (ENG-008) — adopted 2026-10-23, completion outstanding
+
+Repository governance requires production-grade engineering unless a module is
+explicitly declared DEMO-ONLY; Module 6.5 has never been declared DEMO-ONLY.
+The contract-propagation gap (neutral statement): repository governance
+requires production-grade engineering by default unless a module is explicitly
+declared DEMO-ONLY, and Module 6.5 was never declared DEMO-ONLY, yet ADR 001
+decision 11 and the Story 9/Story 12 acceptance contract described
+OpenAI/Anthropic as optional adapters and accepted release reconciliation with
+live-provider evidence = none, silently leaving the production-grade dual-mode
+invariant unenforced at module level.
+
+Corrective contract, additive to the unchanged 69-requirement baseline:
+
+- **ENG-008** (wording in `docs/REQUIREMENTS.md`, decision in
+  `docs/adr/002-production-grade-dual-mode-completion.md`): deterministic,
+  credential-free operation remains the default reviewer mode; live OpenAI or
+  Anthropic execution is opt-in and securely configurated only — explicit
+  validated configuration, documented provider/model allowlist, credentials
+  supplied through trusted server-side/environment/secret-store mechanisms and
+  never public browser input, credentials granting connectivity only and never
+  authority, bounded retries/token/output/latency/cost; evidence classes stay
+  explicitly distinct; provider-level production readiness may be claimed only
+  when the live path is implemented, securely configured, explicitly
+  human-authorized for execution, exercised, and independently evidenced.
+
+Implemented evidence already accepted (deterministic/adapter/local-integration
+classes): `HarnessConfig` defaults with fail-closed mutual exclusion
+(`config.py`, `test_config.py`); the live-adapter gate requiring explicit
+`allow_live_providers` plus a finite `max_cost_usd` (`vendor_providers.py`);
+credential-free adapter tests plus
+`test_credentials_or_claimed_locality_do_not_authorize_live_provider` and
+safe-missing-configuration tests (`test_vendor_providers.py`);
+`EvidenceClass.LIVE_PROVIDER` distinct in `providers.py`/evidence contracts.
+
+Outstanding (Story 13, later gated): documented provider/model allowlist
+enforcement in the live seam; explicit trusted-secret mechanism plumbing for
+the live path; live-path exercising with real credentials — requiring a
+separate human-authorized cost/credential/execution boundary; live-provider
+(and deployment) evidence. Until then, no provider-level production-readiness
+claim is made, and adapter evidence must not be represented as live-provider
+evidence.
+
+`tests/test_dual_mode_contract.py` mechanically protects this contract:
+the ENG-008 wording, ADR 002/ADR 001 addendum, Story 13/DoD entries,
+release-readiness outstanding gate, unchanged evidence taxonomy, the
+`HarnessConfig` structural defaults and validator, the adapter gate, and the
+negation-bound discipline that release documents may not claim live-provider
+evidence exists.

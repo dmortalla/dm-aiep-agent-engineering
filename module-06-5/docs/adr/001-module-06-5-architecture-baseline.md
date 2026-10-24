@@ -62,3 +62,12 @@ Tests must provide defensible evidence for security, authority, recovery, failur
 - 9 of 9 source-named technologies assigned explicit roles.
 - Requirements baseline remained unchanged during architecture reconciliation.
 - Implementation had not started when this architecture was frozen.
+
+## Addendum (2026-10-23)
+
+Decision 11 (optional live provider adapters) is understood within the
+repository's production-grade invariant: adapters are optional for the
+deterministic reviewer path, but the module remains accountable for secure
+opt-in dual-mode provider completion under additive ENG-008. See ADR 002
+(`002-production-grade-dual-mode-completion.md`). The frozen architecture and
+the approved baseline are not amended by this addendum.
