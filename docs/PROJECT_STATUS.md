@@ -7,11 +7,11 @@
 | Repository | dm-aiep-agent-engineering |
 | Scope | Modules 6.5-10 |
 | Branch | main |
-| Remote | Not configured |
+| Remote | origin: https://github.com/dmortalla/dm-aiep-agent-engineering.git |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-11 complete; Story 12 Slice 1 independently accepted (`1666e99`); Story 12 Slice 2 module-wide release reconciliation candidate pending independent review |
-| Implementation | Stories 1-11 implemented and independently accepted; Story 12 Slice 1 (composed end-to-end story board) accepted at `1666e99`; Story 12 Slice 2 reconciles 69/69 requirements, 6/6 labs, 5/5 deliverables and 9/9 technology roles and awaits independent review |
-| Release | Engineering release candidate pending independent review; deployment not started |
+| Module 6.5 phase | Architecture frozen; Stories 1-12 complete and independently accepted (Story 12 Slice 1 `1666e99`, module-wide reconciliation closed `d4d2fd0`, reviewer-UI reconciliation `7ce1bd8`); corrective production-grade dual-mode contract ENG-008 adopted (ADR 002, 2026-10-23) with Story 13 implementation outstanding |
+| Implementation | 69/69 approved requirements reconciled and accepted; additive ENG-008 (secure dual-mode provider completion, deterministic default preserved) adopted; Story 13 dual-mode completion and live-path exercising remain a later human-authorized gate |
+| Release | Engineering release reconciliation accepted (`d4d2fd0`); deployment verification separate and not complete; no provider-level production-readiness or deployment claim |
 
 ## Governance
 

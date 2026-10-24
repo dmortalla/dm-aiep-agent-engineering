@@ -72,14 +72,15 @@ A compiled LangGraph state graph owns the finite lifecycle (schedule → execute
 
 ### Testing and evidence posture
 
-1,765 automated tests (full module suite) plus Ruff and compileall pass in fail-fast order. Tests actively cover security, authority, recovery, failure, budget, latency and off-switch paths, including zero-external-attempt guarantees in reviewer paths. Evidence is `deterministic` and `local-integration` (local SQLite, in-process MCP SDK transport) only; all providers and MCP handlers are deterministic local fixtures.
+1,783 automated tests (full module suite) plus Ruff and compileall pass in fail-fast order. Tests actively cover security, authority, recovery, failure, budget, latency and off-switch paths, including zero-external-attempt guarantees in reviewer paths. Evidence is `deterministic` and `local-integration` (local SQLite, in-process MCP SDK transport) only; all providers and MCP handlers are deterministic local fixtures.
 
 ### Boundaries and exact status
 
 - No live OpenAI/Anthropic provider verification; no hosted LangSmith/Langfuse; no live Helicone routing; no live Mem0 service.
 - Fixture monetary values are not provider prices; local latency cohorts are not production certification.
-- No production identity/authentication, deployment, or production-readiness claim.
-- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) is a candidate pending independent review. Deployment verification and final module closeout are separate gates and have not occurred.
+- No genuine production identity/authentication claim; approval identities are simulated fixtures.
+- No provider-level production-readiness claim: provider adapters are verified at their accepted boundaries only; live-provider execution remains opt-in, securely configured (trusted server-side/secret-store credentials, provider/model allowlist, bounded cost/latency), and awaits a separate human-authorized execution gate with its own live-provider evidence (ENG-008, ADR 002).
+- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) closed and accepted (commit `d4d2fd0`); the corrective production-grade dual-mode contract (Release-readiness gate 4/Story 13) completes provider-level readiness and remains outstanding. Deployment verification and final module closeout are separate gates.
 
 See [Module 6.5](module-06-5/docs/RELEASE_READINESS.md) and [Traceability](module-06-5/docs/TRACEABILITY.md) for exact requirement-to-implementation evidence and the full release non-claims record.
 
