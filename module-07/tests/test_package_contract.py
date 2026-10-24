@@ -14,6 +14,10 @@ LANGFUSE_ADAPTER = SOURCE_ROOT / 'reliability_safety_observability' / 'langfuse_
 # Story 6 confines the LangSmith SDK and the adapter-owned requests transport
 # to this single adapter (reviewed narrow exception; same basis as Story 5).
 LANGSMITH_ADAPTER = SOURCE_ROOT / 'reliability_safety_observability' / 'langsmith_adapter.py'
+# Story 7 confines the adapter-owned requests transport to the Helicone
+# adapter (reviewed narrow exception; the accepted Story 7 contract's
+# pre-adjudicated amendment strengthens confinement for every other file).
+HELICONE_ADAPTER = SOURCE_ROOT / 'reliability_safety_observability' / 'helicone_adapter.py'
 
 
 def test_public_package_imports_independently() -> None:
@@ -80,6 +84,7 @@ def test_story_one_source_has_no_network_client_imports() -> None:
                 {"guardrails"} if path == GUARDRAILS_ADAPTER
                 else {"langfuse", "httpx"} if path == LANGFUSE_ADAPTER
                 else {"langsmith", "requests"} if path == LANGSMITH_ADAPTER
+                else {"requests"} if path == HELICONE_ADAPTER
                 else set()
             )
             forbidden = forbidden_roots - permitted
