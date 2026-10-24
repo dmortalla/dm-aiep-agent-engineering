@@ -265,8 +265,10 @@ The UUID is canonical and nonzero, with only one optional LF/CRLF transport newl
 It is not echoed, intentionally persisted, logged, placed in the Python invocation
 arguments or included in evidence/errors. Transient managed plaintext copies exist
 in memory; SecureString disposal does not guarantee erasure of those copies.
-`--subscription-stdin` explicitly selects only redirected stdin, reads at most 39
-characters, and never falls back. The operator must close the pipe; an open pipe
+`--subscription-stdin` explicitly selects only redirected stdin, reads at most
+39 raw bytes directly from the pipe (bypassing text-mode newline translation, so
+a lone CR or a chunk-split CRLF cannot rewrite the terminator decision), and
+never falls back. The operator must close the pipe; an open pipe
 can wait for input. The switch is valid only with `--verify-cloud`. Without it,
 direct interactive execution uses only private `getpass`, refusing echo fallback
 and ignoring redirected input. No environment variable or persisted source is used.

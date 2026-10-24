@@ -1083,6 +1083,11 @@ def test_cli_acceptance_never_writes_failed_evidence(failure: str,
     assert SUBSCRIPTION not in captured.out + captured.err
 
 
+def synthetic_pipe(payload: bytes) -> io.TextIOWrapper:
+    """Production-shaped redirected stdin: binary buffer behind a text wrapper."""
+    return io.TextIOWrapper(io.BytesIO(payload), encoding="ascii")
+
+
 @pytest.mark.parametrize("payload", ["valid", "lf", "crlf", "missing", "empty", "bad",
                                      "zero", "compact", "braces", "extra", "oversize"])
 def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
@@ -1096,7 +1101,7 @@ def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
     value = values[payload]
     calls = []
     output = tmp_path / "acceptance.json"
-    monkeypatch.setattr(sys, "stdin", io.StringIO(value))
+    monkeypatch.setattr(sys, "stdin", synthetic_pipe(value.encode("ascii")))
     monkeypatch.setattr(deployment.getpass, "getpass", lambda *a: pytest.fail("fallback"))
     monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
@@ -1120,11 +1125,55 @@ def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
 
 def test_private_pipe_rejects_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     """Explicit pipe mode cannot silently become an echoing terminal read."""
-    stream = io.StringIO(SUBSCRIPTION)
+    stream = synthetic_pipe(SUBSCRIPTION.encode("ascii"))
     monkeypatch.setattr(stream, "isatty", lambda: True)
     monkeypatch.setattr(sys, "stdin", stream)
     with pytest.raises(VerificationError, match="redirected operator pipe"):
         deployment.private_subscription(from_stdin=True)
+
+
+@pytest.mark.parametrize(("name", "payload", "accepted"), [
+    ("no-terminal", SUBSCRIPTION, True),
+    ("lf", SUBSCRIPTION + "\n", True),
+    ("crlf", SUBSCRIPTION + "\r\n", True),
+    ("leading-space", " " + SUBSCRIPTION, False),
+    ("trailing-space", SUBSCRIPTION + " ", False),
+    ("trailing-tab", SUBSCRIPTION + "\t", False),
+    ("lf-lf", SUBSCRIPTION + "\n\n", False),
+    ("crlf-crlf", SUBSCRIPTION + "\r\n\r\n", False),
+    ("cr-only", SUBSCRIPTION + "\r", False),
+    ("embedded-lf", SUBSCRIPTION[:18] + "\n" + SUBSCRIPTION[18:], False),
+    ("extra-data", SUBSCRIPTION + "\nX", False),
+    ("zero-uuid", str(UUID(int=0)), False),
+    ("malformed", "synthetic-malformed-private", False),
+    ("empty", "", False),
+    ("truncated", SUBSCRIPTION[:35], False),
+])
+def test_private_pipe_transport_accepts_only_bounded_terminator(
+        name: str, payload: str, accepted: bool,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The raw stdin boundary accepts a canonical UUID plus at most one LF/CRLF.
+
+    Text-mode newline translation is bypassed (the pipe supplies raw bytes), so
+    the decision cannot flip on a lone CR, a chunk-split CRLF or wrapper mode.
+    """
+    monkeypatch.setattr(sys, "stdin", synthetic_pipe(payload.encode("ascii")))
+    if accepted:
+        assert deployment.private_subscription(from_stdin=True) == SUBSCRIPTION
+        return
+    with pytest.raises(VerificationError) as error:
+        deployment.private_subscription(from_stdin=True)
+    assert SUBSCRIPTION not in str(error.value)
+
+
+@pytest.mark.parametrize("value", [None, "", " " + SUBSCRIPTION, SUBSCRIPTION + " ",
+                                   SUBSCRIPTION + "\t", SUBSCRIPTION + "\n",
+                                   "{" + SUBSCRIPTION + "}", SUBSCRIPTION.replace("-", ""),
+                                   str(UUID(int=0)), "synthetic-malformed", 12345])
+def test_identifier_remains_strict(value: object) -> None:
+    """The strict identifier gate is unchanged and rejects every noncanonical form."""
+    with pytest.raises(VerificationError, match="Require a canonical nonzero UUID"):
+        deployment.identifier(value)
 
 
 def test_interactive_channel_ignores_redirected_data(monkeypatch: pytest.MonkeyPatch) -> None:

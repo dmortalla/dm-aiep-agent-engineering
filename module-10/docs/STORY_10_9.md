@@ -415,3 +415,49 @@ the one sentence that described the defective gate so operator guidance matches
 the repaired verifier. No Azure operation, live HTTPS request, Monitor query,
 resource mutation or Story 10.10 work occurred; Story 10.9 acceptance remains
 deferred to independent review plus separately authorized live verification.
+
+## Private-stdin UUID transport repair — 2026-10-24
+
+A bounded, separately authorized live verifier execution failed before any
+cloud mutation-free acceptance step with "Require a canonical nonzero UUID
+identifier." and created no success evidence; that authorization was consumed
+and no retry occurred during this repair. Read-only diagnosis validated every
+real production UUID-bearing observation (subscription, identity principal,
+registry/identity resource-ID subscriptions, and all RBAC principal, assignment,
+scope and role-definition identifiers in both RBAC reads) as canonical nonzero
+UUIDs, isolating the remaining live-exercised identifier boundary to
+`private_subscription(from_stdin=True)`: a canonical 36-character UUID delivered
+through the normal PowerShell pipe arrives with a transport terminator while the
+strict `identifier()` gate correctly rejects noncanonical raw input.
+
+The repair moves the terminator decision to a byte-accurate transport boundary
+in `module-10/scripts/azure_deployment.py`: the pipe is read as at most 39 raw
+bytes from `sys.stdin.buffer` (bypassing text-mode newline translation —
+previously a lone CR was silently rewritten into a strippable LF, accepting it,
+and a chunk-split CRLF could flip acceptance on wrapper mode), ASCII-decoded
+strictly, and stripped of at most one trailing CRLF or LF before the unchanged
+strict `identifier()` call. Accepted: bare canonical UUID, canonical UUID + LF,
+canonical UUID + CRLF. Rejected fail-closed: leading whitespace, trailing
+spaces/tabs, double terminators, CR without LF, embedded newlines, extra data
+after the terminator, zero UUIDs, malformed/empty/truncated/overlong input and
+non-ASCII bytes. `identifier()` itself, the `isatty` refusal, the bounded-read
+model and the no-fallback switch semantics are unchanged.
+
+New deterministic regressions replace the `StringIO` stdin doubles (which had
+masked the translation dependence) with a production-shaped
+`TextIOWrapper`-over-`BytesIO` pipe and exercise the real `private_subscription`
+boundary across the full accepted/rejected transport matrix, plus a direct
+strictness test for `identifier()`. Baseline proof against `ed7c86d4`'s
+implementation (isolated `git archive` tree): the `cr-only` case passes the
+baseline (the defect) and fails only against the repaired transport decision;
+all other accepted/rejected forms behave identically, so the lone distinguishing
+case is exactly the CR-only acceptance the observed transport could produce.
+
+Gates (Windows venv via WSL interop, external basetemp and bytecode under
+`/tmp/opencode`): ruff clean; focused `tests/test_azure.py` 736 passed; full
+suite 951 passed with one pre-existing Starlette warning; `compileall` exit 0;
+`pipeline.validate_contract()` passed. The runbook sentence about the read bound
+was corrected from characters to raw untranslated bytes. No Azure operation,
+live verifier execution, HTTPS probe, Monitor query, deployment or cloud
+mutation occurred during this repair; a future verifier execution still requires
+independent review of this record and fresh explicit human authorization.

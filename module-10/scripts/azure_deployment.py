@@ -314,7 +314,10 @@ def private_subscription(*, from_stdin: bool = False) -> str:
     if from_stdin:
         try:
             require(not sys.stdin.isatty(), "Private stdin requires a redirected operator pipe.")
-            value = sys.stdin.read(39)
+            # Read raw bounded bytes, bypassing text-mode newline translation so a
+            # lone CR is never silently rewritten into a strippable LF and acceptance
+            # cannot flip on a chunk-split CRLF or the wrapper's translation mode.
+            value = sys.stdin.buffer.read(39).decode("ascii")
         except (OSError, UnicodeError) as exc:
             raise VerificationError("Private subscription pipe could not be read.") from exc
         # Accept only an exact UUID, optionally followed by one transport newline.
