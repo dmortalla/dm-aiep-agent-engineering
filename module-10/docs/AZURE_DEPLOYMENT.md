@@ -249,7 +249,10 @@ try {
     }
     $process = [System.Diagnostics.Process]::Start($start)
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($privateSubscription)
-    $process.StandardInput.WriteLine([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer))
+    # Pinned operator input shape: 36 ASCII UUID characters + exactly one LF byte.
+    # Write (not WriteLine) appends no CR; .NET writes these ASCII characters as
+    # UTF-8 without a BOM; Close() ends the stream immediately after that LF.
+    $process.StandardInput.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) + "`n")
     $process.StandardInput.Close()
     $process.WaitForExit()
     if ($process.ExitCode -ne 0) { throw 'Cloud verification failed; deployment is not accepted.' }
@@ -261,14 +264,23 @@ try {
 }
 ```
 
-The UUID is canonical and nonzero, with only one optional LF/CRLF transport newline.
+The verifier itself reads the UTF-8 stream as at most 39 raw bytes and accepts
+exactly a bare canonical ASCII UUID, UUID + LF or UUID + CRLF. For the next
+authorized live execution the operator pipe must produce one pinned shape:
+36 ASCII UUID characters, exactly one LF byte (0x0A), no BOM, no CR, no
+leading/trailing whitespace and no additional bytes, with the pipe closed
+immediately after that LF; the `Write`-with-explicit-`` `n ``-then-`Close()`
+sequence above provides exactly that sequence, and a mechanism that cannot
+guarantee it must not be substituted. The UUID is canonical and nonzero, with
+only one optional LF/CRLF transport newline.
 It is not echoed, intentionally persisted, logged, placed in the Python invocation
 arguments or included in evidence/errors. Transient managed plaintext copies exist
 in memory; SecureString disposal does not guarantee erasure of those copies.
 `--subscription-stdin` explicitly selects only redirected stdin, reads at most
-39 raw bytes directly from the pipe (bypassing text-mode newline translation, so
-a lone CR or a chunk-split CRLF cannot rewrite the terminator decision), and
-never falls back. The operator must close the pipe; an open pipe
+39 raw bytes directly from the pipe (bypassing text-mode newline translation,
+whose silent rewrite of a lone CR into a strippable LF was the proven
+over-acceptance removed by this hardening), and never falls back. The operator
+must close the pipe; an open pipe
 can wait for input. The switch is valid only with `--verify-cloud`. Without it,
 direct interactive execution uses only private `getpass`, refusing echo fallback
 and ignoring redirected input. No environment variable or persisted source is used.
@@ -277,6 +289,14 @@ Never automate this authority input from model/tool output or cloud observations
 Existing downstream Azure reads still pass the subscription explicitly to Azure CLI
 (as process arguments); this repair changes only private operator-to-verifier input
 and does not claim to conceal existing CLI scoping from local process inspection.
+
+The prior live rejection "Require a canonical nonzero UUID identifier." remains
+unexplained: the byte-deterministic boundary is a hardening, not a claimed cure.
+A future authorized execution against the pinned input shape above is diagnostic
+as well as acceptance-oriented: success establishes that the controlled shape
+avoids the prior unidentified condition (without retroactively proving the prior
+failure's exact bytes), while a repeated generic UUID rejection would prove the
+remaining cause lies elsewhere in the supplied stream/value path.
 
 Every verifier CLI read, including both
 fresh snapshots and Log Analytics, supplies this subscription explicitly. Group

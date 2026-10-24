@@ -416,48 +416,64 @@ the repaired verifier. No Azure operation, live HTTPS request, Monitor query,
 resource mutation or Story 10.10 work occurred; Story 10.9 acceptance remains
 deferred to independent review plus separately authorized live verification.
 
-## Private-stdin UUID transport repair — 2026-10-24
+## Private-stdin transport hardening — 2026-10-24
 
-A bounded, separately authorized live verifier execution failed before any
-cloud mutation-free acceptance step with "Require a canonical nonzero UUID
-identifier." and created no success evidence; that authorization was consumed
-and no retry occurred during this repair. Read-only diagnosis validated every
-real production UUID-bearing observation (subscription, identity principal,
-registry/identity resource-ID subscriptions, and all RBAC principal, assignment,
-scope and role-definition identifiers in both RBAC reads) as canonical nonzero
-UUIDs, isolating the remaining live-exercised identifier boundary to
-`private_subscription(from_stdin=True)`: a canonical 36-character UUID delivered
-through the normal PowerShell pipe arrives with a transport terminator while the
-strict `identifier()` gate correctly rejects noncanonical raw input.
+A bounded, separately authorized live verifier execution failed before HTTPS or
+Monitor acceptance with "Require a canonical nonzero UUID identifier." and
+produced no success evidence; that authorization was consumed and no rerun has
+occurred. Read-only diagnosis established that every inspected production
+UUID-bearing observation (subscription, identity principal, registry and
+identity resource-ID subscriptions, and the principal, assignment, scope and
+role-definition identifiers of both RBAC reads) is a canonical nonzero UUID.
+Inspection of `private_subscription(from_stdin=True)` showed it reads stdin and
+passes the value through the strict `identifier()` gate. The exact cause of the
+consumed live rejection remains unidentified: candidate explanations such as
+unexpected stream content, encoding/BOM differences, additional bytes or an
+operator-supplied value differing from the expected UUID are plausible but
+unproven, and none is promoted to a root cause.
 
-The repair moves the terminator decision to a byte-accurate transport boundary
-in `module-10/scripts/azure_deployment.py`: the pipe is read as at most 39 raw
-bytes from `sys.stdin.buffer` (bypassing text-mode newline translation —
-previously a lone CR was silently rewritten into a strippable LF, accepting it,
-and a chunk-split CRLF could flip acceptance on wrapper mode), ASCII-decoded
-strictly, and stripped of at most one trailing CRLF or LF before the unchanged
-strict `identifier()` call. Accepted: bare canonical UUID, canonical UUID + LF,
-canonical UUID + CRLF. Rejected fail-closed: leading whitespace, trailing
-spaces/tabs, double terminators, CR without LF, embedded newlines, extra data
-after the terminator, zero UUIDs, malformed/empty/truncated/overlong input and
-non-ASCII bytes. `identifier()` itself, the `isatty` refusal, the bounded-read
-model and the no-fallback switch semantics are unchanged.
+Independent empirical analysis did establish one proven local transport defect
+in the pre-repair implementation: it read through the text-mode `sys.stdin`
+wrapper, so its accepted set depended on universal-newline semantics, and it
+incorrectly accepted a canonical UUID terminated by a lone CR (silently
+rewritten into a strippable LF before strip/validate). Commit `9e3cb6e`
+hardens this boundary: stdin is read as at most 39 raw bytes from
+`sys.stdin.buffer` (no newline translation), ASCII-decoded strictly, stripped
+of at most one trailing CRLF or LF, and passed unchanged to the strict
+`identifier()` gate. Accepted forms are exactly the bare canonical UUID,
+UUID + LF and UUID + CRLF. The accepted input set is therefore a strict subset
+of the pre-repair accepted set — independent payload-shape testing found zero
+inputs accepted by the candidate that the pre-repair implementation rejected;
+the prior transport shape (UUID + LF) and both split and unsplit CRLF were
+accepted by both implementations. `identifier()` itself, the `isatty` refusal,
+the bounded-read model and the no-fallback switch semantics are unchanged.
+This correction is a private-stdin security/transport hardening: deterministic
+byte form definitions with removal of universal-newline-dependent acceptance.
+Because the pre-repair implementation already removed one LF/CRLF terminator
+before validation, the proven lone-CR over-acceptance cannot explain the
+consumed live rejection, and this hardening is not claimed to have repaired it.
 
-New deterministic regressions replace the `StringIO` stdin doubles (which had
-masked the translation dependence) with a production-shaped
+New deterministic regressions replace the `StringIO` stdin doubles (which could
+not observe wrapper-dependent translation) with a production-shaped
 `TextIOWrapper`-over-`BytesIO` pipe and exercise the real `private_subscription`
-boundary across the full accepted/rejected transport matrix, plus a direct
-strictness test for `identifier()`. Baseline proof against `ed7c86d4`'s
-implementation (isolated `git archive` tree): the `cr-only` case passes the
-baseline (the defect) and fails only against the repaired transport decision;
-all other accepted/rejected forms behave identically, so the lone distinguishing
-case is exactly the CR-only acceptance the observed transport could produce.
+boundary across accepted/rejected transport forms, plus a direct strictness test
+for `identifier()`. Baseline comparison against `ed7c86d4`'s implementation in
+an isolated `git archive` tree shows the lone-CR case is the only local
+behavioral difference: accepted by the pre-repair implementation (the proven
+over-acceptance defect) and rejected by the hardened candidate.
 
-Gates (Windows venv via WSL interop, external basetemp and bytecode under
-`/tmp/opencode`): ruff clean; focused `tests/test_azure.py` 736 passed; full
-suite 951 passed with one pre-existing Starlette warning; `compileall` exit 0;
-`pipeline.validate_contract()` passed. The runbook sentence about the read bound
-was corrected from characters to raw untranslated bytes. No Azure operation,
-live verifier execution, HTTPS probe, Monitor query, deployment or cloud
-mutation occurred during this repair; a future verifier execution still requires
-independent review of this record and fresh explicit human authorization.
+Gates: ruff clean; focused `tests/test_azure.py` 736 passed; full suite
+951 passed with one pre-existing Starlette warning; `compileall` exit 0;
+`pipeline.validate_contract()` passed. Scratch note: test basetemp and bytecode
+caches used during local verification were generated under `/tmp/opencode`,
+which is ephemeral agent scratch, not durable project evidence; durable
+acceptance/diagnostic artifacts belong in the external evidence directory
+owned by the human workflow, which this session did not access. A future live
+verifier execution has not occurred and still requires independent acceptance
+plus fresh explicit human authorization. Such an execution is diagnostic as
+well as acceptance-oriented: the hardened boundary makes stdin interpretation
+deterministic (with clearer discrimination for non-ASCII/decode failures),
+success would establish only that the controlled prescribed input shape avoids
+the prior unidentified condition — not retroactively prove the prior failure's
+exact bytes — and a repeated generic UUID rejection would prove the remaining
+cause lies elsewhere in the supplied stream/value path.
