@@ -297,12 +297,24 @@ credential-free adapter tests plus
 safe-missing-configuration tests (`test_vendor_providers.py`);
 `EvidenceClass.LIVE_PROVIDER` distinct in `providers.py`/evidence contracts.
 
-Outstanding (Story 13, later gated): documented provider/model allowlist
-enforcement in the live seam; explicit trusted-secret mechanism plumbing for
-the live path; live-path exercising with real credentials — requiring a
-separate human-authorized cost/credential/execution boundary; live-provider
-(and deployment) evidence. Until then, no provider-level production-readiness
-claim is made, and adapter evidence must not be represented as live-provider
+Story 13 Builder candidate (`docs/STORY_13.md`), verified at deterministic,
+mocked, and adapter class only:
+
+| ENG-008 clause | Implementation | Verification |
+| --- | --- | --- |
+| Deterministic default | `HarnessConfig()` with `live=None`; fake provider | `test_deterministic_mode_remains_default_and_credential_free` |
+| Explicit opt-in, allowlist | `LiveProviderPolicy`, `SUPPORTED_LIVE_MODELS`, `_validate_binding` | activation, unknown-provider, disallowed-model, accepted-path tests |
+| Trusted credentials, never browser input | `live_credentials.py` sources; explicit SDK `api_key` | missing-credential, secret-store, opacity, redaction, reviewer-widget tests |
+| Connectivity only, never authority | Untrusted `ModelResult`; unchanged HITL/policy/off-switch | untrusted-output and HITL/policy/capability tests |
+| Bounded retries/tokens/latency/cost | SDK `max_retries=0`; live ceilings; worst-case cost reservation | retry, latency, token/output, cost tests |
+| Human authorization | Expiring `LiveExecutionAuthorization`, re-checked pre-dispatch | authorization scope/window/expiry/forgery tests |
+| Distinct evidence classes | `live_readiness.py`; `evidence_class` capped at adapter | adapter/mocked-never-live test |
+
+Outstanding (later human-authorized gate): live-path exercising with real
+credentials under a separate human-authorized cost/credential/execution
+boundary. No live-provider evidence exists yet; it requires that exercise and
+an independent review. Until then, no provider-level production-readiness claim is made,
+and adapter or mocked evidence must not be represented as live-provider
 evidence.
 
 `tests/test_dual_mode_contract.py` mechanically protects this contract:

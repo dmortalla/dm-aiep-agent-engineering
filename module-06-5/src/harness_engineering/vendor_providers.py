@@ -2,7 +2,10 @@
 
 Imports/construction never request inference. Offline factories accept exact SDK
 HTTP MockTransports and fixed dummy configuration. Live clients are constructed
-only at invocation after trusted runtime opt-in; credentials alone do nothing.
+only at invocation after trusted runtime opt-in, an allowlisted provider/model,
+a current human live-execution authorization, and an application-resolved
+trusted credential; credentials alone do nothing and SDK environment, profile,
+or federation credential discovery is never used on the live path.
 """
 
 import importlib
@@ -14,12 +17,17 @@ from typing import Any
 from pydantic import ValidationError
 
 from harness_engineering.config import HarnessConfig
-from harness_engineering.cost_governance import require_real_monetary_admission
 from harness_engineering.domain import RuntimeBudget
 from harness_engineering.errors import (
     AuthorityViolationError,
     ContractValidationError,
     HarnessError,
+)
+from harness_engineering.live_authorization import require_live_execution_authorization
+from harness_engineering.live_credentials import (
+    CREDENTIAL_SOURCE_TYPES,
+    CredentialUnavailableError,
+    LiveCredential,
 )
 from harness_engineering.providers import (
     ModelRequest,
@@ -63,11 +71,18 @@ def _load(name: str) -> Any:
 
 def _validate_binding(
     provider: object, config: HarnessConfig | None, budget: RuntimeBudget
-) -> bool:
+) -> HarnessConfig | None:
+    """Return the revalidated live configuration, or None for offline transports.
+
+    Raises:
+        ContractValidationError: For an unsupported adapter type.
+        AuthorityViolationError: Without explicit opt-in, matching finite
+            budget, live policy, and an allowlisted provider/model pair.
+    """
     if type(provider) not in (OpenAIProvider, AnthropicProvider):
         raise ContractValidationError("Bind the deterministic fake or an approved vendor adapter.")
     if provider._transport is not None:
-        return False  # Exact MockTransport established at bootstrap; no socket path.
+        return None  # Exact MockTransport established at bootstrap; no socket path.
     try:
         value = HarnessConfig.model_validate(config.model_dump(), strict=True) if config else None
     except (ValidationError, AttributeError):
@@ -83,7 +98,25 @@ def _validate_binding(
         raise AuthorityViolationError(
             "Live provider disabled; explicit application opt-in and monetary budget required."
         )
-    return True
+    if value.live is None:
+        raise AuthorityViolationError("Live provider disabled; no live provider policy is bound.")
+    if not value.live.permits(provider._sdk, provider._model):
+        raise AuthorityViolationError("Provider/model is outside the application allowlist.")
+    return value
+
+
+def _resolve_credential(source: object, vendor: str) -> LiveCredential:
+    """Resolve one call-local credential, exposing only a fixed category."""
+    credential: LiveCredential | None = None
+    if type(source) in CREDENTIAL_SOURCE_TYPES:
+        try:
+            credential = source.resolve(vendor)  # type: ignore[union-attr]
+        except CredentialUnavailableError:
+            credential = None
+    if type(credential) is not LiveCredential:
+        # Raised outside any except scope: no lookup diagnostic is chained.
+        raise ProviderConfigurationError("Trusted live credential is unavailable.")
+    return credential
 
 
 class _Vendor:
@@ -122,8 +155,19 @@ class _Vendor:
         context.checkpoint()
         if _units(value.prompt) > context._max_context_tokens:
             raise ContractValidationError("Provider input exceeds application context bound.")
-        if self._transport is None and not context._live_allowed:
-            raise AuthorityViolationError("Live provider invocation is not application-authorized.")
+        credential: LiveCredential | None = None
+        if self._transport is None:
+            if not context._live_allowed:
+                raise AuthorityViolationError(
+                    "Live provider invocation is not application-authorized."
+                )
+            # Final pre-dispatch gates: explicit current human authorization for
+            # this exact provider/model, then an application-resolved credential.
+            require_live_execution_authorization(
+                context._authorization, provider=self._sdk, model=self._model
+            )
+            credential = _resolve_credential(context._credentials, self._sdk)
+            context.checkpoint()
         sdk, http = _load(self._sdk), _load(self._http)
         configuration_error = sdk.OpenAIError if self._sdk == "openai" else sdk.AnthropicError
         raw: object = None
@@ -142,8 +186,11 @@ class _Vendor:
                     "max_retries": 0,
                     "timeout": timeout,
                 }
-                if self._transport is not None:
-                    options["api_key"] = "module-06-5-offline-dummy"
+                # An explicit key disables SDK environment/profile credential discovery.
+                options["api_key"] = (
+                    "module-06-5-offline-dummy" if credential is None
+                    else credential.reveal_for_sdk()
+                )
                 # Explicit ancillary settings avoid environment-derived alternate auth.
                 if self._sdk == "openai":
                     options.update(admin_api_key="", organization="", project="", webhook_secret="")
@@ -166,8 +213,8 @@ class _Vendor:
                         raise ProviderConfigurationError(
                             "Anthropic authentication is not configured."
                         )
-                    if self._transport is None:
-                        require_real_monetary_admission()
+                    context.checkpoint()
+                    context._dispatched.set()
                     raw = self._call(client, value, context)
         except sdk.APITimeoutError:
             failure = (ProviderTimeoutError, "SDK timeout; discard provider result.")

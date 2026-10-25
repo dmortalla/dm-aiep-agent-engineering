@@ -40,6 +40,7 @@ from harness_engineering.vendor_providers import (
     ProviderRequestError,
     ProviderUnavailableError,
 )
+from tests.live_seam import ADAPTER, DUMMY_KEY, ENV_NAME, LIVE_MODEL, live_runtime
 
 SECRET = "FAKE-SENSITIVE-DIAGNOSTIC-DO-NOT-EXPORT"
 HOSTILE = (
@@ -433,18 +434,27 @@ def test_missing_live_configuration_is_safe_without_looking_up_real_credentials(
     calls = []
 
     def unavailable(**kwargs: Any) -> Any:
-        assert "api_key" not in kwargs  # Existing SDK environment mechanism remains supported.
-        calls.append(True)
+        # Story 13: only the application-resolved trusted credential reaches the SDK.
+        calls.append(kwargs.get("api_key"))
         raise exception(SECRET)
 
     monkeypatch.setattr(sdk, "OpenAI" if vendor == "openai" else "Anthropic", unavailable)
     budget = RuntimeBudget(max_cost_usd=0.01)
-    config = HarnessConfig(deterministic_mode=False, allow_live_providers=True, budget=budget)
-    runtime = ProviderRuntime(provider=cls("fixture-model"), budget=budget, live_config=config)
+    legacy = HarnessConfig(deterministic_mode=False, allow_live_providers=True, budget=budget)
+    with pytest.raises(AuthorityViolationError, match="policy"):
+        ProviderRuntime(provider=cls(LIVE_MODEL[vendor]), budget=budget, live_config=legacy)
+    runtime = live_runtime(vendor)
     with pytest.raises(ProviderConfigurationError) as caught:
         runtime.generate({"prompt": "local"})
-    assert calls == [True]
-    assert SECRET not in "".join(traceback.format_exception(caught.value))
+    assert calls == []  # Missing trusted credential fails before SDK construction.
+    assert caught.value.__context__ is None
+    os.environ[ENV_NAME[vendor]] = DUMMY_KEY
+    runtime = live_runtime(vendor)
+    with pytest.raises(ProviderConfigurationError) as caught:
+        runtime.generate({"prompt": "local"})
+    assert calls == [DUMMY_KEY]
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert SECRET not in rendered and DUMMY_KEY not in rendered
 
 
 def test_sdk_timeout_does_not_release_active_worker_early(vendor: str) -> None:
@@ -502,13 +512,13 @@ def test_actual_sdk_missing_credentials_fails_before_request(
         pytest.fail("Missing configuration must not issue an SDK request")
 
     monkeypatch.setattr(resource, "create", forbidden)
-    budget = RuntimeBudget(max_cost_usd=0.01)
-    config = HarnessConfig(deterministic_mode=False, allow_live_providers=True, budget=budget)
-    runtime = ProviderRuntime(provider=cls("fixture-model"), budget=budget, live_config=config)
+    assert cls is ADAPTER[vendor]
+    runtime = live_runtime(vendor)  # Allowlisted and authorized; no trusted credential.
     with pytest.raises(ProviderConfigurationError) as caught:
         runtime.generate({"prompt": "local"})
     assert runtime.attempts == 1
     assert caught.value.__context__ is None
+    assert runtime.live_exposure_usd == 0  # Never dispatched: reservation released.
 
 
 def test_genuine_sdk_validation_error_is_sanitized(

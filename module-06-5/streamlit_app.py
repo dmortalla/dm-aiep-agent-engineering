@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from harness_engineering.live_readiness import provider_readiness
 from harness_engineering.reviewer_service import GUIDES, Demo, DemoView, ReviewerBusyError, run_demo
 
 st.set_page_config(page_title="Module 6.5 · Harness reviewer", page_icon=":material/account_tree:")
@@ -75,6 +76,21 @@ st.write("Deterministic means fixed local fixtures exercising accepted services.
 st.write("Optional OpenAI, Anthropic, Mem0, Guardrails, LangSmith, Langfuse and Helicone "
          "capabilities are not exercised as live services. No credentials are requested. "
          "Fixture costs are not verified billing; local latency is not production performance.")
+
+st.subheader("Provider modes")
+st.write("This reviewer always runs in deterministic no-key mode. Live OpenAI or Anthropic "
+         "execution is a separate opt-in server capability: it needs trusted server-side "
+         "configuration (provider and model allowlists, bounded retries, tokens, latency and "
+         "cost, credentials from the server environment or a secret store) plus an explicit "
+         "human authorization. It cannot be enabled or supplied from this page.")
+# Readiness is derived by the application from classified evidence, not by the UI.
+with st.container(border=True):
+    for item in provider_readiness():
+        evidence = item.evidence.value if item.evidence else "configuration"
+        st.markdown(f"**{item.capability}** · `{item.status.value}` · {evidence}  \n"
+                    f"{item.summary}")
+st.caption("Live-provider evidence: not yet authorized and not yet executed. Adapter and "
+           "mocked evidence never count as live-provider evidence.")
 st.caption("Module 6.5 engineering release-readiness is independently accepted and "
            "published to GitHub. The Streamlit deployment is undergoing final live "
            "verification. No live-provider, hosted-service or production-readiness claim.")

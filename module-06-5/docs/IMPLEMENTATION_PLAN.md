@@ -139,6 +139,19 @@ mechanism plus finite cost budget; structural contract tests
 exercising happens only inside a later human-authorized execution gate with
 its own recorded live-provider evidence.
 
+Implementation record (Builder candidate, `docs/STORY_13.md`): the secure
+live seam is implemented and verified credential-free. It adds the
+`LiveProviderPolicy` allowlist and live ceilings (`config.py`), the trusted
+environment/secret-store credential seam (`live_credentials.py`), the
+expiring human `LiveExecutionAuthorization` and pre-dispatch worst-case cost
+reservation (`live_authorization.py`, `providers.py`), allowlist enforcement in
+the adapter binding (`vendor_providers.py`), evidence-derived readiness
+(`live_readiness.py`), and a reviewer "Provider modes" section with no
+credential input. Verification is deterministic, mocked, and adapter class
+only (`tests/test_story13_dual_mode.py`). The authorized live exercise and its
+live-provider evidence remain outstanding, so the ENG-008 Definition-of-Done
+item below stays open.
+
 ## Definition of Done
 
 - [ ] 69 of 69 approved requirements implemented and verified (the approved

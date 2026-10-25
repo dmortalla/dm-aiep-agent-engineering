@@ -293,14 +293,20 @@ def test_real_dispatch_is_denied_even_with_legacy_optin_and_dummy_auth(
         pytest.fail("Real monetary denial must precede SDK request dispatch")
 
     monkeypatch.setattr(resource, "create", forbidden)
+    from tests.live_seam import LIVE_MODEL, live_runtime
+
     budget = RuntimeBudget(max_cost_usd=0.01)
     config = HarnessConfig(deterministic_mode=False, allow_live_providers=True, budget=budget)
     adapter = (
-        OpenAIProvider("fixture-model")
+        OpenAIProvider(LIVE_MODEL[vendor])
         if vendor == "openai"
-        else AnthropicProvider("fixture-model")
+        else AnthropicProvider(LIVE_MODEL[vendor])
     )
-    runtime = ProviderRuntime(provider=adapter, budget=budget, live_config=config)
+    # Story 13: legacy opt-in without an allowlist policy cannot bind at all.
+    with pytest.raises(AuthorityViolationError, match="policy"):
+        ProviderRuntime(provider=adapter, budget=budget, live_config=config)
+    # Allowlisted live policy and dummy auth, but no human authorization.
+    runtime = live_runtime(vendor, live_authorization=None)
     with pytest.raises(AuthorityViolationError, match="monetary"):
         runtime.generate({"prompt": "local"})
     assert runtime.attempts == 1

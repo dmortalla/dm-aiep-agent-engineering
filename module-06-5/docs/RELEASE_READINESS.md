@@ -2,7 +2,7 @@
 
 ## Status
 
-`ENGINEERING RELEASE RECONCILIATION ACCEPTED (Story 12 closed, commit d4d2fd0; reviewer-UI reconciliation 7ce1bd8) — module release/deployment verification and provider-level production readiness not claimed; corrective ENG-008 dual-mode completion outstanding (Story 13).`
+`ENGINEERING RELEASE RECONCILIATION ACCEPTED (Story 12 closed, commit d4d2fd0; reviewer-UI reconciliation 7ce1bd8) — module release/deployment verification and provider-level production readiness not claimed; corrective ENG-008 secure live seam implemented as a Story 13 Builder candidate with deterministic verification only; the human-authorized live exercise is outstanding.`
 
 This document consolidates reviewer-verifiable engineering acceptance for
 Module 6.5 (Harness Engineering). It does not duplicate the full
@@ -58,6 +58,9 @@ Deployment verification and final module closeout are separate gates.
   (zero external attempts); Helicone strict disabled header/configuration
   boundary; Mem0 semantic-memory adapter protocol/seam (no live service).
   Adapter evidence never substitutes for live-provider evidence (ENG-008).
+- `mocked`: the Story 13 secure live seam (allowlists, trusted credential
+  sources, human authorization, retry/latency/token/cost bounds) verified with
+  patched SDK resources and no network; never counted as live-provider evidence.
 - `live-provider`: none.
 - `deployment`: none.
 
@@ -92,13 +95,15 @@ Still outstanding:
 1. **Final live deployment verification** — a separate, human-authorized gate
    against the hosted reviewer experience.
 2. **Story 13 live-provider completion remains outstanding** (ENG-008
-   dual-mode gate) — implement
-   the secure opt-in live seam (documented provider/model allowlist; trusted
-   server-side/environment/secret-store credentials, never public browser
-   BYOK; bounded retries/token/output/latency/cost; connectivity-only
-   credentials), exercised only under an explicit human-authorized
-   cost/credential/execution boundary and independently evidenced.
+   dual-mode gate). The Story 13 Builder candidate (`docs/STORY_13.md`)
+   implements the secure opt-in live seam (documented provider/model
+   allowlist; trusted server-side/environment/secret-store credentials, never
+   public browser BYOK; bounded retries/token/output/latency/cost;
+   connectivity-only credentials; expiring human live-execution
+   authorization) and verifies it without credentials or network. What
+   remains is the bounded live exercise under an explicit human-authorized
+   cost/credential/execution boundary, independently evidenced.
    Provider-level production readiness may be claimed only then; adapter
-   evidence may never substitute for live-provider evidence.
+   and mocked evidence may never substitute for live-provider evidence.
 3. **Final module closeout** (README status flip, LinkedIn closeout) only
    after gates 1–2.
