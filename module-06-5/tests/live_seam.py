@@ -26,7 +26,7 @@ def live_budget(**overrides: Any) -> RuntimeBudget:
     """Return a budget inside every live-path ceiling."""
     values: dict[str, Any] = {
         "max_cost_usd": 0.01, "max_provider_attempts": 4, "max_retries_per_action": 1,
-        "max_output_tokens": 256, "max_context_tokens": 2_000,
+        "max_output_tokens": 256, "max_output_bytes": 256, "max_context_tokens": 2_000,
         "action_timeout_seconds": 10.0, "workflow_deadline_seconds": 60.0,
     }
     values.update(overrides)

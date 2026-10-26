@@ -726,3 +726,80 @@ def test_current_price_cost_rejection_precedes_provider_execution(
     with pytest.raises(BudgetExceededError, match="cost exposure"):
         runtime.generate({"prompt": "hello"}, action_id="a")
     assert len(calls) == 2 and runtime.live_exposure_usd <= Decimal("0.0008")
+
+# Output units (live-failure diagnosis): provider tokens and local UTF-8 bytes differ.
+SENTENCE = "Sure, here is one short sentence: the quick brown fox jumps over the lazy dog."
+
+
+def unit_budget(**overrides: Any) -> RuntimeBudget:
+    """Return the operator's live-exercise shape: 64 provider tokens, explicit byte ceiling."""
+    values: dict[str, Any] = {"max_output_tokens": 64, "max_output_bytes": 512,
+                              "max_context_tokens": 512, "max_cost_usd": 0.001}
+    return live_budget(**(values | overrides))
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_provider_compliant_text_longer_than_the_token_cap_in_bytes_is_accepted(
+    vendor: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Former false rejection: 19 reported tokens, 78 bytes, 64-token cap."""
+    monkeypatch.setenv(ENV_NAME[vendor], DUMMY_KEY)
+    assert len(SENTENCE.encode()) > 64
+    usage = dict(body(vendor)["usage"], output_tokens=19)
+    if vendor == "openai":
+        usage["total_tokens"] = usage["input_tokens"] + 19
+    calls = patch_sdk(monkeypatch, vendor, lambda _: body(vendor, SENTENCE, usage=usage))
+    runtime = live_runtime(vendor, budget=unit_budget())
+    assert runtime.generate({"prompt": "One short sentence."}).text == SENTENCE
+    assert calls[0]["max_output_tokens" if vendor == "openai" else "max_tokens"] == 64
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_byte_ceiling_is_exact_and_independent_of_the_token_cap(
+    vendor: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_NAME[vendor], DUMMY_KEY)
+    budget = unit_budget(max_output_bytes=100)
+    for text, accepted in (("a" * 99, True), ("a" * 100, True), ("a" * 101, False),
+                           ("é" * 50, True), ("é" * 51, False)):  # 100 vs 102 bytes
+        patch_sdk(monkeypatch, vendor, lambda _, t=text: body(vendor, t))
+        runtime = live_runtime(vendor, budget=budget)
+        if accepted:
+            assert runtime.generate({"prompt": "hello"}).text == text
+        else:
+            with pytest.raises(ProviderOutputRejected, match="application bound"):
+                runtime.generate({"prompt": "hello"})
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_provider_token_cap_is_still_enforced_when_bytes_are_ample(
+    vendor: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_NAME[vendor], DUMMY_KEY)
+    usage = dict(body(vendor)["usage"], output_tokens=65)
+    if vendor == "openai":
+        usage["total_tokens"] = usage["input_tokens"] + 65
+    patch_sdk(monkeypatch, vendor, lambda _: body(vendor, "short", usage=usage))
+    with pytest.raises(ProviderOutputRejected):
+        live_runtime(vendor, budget=unit_budget()).generate({"prompt": "hello"})
+
+
+def test_live_policy_requires_an_explicit_bounded_output_byte_ceiling() -> None:
+    from harness_engineering.config import LIVE_MAX_OUTPUT_BYTES
+
+    unset = live_budget().model_dump() | {"max_output_bytes": None}
+    with pytest.raises(ValidationError, match="explicit output byte ceiling"):
+        live_config("openai", budget=RuntimeBudget(**unset))
+    for value in (LIVE_MAX_OUTPUT_BYTES + 1,):
+        with pytest.raises(ValidationError, match="ceilings"):
+            live_config("openai", budget=live_budget(max_output_bytes=value))
+    for invalid in (0, -1, 16_385):
+        with pytest.raises(ValidationError):
+            RuntimeBudget(max_output_bytes=invalid)
+    assert live_config("openai", budget=live_budget(max_output_bytes=LIVE_MAX_OUTPUT_BYTES))
+
+
+def test_legacy_unset_byte_ceiling_keeps_the_conservative_equal_to_tokens_rule() -> None:
+    legacy = RuntimeBudget(max_output_tokens=64)
+    assert legacy.max_output_bytes is None and legacy.output_byte_limit == 64
+    assert RuntimeBudget(max_output_tokens=64, max_output_bytes=512).output_byte_limit == 512

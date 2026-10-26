@@ -33,6 +33,8 @@ PUBLISHED_LIVE_TARIFFS: dict[str, tuple[tuple[int | None, float, float], ...]] =
 LIVE_MAX_COST_USD = 1.0
 LIVE_MAX_PROVIDER_ATTEMPTS = 4
 LIVE_MAX_RETRIES_PER_ACTION = 1
+# Local returned-text ceiling in UTF-8 bytes, distinct from provider tokens.
+LIVE_MAX_OUTPUT_BYTES = 8_192
 LIVE_MAX_OUTPUT_TOKENS = 1_024
 LIVE_MAX_CONTEXT_TOKENS = 8_000
 LIVE_MAX_ACTION_TIMEOUT_SECONDS = 30.0
@@ -156,8 +158,11 @@ class HarnessConfig(BaseModel):
             raise ValueError("live provider policy cannot disable human approval")
         if b.max_cost_usd is None or not isfinite(b.max_cost_usd):
             raise ValueError("live provider policy requires a finite cost budget")
+        if b.max_output_bytes is None:
+            raise ValueError("live provider policy requires an explicit output byte ceiling")
         if (
-            b.max_cost_usd > LIVE_MAX_COST_USD
+            b.max_output_bytes > LIVE_MAX_OUTPUT_BYTES
+            or b.max_cost_usd > LIVE_MAX_COST_USD
             or b.max_provider_attempts > LIVE_MAX_PROVIDER_ATTEMPTS
             or b.max_retries_per_action > LIVE_MAX_RETRIES_PER_ACTION
             or b.max_output_tokens > LIVE_MAX_OUTPUT_TOKENS

@@ -258,7 +258,9 @@ class _Vendor:
         _usage(data.get("usage"), context, total=self._sdk == "openai")
         context.checkpoint()
         text = self._text(data, context)
-        if not text or _units(text) > context.max_output_tokens:
+        # Local text ceiling in UTF-8 bytes; provider tokens are bounded separately
+        # by the SDK request cap and by the reported-usage check above.
+        if not text or _units(text) > context.max_output_bytes:
             raise ProviderOutputRejected("Provider text is empty or exceeds the application bound.")
         return {"text": text}
 

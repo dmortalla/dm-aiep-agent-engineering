@@ -128,6 +128,7 @@ class ProviderCallContext:
         self._off_switch = off_switch
         self._cancelled = Event()
         self._max_output_tokens = 2_000
+        self._max_output_bytes = 2_000
         self._max_context_tokens = 12_000
         self._live_allowed = False
         self._authorization: LiveExecutionAuthorization | None = None
@@ -149,8 +150,13 @@ class ProviderCallContext:
 
     @property
     def max_output_tokens(self) -> int:
-        """Return the application-owned per-call output limit."""
+        """Return the application-owned per-call provider output-token limit."""
         return self._max_output_tokens
+
+    @property
+    def max_output_bytes(self) -> int:
+        """Return the local per-call UTF-8 byte ceiling for returned text."""
+        return self._max_output_bytes
 
     def checkpoint(self) -> None:
         """Deny cancelled or expired work without resetting consumed budgets."""
@@ -518,6 +524,7 @@ class ProviderRuntime:
                 min(self._deadline, monotonic() + b.action_timeout_seconds), self._off_switch
             )
             context._max_output_tokens = b.max_output_tokens
+            context._max_output_bytes = b.output_byte_limit
             context._max_context_tokens = b.max_context_tokens
             context._live_allowed = self._live_allowed
             context._authorization = self._authorization
@@ -562,7 +569,7 @@ class ProviderRuntime:
                         raise ProviderOutputRejected(
                             "Provider text response is malformed."
                         ) from exc
-                    if _units(response.text) > b.max_output_tokens:
+                    if _units(response.text) > b.output_byte_limit:
                         raise BudgetExceededError(
                             "Provider output exceeds its conservative budget."
                         )

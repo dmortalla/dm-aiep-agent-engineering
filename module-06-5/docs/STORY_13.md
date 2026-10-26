@@ -162,6 +162,32 @@ repair, verified credential-free only:
 
 Neither model has been live-tested.
 
+## Output unit contract repair (2026-10-26)
+
+Offline diagnosis of the two `ProviderOutputRejected` results from the first
+authorized live exercise (`max_output_tokens=64`) found a unit-contract defect:
+one field, `RuntimeBudget.max_output_tokens`, was both the provider token cap
+sent to the SDK and the UTF-8 byte ceiling for returned text
+(`vendor_providers.py` `_units(text) > context.max_output_tokens`;
+`_units` counts bytes). Under valid reported usage (19 tokens), a 78-byte
+sentence was rejected at the post-parse check with 64 as the cap, for both
+adapters, while 64 bytes passed and 65 failed. This is deterministic and
+reproduced offline. It is not established that the actual live responses had
+this property: the failed run retained no response text, length, or rejection
+message. Other offline-possible causes (for example an OpenAI reasoning item,
+`incomplete` status, or unmodeled response fields) remain unresolved.
+
+Repair: `RuntimeBudget.max_output_bytes` (new, optional, 1 to 16,384) is an
+explicit local UTF-8 byte ceiling distinct from `max_output_tokens`, which
+stays the provider token cap sent to the SDK and checked against reported
+usage. When unset the legacy rule applies unchanged (byte ceiling equals
+`max_output_tokens`), so no accepted behavior changed. The live policy now
+requires it explicitly and caps it at `LIVE_MAX_OUTPUT_BYTES` (8,192). The
+byte ceiling is not an unlimited path; the provider token cap, cost
+reservation, usage validation, and payload limits are unchanged. This repair
+does not claim to resolve the live failures and the new models remain not
+live-tested.
+
 ## Outstanding (human-authorized gate)
 
 - Confirm the tariff upper bounds for the first live exercise (catalog:
