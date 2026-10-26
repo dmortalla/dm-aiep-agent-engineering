@@ -242,6 +242,7 @@ try {
     $start.FileName = (Resolve-Path '.venv/Scripts/python.exe').Path
     $start.UseShellExecute = $false
     $start.RedirectStandardInput = $true
+    $start.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
     foreach ($argument in @('scripts/azure_deployment.py', '--suffix', $suffix,
         '--reviewer-cidr', $reviewerCidr, '--digest', $digest, '--verify-cloud',
         '--subscription-stdin', '--output', "$evidenceDir/module10-azure-acceptance-UNIQUE.json")) {
@@ -250,8 +251,10 @@ try {
     $process = [System.Diagnostics.Process]::Start($start)
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($privateSubscription)
     # Pinned operator input shape: 36 ASCII UUID characters + exactly one LF byte.
-    # Write (not WriteLine) appends no CR; .NET writes these ASCII characters as
-    # UTF-8 without a BOM; Close() ends the stream immediately after that LF.
+    # StandardInputEncoding is explicitly UTF-8 without BOM; ASCII UUID characters
+    # are encoded as their one ASCII-compatible UTF-8 byte each. Write() adds no
+    # implicit CR or newline; the explicitly supplied "`n" contributes exactly one
+    # LF byte (0x0A); Close() ends the stream immediately afterward.
     $process.StandardInput.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) + "`n")
     $process.StandardInput.Close()
     $process.WaitForExit()
@@ -269,8 +272,10 @@ exactly a bare canonical ASCII UUID, UUID + LF or UUID + CRLF. For the next
 authorized live execution the operator pipe must produce one pinned shape:
 36 ASCII UUID characters, exactly one LF byte (0x0A), no BOM, no CR, no
 leading/trailing whitespace and no additional bytes, with the pipe closed
-immediately after that LF; the `Write`-with-explicit-`` `n ``-then-`Close()`
-sequence above provides exactly that sequence, and a mechanism that cannot
+immediately after that LF; the sequence above provides exactly that shape because
+StandardInputEncoding is explicitly UTF-8 without BOM (never relying on a
+runtime/session default) and `Write` appends nothing beyond the explicit
+`` `n `` before `Close()`; a mechanism that cannot
 guarantee it must not be substituted. The UUID is canonical and nonzero, with
 only one optional LF/CRLF transport newline.
 It is not echoed, intentionally persisted, logged, placed in the Python invocation
