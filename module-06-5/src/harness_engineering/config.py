@@ -11,11 +11,22 @@ LiveProvider = Literal["openai", "anthropic"]
 CredentialSourceKind = Literal["environment", "secret_store"]
 
 # Application-owned catalog (ENG-008). Deployment policy may only narrow it.
-# Identifiers are fixed, low-exposure models chosen for a bounded first live
-# exercise; adding a model is a reviewed code change, never runtime input.
+# Identifiers are fixed, current low-exposure models chosen for a bounded live
+# validation; adding a model is a reviewed code change, never runtime input.
+# Deprecated or shut-down models (gpt-4.1-mini, gpt-4.1-nano, gpt-5-mini,
+# gpt-5-nano) are deliberately excluded so no new live exercise can target them.
 SUPPORTED_LIVE_MODELS: dict[str, tuple[str, ...]] = {
-    "openai": ("gpt-4.1-mini", "gpt-4.1-nano"),
-    "anthropic": ("claude-haiku-4-5", "claude-haiku-5-5"),
+    "openai": ("gpt-6-luna",),
+    "anthropic": ("claude-haiku-5-5",),
+}
+
+# Published standard USD tariffs per million tokens, by prompt-size tier:
+# (max_prompt_tokens or None for unbounded, input, output). Operator-supplied
+# official-source observation, 2026-10-25. These are price floors: a human
+# live authorization may approve higher upper bounds, never lower ones.
+PUBLISHED_LIVE_TARIFFS: dict[str, tuple[tuple[int | None, float, float], ...]] = {
+    "gpt-6-luna": ((None, 0.10, 0.50),),
+    "claude-haiku-5-5": ((100_000, 0.10, 0.50), (None, 0.50, 2.50)),
 }
 
 # Live-path ceilings, stricter than the frozen deterministic workflow caps.

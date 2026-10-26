@@ -29,6 +29,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from harness_engineering.capabilities import CapabilityDefinition, CapabilityRegistry
 from harness_engineering.config import (
+    LIVE_MAX_CONTEXT_TOKENS,
+    PUBLISHED_LIVE_TARIFFS,
     SUPPORTED_LIVE_MODELS,
     HarnessConfig,
     LiveProviderPolicy,
@@ -42,8 +44,11 @@ from harness_engineering.errors import (
 )
 from harness_engineering.lifecycle_controls import OffSwitch
 from harness_engineering.live_authorization import (
+    LIVE_INPUT_OVERHEAD_TOKENS,
     LiveExecutionAuthorization,
+    published_tariff,
     require_live_execution_authorization,
+    require_tariff_floor,
 )
 from harness_engineering.live_credentials import (
     CredentialUnavailableError,
@@ -361,7 +366,9 @@ def test_latency_bound_is_enforced(vendor: str, monkeypatch: pytest.MonkeyPatch)
     runtime = live_runtime(vendor, budget=live_budget(action_timeout_seconds=0.2))
     with pytest.raises(ProviderTimeoutError):
         runtime.generate({"prompt": "hello"})
-    assert 0 < calls[0]["timeout"] <= 0.2
+    # Windows monotonic ticks at 15.625 ms, so (t + 0.2) - t can exceed 0.2 by one
+    # float ulp (e.g. 0.2000000000007276 at t=10399.296); allow only that rounding.
+    assert 0 < calls[0]["timeout"] <= 0.2 + 1e-9
     for field, value in (("action_timeout_seconds", 31.0), ("workflow_deadline_seconds", 121.0)):
         with pytest.raises(ValidationError, match="ceilings"):
             live_config(vendor, budget=live_budget(**{field: value}))
@@ -527,8 +534,13 @@ def test_live_availability_never_bypasses_hitl_policy_or_capabilities(
 
 @pytest.mark.parametrize("vendor", VENDORS)
 def test_authorization_scope_window_and_expiry_fail_closed(vendor: str) -> None:
-    other_model = SUPPORTED_LIVE_MODELS[vendor][1]
-    for bad in (authorization(vendor, model=other_model),
+    # One catalogued model per provider: scope mismatch is a cross-provider grant,
+    # and an uncatalogued model cannot even be authorized.
+    other_vendor = "anthropic" if vendor == "openai" else "openai"
+    other_model = "gpt-4.1-mini" if vendor == "openai" else "claude-haiku-4-5"
+    with pytest.raises(ValidationError):
+        authorization(vendor, model=other_model)
+    for bad in (authorization(other_vendor),
                 authorization(vendor, expires_in=timedelta(days=8)),
                 authorization(vendor, expires_in=timedelta(seconds=-1))):
         with pytest.raises(ContractValidationError, match="window"):
@@ -625,3 +637,92 @@ def test_live_budget_and_runtime_budget_stay_consistent() -> None:
                         budget=live_budget(max_cost_usd=0.02),
                         live_config=live_config("openai"),
                         credentials=EnvironmentCredentialSource())
+
+
+# Provider catalog currency (operator-supplied official-source check, 2026-10-25).
+STALE_OPENAI = ("gpt-4.1-mini", "gpt-4.1-nano", "gpt-5-mini", "gpt-5-nano")
+
+
+@pytest.mark.parametrize("model", STALE_OPENAI)
+def test_deprecated_or_shut_down_openai_models_cannot_run_live(
+    model: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    forbid_sdk(monkeypatch)
+    assert model not in SUPPORTED_LIVE_MODELS["openai"]
+    assert model not in PUBLISHED_LIVE_TARIFFS
+    with pytest.raises(ValidationError):
+        LiveProviderPolicy(allowed_providers=("openai",), allowed_models={"openai": (model,)},
+                           credential_source="environment")
+    with pytest.raises(ValidationError):
+        authorization("openai", model=model)
+    with pytest.raises(AuthorityViolationError, match="allowlist"):
+        ProviderRuntime(provider=OpenAIProvider(model), budget=live_budget(),
+                        live_config=live_config("openai"),
+                        credentials=EnvironmentCredentialSource())
+
+
+def test_current_models_are_allowlisted_and_carry_published_tariffs() -> None:
+    assert SUPPORTED_LIVE_MODELS == {"openai": ("gpt-6-luna",),
+                                     "anthropic": ("claude-haiku-5-5",)}
+    catalogued = {model for models in SUPPORTED_LIVE_MODELS.values() for model in models}
+    assert set(PUBLISHED_LIVE_TARIFFS) == catalogued
+    assert PUBLISHED_LIVE_TARIFFS["gpt-6-luna"] == ((None, 0.10, 0.50),)
+    assert PUBLISHED_LIVE_TARIFFS["claude-haiku-5-5"] == (
+        (100_000, 0.10, 0.50), (None, 0.50, 2.50))
+    for vendor in VENDORS:
+        policy = live_config(vendor).live
+        assert policy is not None and policy.permits(vendor, LIVE_MODEL[vendor])
+        assert live_runtime(vendor)._live_allowed is True
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_worst_case_cost_uses_current_published_prices(vendor: str) -> None:
+    _, input_usd, output_usd = PUBLISHED_LIVE_TARIFFS[LIVE_MODEL[vendor]][0]
+    exact = authorization(vendor, input_price=input_usd, output_price=output_usd)
+    runtime = live_runtime(vendor, live_authorization=exact)
+    prompt = 2_000 + LIVE_INPUT_OVERHEAD_TOKENS
+    expected = (Decimal(prompt) * Decimal(str(input_usd))
+                + Decimal(256) * Decimal(str(output_usd))) / Decimal(10**6)
+    assert runtime._live_call_bound == expected
+    for low in ({"input_price": input_usd - 0.01}, {"output_price": output_usd - 0.01}):
+        prices = {"input_price": input_usd, "output_price": output_usd} | low
+        with pytest.raises(ContractValidationError, match="underprices"):
+            live_runtime(vendor, live_authorization=authorization(vendor, **prices))
+
+
+def test_haiku_5_5_cannot_be_underpriced_above_its_short_context_tier() -> None:
+    assert published_tariff("claude-haiku-5-5", 100_000) == (Decimal("0.1"), Decimal("0.5"))
+    assert published_tariff("claude-haiku-5-5", 100_001) == (Decimal("0.5"), Decimal("2.5"))
+    short = authorization("anthropic", input_price=0.10, output_price=0.50)
+    require_tariff_floor(short, 100_000)
+    for exposure in (100_001, 1_000_000):
+        with pytest.raises(ContractValidationError, match="underprices"):
+            require_tariff_floor(short, exposure)
+    require_tariff_floor(authorization("anthropic", input_price=0.50, output_price=2.50),
+                         1_000_000)
+    # The live ceiling keeps every bound prompt inside the short-context tier.
+    assert LIVE_MAX_CONTEXT_TOKENS + LIVE_INPUT_OVERHEAD_TOKENS <= 100_000
+    with pytest.raises(ValidationError, match="ceilings"):
+        live_config("anthropic", budget=live_budget(max_context_tokens=100_001))
+    with pytest.raises(ContractValidationError, match="published tariff"):
+        published_tariff("claude-haiku-4-5", 1)
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_current_price_cost_rejection_precedes_provider_execution(
+    vendor: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_NAME[vendor], DUMMY_KEY)
+    _, input_usd, output_usd = PUBLISHED_LIVE_TARIFFS[LIVE_MODEL[vendor]][0]
+    exact = authorization(vendor, input_price=input_usd, output_price=output_usd)
+    with pytest.raises(ContractValidationError, match="afford"):
+        live_runtime(vendor, budget=live_budget(max_cost_usd=0.0001), live_authorization=exact)
+    calls = patch_sdk(monkeypatch, vendor, lambda _: body(vendor, usage=None))
+    runtime = live_runtime(vendor, budget=live_budget(max_cost_usd=0.0008),
+                           live_authorization=exact, action_ids=("a", "b"))
+    for action in ("a", "b"):
+        with pytest.raises(ProviderOutputRejected):
+            runtime.generate({"prompt": "hello"}, action_id=action)
+    with pytest.raises(BudgetExceededError, match="cost exposure"):
+        runtime.generate({"prompt": "hello"}, action_id="a")
+    assert len(calls) == 2 and runtime.live_exposure_usd <= Decimal("0.0008")

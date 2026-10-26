@@ -138,11 +138,35 @@ keeping and strengthening its original intent:
   legacy opt-in is denied at bootstrap; an allowlisted runtime with dummy
   credentials and no human authorization is still denied before dispatch.
 
+## Provider catalog currency repair (2026-10-25)
+
+An operator-supplied official-provider check before the authorized live
+exercise found the accepted OpenAI catalog stale (`gpt-4.1-mini` deprecated,
+`gpt-4.1-nano` shut down; `gpt-5-mini`/`gpt-5-nano` also deprecated). The
+repair, verified credential-free only:
+
+- `SUPPORTED_LIVE_MODELS` is now `gpt-6-luna` (OpenAI) and
+  `claude-haiku-5-5` (Anthropic). The deprecated and shut-down OpenAI models
+  are rejected by the policy, the authorization, and the adapter binding.
+  `claude-haiku-4-5` was removed because no current tariff was supplied for it,
+  so its exposure could not be floor-checked.
+- `PUBLISHED_LIVE_TARIFFS` records the supplied standard prices per million
+  tokens: `gpt-6-luna` 0.10 input / 0.50 output; `claude-haiku-5-5` 0.10 /
+  0.50 for prompts up to 100K tokens and 0.50 / 2.50 above 100K.
+- Bootstrap now rejects any `LiveExecutionAuthorization` priced below the
+  published tier covering the runtime's full prompt exposure
+  (`max_context_tokens + 256`), so worst-case reservation can never be
+  underpriced. An exposure above 100K takes the higher Haiku 5.5 tier. The
+  live context ceiling (8,000 + 256 tokens) additionally keeps every live
+  prompt inside the short-context tier.
+
+Neither model has been live-tested.
+
 ## Outstanding (human-authorized gate)
 
-- Choose and confirm the model catalog and tariff upper bounds for the first
-  live exercise (current catalog: `gpt-4.1-mini`, `gpt-4.1-nano`,
-  `claude-haiku-4-5`, `claude-haiku-5-5`).
+- Confirm the tariff upper bounds for the first live exercise (catalog:
+  `gpt-6-luna`, `claude-haiku-5-5`; authorizations may not go below the
+  published floors).
 - Provision credentials in the server environment or secret store, outside
   the repository and the reviewer UI.
 - Issue a `LiveExecutionAuthorization`, run the bounded live exercise, and

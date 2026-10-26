@@ -38,6 +38,7 @@ from harness_engineering.live_authorization import (
     LIVE_INPUT_OVERHEAD_TOKENS,
     MAX_AUTHORIZATION_WINDOW,
     LiveExecutionAuthorization,
+    require_tariff_floor,
 )
 from harness_engineering.live_credentials import CREDENTIAL_SOURCE_TYPES, CredentialSource
 from harness_engineering.observability import (
@@ -396,9 +397,10 @@ class ProviderRuntime:
                 "Live authorization must cover this provider/model inside its window."
             )
         b = self._budget
-        self._live_call_bound = authorization.worst_case_usd(
-            b.max_context_tokens + LIVE_INPUT_OVERHEAD_TOKENS, b.max_output_tokens
-        )
+        prompt_bound = b.max_context_tokens + LIVE_INPUT_OVERHEAD_TOKENS
+        # Price the full prompt exposure at its published tier; never underprice.
+        require_tariff_floor(authorization, prompt_bound)
+        self._live_call_bound = authorization.worst_case_usd(prompt_bound, b.max_output_tokens)
         if self._live_call_bound > self._live_cap:
             raise ContractValidationError("Live budget cannot afford one fully bounded call.")
         self._authorization = authorization

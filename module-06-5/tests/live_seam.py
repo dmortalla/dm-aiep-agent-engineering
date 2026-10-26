@@ -15,7 +15,7 @@ from harness_engineering.live_credentials import EnvironmentCredentialSource
 from harness_engineering.providers import ProviderRuntime
 from harness_engineering.vendor_providers import AnthropicProvider, OpenAIProvider
 
-LIVE_MODEL = {"openai": "gpt-4.1-mini", "anthropic": "claude-haiku-4-5"}
+LIVE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-5-5"}
 ADAPTER = {"openai": OpenAIProvider, "anthropic": AnthropicProvider}
 ENV_NAME = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
 DUMMY_KEY = "controlled-dummy-not-a-real-key"

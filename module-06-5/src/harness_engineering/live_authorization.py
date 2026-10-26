@@ -13,9 +13,13 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from harness_engineering.config import SUPPORTED_LIVE_MODELS, LiveProvider
+from harness_engineering.config import (
+    PUBLISHED_LIVE_TARIFFS,
+    SUPPORTED_LIVE_MODELS,
+    LiveProvider,
+)
 from harness_engineering.domain import Identifier
-from harness_engineering.errors import AuthorityViolationError
+from harness_engineering.errors import AuthorityViolationError, ContractValidationError
 
 MAX_AUTHORIZATION_WINDOW = timedelta(days=7)
 # Conservative per-request framing allowance added to the input-token bound.
@@ -109,3 +113,47 @@ def require_live_execution_authorization(
     if (datetime.now(UTC) if now is None else now) >= authorization.expires_at:
         raise AuthorityViolationError("Live monetary authorization has expired.")
     return authorization
+
+
+def published_tariff(model: str, prompt_tokens: int) -> tuple[Decimal, Decimal]:
+    """Return the published input/output floor for a maximum prompt exposure.
+
+    Args:
+        model: Catalogued model identifier.
+        prompt_tokens: Upper bound on prompt tokens a single call can send.
+
+    Returns:
+        Per-million USD (input, output) of the tier covering that exposure; an
+        exposure above every bounded tier takes the unbounded (highest) tier.
+
+    Raises:
+        ContractValidationError: If the model has no published tariff.
+    """
+    tiers = PUBLISHED_LIVE_TARIFFS.get(model)
+    if not tiers:
+        raise ContractValidationError("Catalogued live model has no published tariff.")
+    for limit, input_usd, output_usd in tiers:
+        if limit is None or prompt_tokens <= limit:
+            return Decimal(str(input_usd)), Decimal(str(output_usd))
+    raise ContractValidationError("Published tariff tiers do not cover this exposure.")
+
+
+def require_tariff_floor(authorization: LiveExecutionAuthorization, prompt_tokens: int) -> None:
+    """Reject an authorization priced below the published tier for its exposure.
+
+    Args:
+        authorization: Exact bootstrap-bound human authorization.
+        prompt_tokens: Upper bound on prompt tokens a single call can send.
+
+    Raises:
+        ContractValidationError: If either approved price is below the published
+            tariff of the tier covering ``prompt_tokens``.
+    """
+    floor_input, floor_output = published_tariff(authorization.model, prompt_tokens)
+    if (
+        Decimal(str(authorization.usd_per_million_input_tokens)) < floor_input
+        or Decimal(str(authorization.usd_per_million_output_tokens)) < floor_output
+    ):
+        raise ContractValidationError(
+            "Live authorization underprices the published tariff for this exposure."
+        )
