@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from harness_engineering.domain import RuntimeBudget
 
 LiveProvider = Literal["openai", "anthropic"]
-CredentialSourceKind = Literal["environment", "secret_store"]
+CredentialSourceKind = Literal["environment", "secret_store", "byok"]
 
 # Application-owned catalog (ENG-008). Deployment policy may only narrow it.
 # Identifiers are fixed, current low-exposure models chosen for a bounded live
@@ -42,20 +42,22 @@ LIVE_MAX_WORKFLOW_DEADLINE_SECONDS = 120.0
 
 
 class LiveProviderPolicy(BaseModel):
-    """Trusted opt-in live-provider allowlists and credential-source policy.
+    """Application-owned opt-in live-provider allowlists and credential-source policy.
 
     This is the application-owned configuration contract behind ``ENG-008``.
     It names the providers and models the application may ever invoke and the
-    trusted server-side mechanism from which credentials are resolved. It
-    carries no credential values and grants no authority: credentials resolve
-    only at invocation through the bound credential source and grant
+    approved credential-delivery path: trusted server-side configuration
+    (``environment`` or ``secret_store``) or a transient user-supplied key
+    (``byok``). Both paths are first-class and neither replaces the other. The
+    policy carries no credential values and grants no authority: credentials
+    resolve only at invocation through the bound credential source and grant
     connectivity only.
 
     Attributes:
         allowed_providers: Unique providers from the application catalog.
         allowed_models: Per-provider model allowlist, each a subset of
             ``SUPPORTED_LIVE_MODELS``; every allowed provider needs one.
-        credential_source: Trusted server-side credential mechanism.
+        credential_source: Approved credential-delivery path for this policy.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)

@@ -27,7 +27,8 @@ reverted to baseline.
 
 Dispatch on the live path happens only when every gate below passes, in order.
 Each gate fails closed and none can be satisfied by model, tool, MCP, memory,
-browser, or serialized data.
+or serialized data. A credential, from either approved path, satisfies only the
+connectivity gate and never an authorization, allowlist, or bound.
 
 1. **Configuration** (`config.py`). `HarnessConfig` stays deterministic by
    default (`live=None`). The optional `LiveProviderPolicy` (strict, frozen)
@@ -44,10 +45,12 @@ browser, or serialized data.
 2. **Binding** (`vendor_providers._validate_binding`). The adapter's exact
    provider/model must be allowlisted by the revalidated policy, and the
    runtime budget must equal the configured budget.
-3. **Trusted credentials** (`live_credentials.py`).
+3. **Approved credentials** (`live_credentials.py`).
    `EnvironmentCredentialSource` reads only the fixed server variables
    `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`; `SecretStoreCredentialSource` calls a
-   trusted lookup bound at bootstrap with fixed secret names. A live runtime
+   trusted lookup bound at bootstrap with fixed secret names;
+   `TransientCredentialSource` (BYOK, see below) holds a user-typed key for one
+   provider in memory only. A live runtime
    requires a source whose kind matches the policy; offline runtimes reject
    any source. Credentials resolve only at invocation into an opaque
    `LiveCredential` (redacted repr, identity-only equality, unhashable,
@@ -106,11 +109,10 @@ never self-reports above `adapter`.
 
 ## Reviewer UI
 
-`streamlit_app.py` gains a "Provider modes" section rendering
-`provider_readiness()` and explaining that live execution needs trusted
-server-side configuration plus explicit human authorization and cannot be
-enabled from the page. No input widget, credential field, or BYOK control was
-added; deterministic demonstrations are unchanged.
+`streamlit_app.py` gained a "Provider modes" section rendering
+`provider_readiness()`. This initial candidate offered no input widget; that
+restriction was an error against the program requirement and is superseded by
+the secure opt-in BYOK path in "Secure opt-in BYOK / live mode" below.
 
 ## Tests
 
@@ -330,3 +332,89 @@ no maintained live-validation tool, so none was added.
 Story 13's live-evidence gate is satisfied. Module 6.5 overall closeout is not
 complete: deployment verification, final documentation reconciliation, root
 README reconciliation and the closeout post remain.
+
+## Secure opt-in BYOK / live mode (2026-10-27)
+
+Program invariant (also in `docs/ENGINEERING_SOP.md`, `AGENTS.md`, `CLAUDE.md`, ENG-008
+and ADR 002): deterministic/no-key reviewer mode plus secure explicit opt-in
+BYOK/live mode. Server-side credentials may supplement BYOK but never replace it.
+The earlier statements that credentials are "never browser input" and that the
+reviewer UI has no BYOK control were errors against this requirement and are
+superseded; the original sections above are kept as the record of that candidate.
+
+Architecture, using the existing governed path and no new authority:
+
+- **Credential source** (`live_credentials.TransientCredentialSource`, kind `byok`):
+  holds one user-typed key for one catalogued provider, in memory only. It hands the
+  key out only at the provider invocation boundary, only for its bound provider, and
+  is dropped by `discard()` in a `finally` immediately after the single call. The
+  application never writes the key to disk, logs, serializes, copies, compares, or places
+  it in a URL, prompt, evidence, telemetry, error, or durable application storage;
+  `repr`/`str` are redacted. No custom encryption or storage exists. See "Secret
+  lifecycle" below for what the UI framework may hold. Server-side sources
+  (`EnvironmentCredentialSource`, `SecretStoreCredentialSource`) remain supported;
+  `LiveProviderPolicy.credential_source` now accepts `environment`, `secret_store`
+  or `byok`, and the runtime requires the bound source kind to match the policy.
+- **Session live check** (`live_session.run_live_check`): the single entry point.
+  It requires explicit live-mode opt-in and a charges acknowledgement, a provider and
+  model from `SUPPORTED_LIVE_MODELS` (`gpt-6-luna`, `claude-haiku-5-5`), a fixed
+  application-owned prompt identifier (no free text), and a per-session cap of five
+  calls. Bounds are fixed in `live_session_budget()` (512 context, 256 output tokens,
+  4,096 reply bytes, USD 0.001, one attempt, no retry, 20 s) and cannot be influenced
+  by the key or the browser. The short-lived session authorization is minted only
+  from the explicit opt-in and acknowledgement, never from the credential, priced at
+  the published floor, and re-checked by the runtime before dispatch. The server
+  credential path additionally requires the operator flag
+  `MODULE_6_5_ENABLE_SERVER_CREDENTIAL_PATH=1` so a public deployment never spends
+  operator credentials unless deliberately enabled.
+- **Reviewer UI** (`streamlit_app.py`): a "Provider mode" selector, defaulting to
+  `Deterministic (default, no key)`. Only after selecting live mode does the page show
+  provider, model, prompt and credential-source selectors, a password-style key field
+  inside a form that clears on submit in the browser, and the charges acknowledgement.
+  The result is shown as literal text with its evidence class `adapter`; the page
+  never redisplays the key, and the application stores no copy of it in any
+  application-owned `st.session_state` entry (see "Secret lifecycle").
+- **Evidence:** a session call, BYOK or server-credentialed, is `adapter`-class at
+  most. Accepted `live_provider` evidence remains only the repository-owned,
+  independently reviewed record; the BYOK path cannot create or alter it, and no key
+  is recorded in evidence.
+- **Accepted third-run evidence is unchanged.** It used trusted environment
+  credentials and remains valid `LIVE_PROVIDER` evidence; BYOK is an additional
+  credential-delivery path, not a replacement or reinterpretation.
+- **Why this is production-grade:** security comes from secret non-persistence,
+  explicit opt-in, least authority, application-owned allowlists and bounds,
+  independent authorization, and evidence separation, not from hiding the input
+  field. Deployment remains not verified and Module 6.5 is not complete.
+
+### Secret lifecycle (precise)
+
+Application-controlled behavior, all with no exception: no durable persistence, no
+disk write, no logging, no evidence or telemetry persistence, no prompt inclusion, no
+credential echo or display, no application authority. The key is handed to the
+provider SDK only at the credential boundary and the application's own reference is
+dropped right after the call.
+
+What the framework may hold: Streamlit keeps the value of a widget in its own
+server-side widget state (reproduced: after submit the password field's value is in
+Streamlit's `_new_widget_state` and, after one rerun, also in its `_old_state`). The
+form's `clear_on_submit` resets the browser-side field; it is not a guaranteed
+immediate erasure of the server-side copy. That transient, framework-managed memory
+may exist until Streamlit's rerun or session lifecycle clears it or the session ends.
+The earlier statements that the key is "never stored", "cleared after each submit", or
+absent from all session state were overstated and are superseded by this paragraph.
+This is not a weakness of browser BYOK: the controls are non-persistence by the
+application, explicit opt-in, least authority, allowlists, bounded execution,
+independent authorization and evidence separation. A test records the framework
+retention so the stronger claim is not reintroduced.
+
+### Server credentials in a public deployment
+
+`MODULE_6_5_ENABLE_SERVER_CREDENTIAL_PATH=1` must not be enabled on a public
+deployment unless a separate operator-spend control or global quota exists; none is
+implemented here. For the planned public Streamlit deployment, BYOK live mode is
+allowed and the operator/server credential path stays disabled (the default).
+
+Tests: `tests/test_byok_live_mode.py` (credential lifecycle, authority separation,
+bounds, evidence, UI) and `tests/test_byok_invariant_contract.py` (the invariant is
+present in ENG-008, ADR 002, the SOP, AGENTS.md, CLAUDE.md and the UI, and a
+server-side-only rule or removal of BYOK fails acceptance).

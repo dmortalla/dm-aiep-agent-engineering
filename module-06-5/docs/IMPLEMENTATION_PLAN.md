@@ -122,7 +122,7 @@ Complete the already-supporting dual-mode machinery so that live OpenAI and
 Anthropic provider execution is securely activatable without weakening the
 deterministic/no-key default: provider/model allowlist enforcement in the
 live-provider configuration seam, trusted server-side/environment/secret-store
-credential mechanisms (never public browser BYOK input), bounded retries,
+credential mechanisms and a session-scoped secure BYOK path (server-side credentials supplement but never replace BYOK), bounded retries,
 token/output limits, latency deadlines and cost exposure for the live path,
 distinct live-provider evidence, and provider-neutral failure handling. No live
 provider call is executed without a separate explicit human authorization that

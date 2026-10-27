@@ -21,7 +21,10 @@ ENG_008_INVARIANTS = (
     "opt-in capability",
     "documented provider and model allowlist",
     "trusted server-side, environment, or secret-store mechanisms",
-    "never accepted as public browser input",
+    "approved credential source",
+    "temporary user-supplied (BYOK) credential",
+    "never persisted, logged, or exposed",
+    "may supplement but shall not replace the BYOK path",
     "credentials grant connectivity only and never authority",
     "bounded by retries, token/output limits, latency deadlines, and cost exposure",
     "Evidence classes shall remain explicitly distinct",
@@ -58,7 +61,8 @@ def test_decision_record_and_addendum_propagate_the_contract() -> None:
         .read_text(encoding="utf-8").split()
     )
     for phrase in ("ENG-008", "deterministic/no-key reviewer operation by default",
-                   "never public browser BYOK fields", "Story 13",
+                   "session-scoped, never-persisted BYOK key",
+                   "may supplement but never replace BYOK", "Story 13",
                    "separate later human-authorized cost/credential boundary"):
         assert phrase in adr_002, f"ADR 002 missing: {phrase}"
     adr_001 = (DOCS / "adr" / "001-module-06-5-architecture-baseline.md").read_text(
@@ -149,8 +153,10 @@ def test_reviewer_default_path_stays_credential_free() -> None:
     app = (SRC.parent.parent / "streamlit_app.py").read_text(encoding="utf-8")
     assert "No API key or paid inference required" in app
     assert "No credentials are requested" in app
-    for forbidden in ("API key", "key input", "text_input", "number_input"):
-        if forbidden == "API key":
-            assert "an API key" not in app.lower() or "No API key" in app
-            continue
-        assert forbidden not in app, f"reviewer UI must not accept credentials ({forbidden})"
+    # Credentials are accepted only through the explicit-opt-in BYOK field: exactly one
+    # password-style input, inside the live-mode branch, and no other free-text surface.
+    assert app.count("st.text_input(") == 1 and 'type="password"' in app
+    assert app.index("if live_mode:") < app.index("st.text_input(")
+    for forbidden in ("number_input", "text_area", "file_uploader", "st.secrets",
+                      "os.environ", "getenv", "query_params"):
+        assert forbidden not in app, f"reviewer UI must not use {forbidden}"

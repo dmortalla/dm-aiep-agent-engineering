@@ -36,6 +36,8 @@ Deployment verification and final module closeout are separate gates.
   UI requests fixed demonstrations only; status copy reconciled to the
   accepted chronology.
 
+- Provider modes: deterministic/no-key reviewer mode is the default; secure explicit opt-in BYOK/live mode is also supported (session-only key, allowlisted provider and model, application-owned bounds), with trusted server-side credentials as a supplement that stays disabled on a public deployment unless a separate operator-spend control or global quota exists. The application never persists a BYOK key (no disk, logs, evidence, prompts or durable storage); Streamlit may hold the widget value in server memory until its rerun/session lifecycle clears it. A session call is adapter-class evidence at most; the accepted live-provider evidence used trusted environment credentials and is unchanged. Deployment is not verified.
+
 ## Verification performed for this candidate
 
 1. `ruff check .` — PASS.

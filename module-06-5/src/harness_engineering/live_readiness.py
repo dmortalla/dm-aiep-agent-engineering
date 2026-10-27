@@ -299,9 +299,9 @@ def provider_readiness(
             capability="Live mode in this deployment", evidence=None,
             status=ReadinessStatus.CONFIGURED if serving.live is not None
             else ReadinessStatus.NOT_CONFIGURED,
-            summary="This reviewer never runs live providers; live mode requires trusted "
-                    "server-side configuration and explicit human authorization, never "
-                    "browser input.",
+            summary="Server configuration stays deterministic by default. Live mode is an "
+                    "explicit per-session opt-in with a temporary BYOK key or trusted "
+                    "server-side configuration; credentials grant connectivity only.",
         ),
     ]
     for provider, label in (("openai", "OpenAI"), ("anthropic", "Anthropic")):

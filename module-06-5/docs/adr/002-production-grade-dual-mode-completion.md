@@ -13,9 +13,10 @@ Repository governance requires production-grade engineering unless a module is
 explicitly declared DEMO-ONLY. Module 6.5 has never been declared DEMO-ONLY.
 The established production-grade invariant requires deterministic/no-key
 reviewer operation by default, securely activatable opt-in live-provider
-execution where genuine provider adapters exist, secrets supplied through
-trusted server-side/environment/secret-store mechanisms (never public browser
-BYOK fields), explicit provider/model allowlists, bounded retries/token/
+execution where genuine provider adapters exist, secrets supplied through an
+approved credential source (a session-scoped, never-persisted BYOK key and/or
+trusted server-side/environment/secret-store mechanisms; server-side
+credentials may supplement but never replace BYOK), explicit provider/model allowlists, bounded retries/token/
 output/latency/cost exposure, credentials that grant connectivity but never
 authority, explicitly distinct evidence classes, and provider-level
 production-readiness claims only after the live path is implemented, securely

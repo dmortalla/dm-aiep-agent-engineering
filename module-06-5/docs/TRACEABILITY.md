@@ -291,10 +291,11 @@ Corrective contract, additive to the unchanged 69-requirement baseline:
   `docs/adr/002-production-grade-dual-mode-completion.md`): deterministic,
   credential-free operation remains the default reviewer mode; live OpenAI or
   Anthropic execution is opt-in and securely configurated only — explicit
-  validated configuration, documented provider/model allowlist, credentials
-  supplied through trusted server-side/environment/secret-store mechanisms and
-  never public browser input, credentials granting connectivity only and never
-  authority, bounded retries/token/output/latency/cost; evidence classes stay
+  validated configuration, documented provider/model allowlist, an approved
+  credential source (a session-scoped, never-persisted BYOK key and/or trusted
+  server-side/environment/secret-store mechanisms, server-side credentials
+  supplementing but never replacing BYOK), credentials granting connectivity only
+  and never authority, bounded retries/token/output/latency/cost; evidence classes stay
   explicitly distinct; provider-level production readiness may be claimed only
   when the live path is implemented, securely configured, explicitly
   human-authorized for execution, exercised, and independently evidenced.
@@ -315,7 +316,7 @@ mocked, and adapter class; its live exercise is recorded below:
 | --- | --- | --- |
 | Deterministic default | `HarnessConfig()` with `live=None`; fake provider | `test_deterministic_mode_remains_default_and_credential_free` |
 | Explicit opt-in, allowlist | `LiveProviderPolicy`, `SUPPORTED_LIVE_MODELS`, `_validate_binding` | activation, unknown-provider, disallowed-model, accepted-path tests |
-| Trusted credentials, never browser input | `live_credentials.py` sources; explicit SDK `api_key` | missing-credential, secret-store, opacity, redaction, reviewer-widget tests |
+| Approved credentials: BYOK and server-side | `live_credentials.py` sources (`TransientCredentialSource`, environment, secret store); explicit SDK `api_key`; `live_session.py` | missing-credential, secret-store, opacity, redaction, `test_byok_live_mode.py`, `test_byok_invariant_contract.py` |
 | Connectivity only, never authority | Untrusted `ModelResult`; unchanged HITL/policy/off-switch | untrusted-output and HITL/policy/capability tests |
 | Bounded retries/tokens/latency/cost | SDK `max_retries=0`; live ceilings; worst-case cost reservation | retry, latency, token/output, cost tests |
 | Human authorization | Expiring `LiveExecutionAuthorization`, re-checked pre-dispatch | authorization scope/window/expiry/forgery tests |

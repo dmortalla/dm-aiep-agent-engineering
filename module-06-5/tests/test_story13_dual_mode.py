@@ -616,15 +616,15 @@ def test_reviewer_ui_exposes_no_credential_input_and_truthful_readiness() -> Non
                    "radio", "chat_input", "date_input"):
         assert not getattr(at, widget, ()), f"credential-capable widget present: {widget}"
     source = APP.read_text(encoding="utf-8").lower()
-    for forbidden in ("password", "api_key", "st.secrets", "file_uploader", "os.environ",
-                      "getenv", "text_input", "text_area"):
+    for forbidden in ("api_key", "st.secrets", "file_uploader", "os.environ", "getenv",
+                      "text_area", "query_params"):
         assert forbidden not in source
     text = "\n".join(item.value for item in at.markdown)
     assert "Live OpenAI evidence" in text and "Live Anthropic evidence" in text
     assert "`accepted`" in text and "`not_executed`" not in text
     assert "`pending`" in text and "Deployment verification" in text
     assert "`not_claimed`" in text and "`not_configured`" in text
-    assert any("explicit human authorization" in item.value for item in at.markdown)
+    assert any("never grant application authority" in item.value for item in at.markdown)
     at.button[0].click().run()
     assert not at.exception and not at.error and len(at.code) == 1
 

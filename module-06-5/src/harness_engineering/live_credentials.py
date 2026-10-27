@@ -1,10 +1,13 @@
-"""Story 13: trusted server-side credential seam for the opt-in live provider path.
+"""Story 13: credential seam for the explicit opt-in live provider path.
 
-Credentials are resolved only at invocation from the server environment or a
-secret store bound at trusted bootstrap. They are never browser, workflow,
-model, MCP, or memory input, are never stored on runtime state, and grant
-connectivity only. A resolved credential is opaque: it cannot be printed,
-compared, pickled, or serialized, and lookup failures surface only fixed text.
+Two approved credential-delivery paths exist and neither replaces the other:
+trusted server-side sources (environment or secret store bound at bootstrap)
+and a transient bring-your-own-key (BYOK) source holding a key the user typed
+for the current session. Credentials are never workflow, model, MCP, or memory
+input, are not persisted in application-owned or durable state (a UI framework may
+hold widget state in memory temporarily), and grant connectivity
+only, never authority. A credential is opaque: it cannot be printed, compared,
+pickled, copied, or serialized, and lookup failures surface only fixed text.
 """
 
 import os
@@ -162,5 +165,77 @@ class SecretStoreCredentialSource:
         return "SecretStoreCredentialSource()"
 
 
-CredentialSource = EnvironmentCredentialSource | SecretStoreCredentialSource
-CREDENTIAL_SOURCE_TYPES = (EnvironmentCredentialSource, SecretStoreCredentialSource)
+class TransientCredentialSource:
+    """Hold one user-supplied (BYOK) credential for a single provider, in memory only.
+
+    The key exists only for the interactive session or request that supplied it.
+    It is never written to disk, logged, serialized, copied, compared, placed in a
+    URL, prompt, evidence, or error, and is never durable application state. It
+    is bound to one provider, handed out only to the provider invocation
+    boundary, and dropped by ``discard``. Holding a valid key confers
+    connectivity only: it does not enable live mode, pass an allowlist, grant an
+    authorization, or alter any bound. (Python cannot scrub memory; dropping the
+    reference is the strongest guarantee, so no custom encryption or storage is
+    attempted.)
+    """
+
+    kind: ClassVar[CredentialSourceKind] = "byok"
+    __slots__ = ("_credential", "_provider")
+
+    def __init__(self, provider: str, value: str) -> None:
+        """Bind a provider and wrap the typed key.
+
+        Args:
+            provider: Catalogued provider the key is for.
+            value: The user-supplied key; validated against the credential profile.
+
+        Raises:
+            CredentialUnavailableError: For an uncatalogued provider or a key that
+                violates the profile; the value is never included in the error.
+        """
+        self._provider = _checked(provider)
+        self._credential: LiveCredential | None = LiveCredential(value)
+
+    def resolve(self, provider: str) -> LiveCredential:
+        """Return the key for the bound provider at the invocation boundary only.
+
+        Args:
+            provider: Adapter vendor about to be invoked.
+
+        Returns:
+            The opaque credential.
+
+        Raises:
+            CredentialUnavailableError: If discarded or requested for another provider.
+        """
+        if self._credential is None or provider != self._provider:
+            raise CredentialUnavailableError("Trusted live credential is not available.")
+        return self._credential
+
+    def discard(self) -> None:
+        """Drop the only reference this source holds to the key."""
+        self._credential = None
+
+    def __repr__(self) -> str:
+        """Name the mechanism only."""
+        return "TransientCredentialSource(<redacted>)"
+
+    __str__ = __repr__
+
+    def __eq__(self, other: object) -> bool:
+        """Compare by identity only."""
+        return self is other
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __reduce__(self) -> NoReturn:
+        """Refuse pickling/copying into durable or transferable state."""
+        raise TypeError("Live credentials cannot be serialized.")
+
+
+CredentialSource = (
+    EnvironmentCredentialSource | SecretStoreCredentialSource | TransientCredentialSource
+)
+CREDENTIAL_SOURCE_TYPES = (
+    EnvironmentCredentialSource, SecretStoreCredentialSource, TransientCredentialSource,
+)
