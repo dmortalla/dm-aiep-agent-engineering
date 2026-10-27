@@ -12,6 +12,7 @@ authorization policy and its results cannot grant authority.
 
 import os
 import re
+import warnings
 from typing import Any, Final
 
 from guardrails import Guard, OnFailAction, settings
@@ -90,6 +91,64 @@ class GuardrailsCredentialProvider:
         self._guard = Guard(use_server=False, history_max_length=1).use(validator)
         self._guard.configure(allow_metrics_collection=False)
         apply_deterministic_runtime_policy()
+        self._lifecycle_closed = False
+
+    def close(self) -> bool:
+        """Shut down the vendor-owned OpenTelemetry span worker deterministically.
+
+        Constructing a real local ``Guard`` makes the installed Guardrails
+        package initialize its own ``HubTelemetry`` singleton tracer, which
+        unconditionally constructs an SDK ``BatchSpanProcessor`` with an
+        ``OtelBatchSpanRecordProcessor`` worker thread — even with Hub
+        metrics and tracing disabled, and even though no span is ever
+        created on the deterministic path. The vendor exposes no
+        provider-level shutdown; the supported cleanup mechanism is the
+        public OpenTelemetry SDK ``TracerProvider.shutdown()`` on the
+        tracer provider this vendor singleton itself owns.
+
+        Ownership safety: this worker belongs to the vendor singleton that
+        only this Guardrails integration initializes inside Module 7 — no
+        other Module 7 component constructs or consumes OpenTelemetry, Hub
+        metrics are disabled (``enable_metrics=False``) and tracing is
+        disabled (``disable_tracing=True``) before every execution, so no
+        application span ever exists and shutting this vendor-owned provider
+        down cannot flush, drop or alter any application evidence and cannot
+        change validation semantics, authorization or fail-closed behavior.
+        Shutdown is one-shot per process singleton: later provider
+        constructions reuse the single vendor singleton, so repeated
+        construction never accumulates workers.
+
+        Returns:
+            False only when the vendor singleton exposes no supported
+            shutdown mechanism; True when there was nothing to shut down or
+            the supported shutdown executed.
+
+        Raises:
+            SafetyProviderError: If the supported shutdown path fails.
+        """
+        if self._lifecycle_closed:
+            return True
+        self._lifecycle_closed = True
+        from guardrails.utils.hub_telemetry_utils import HubTelemetry
+
+        instance = getattr(HubTelemetry, "_instance", None)
+        if instance is None:
+            return True
+        provider = getattr(instance, "_tracer_provider", None)
+        if provider is None:
+            return True
+        shutdown = getattr(provider, "shutdown", None)
+        if not callable(shutdown):
+            return False
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                shutdown()
+            except Exception as exc:
+                raise SafetyProviderError(
+                    f"Guardrails lifecycle shutdown failed ({type(exc).__name__})."
+                ) from exc
+        return True
 
     @property
     def name(self) -> str:

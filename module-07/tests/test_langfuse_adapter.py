@@ -1115,7 +1115,13 @@ def test_langfuse_and_opentelemetry_are_confined_to_the_adapter() -> None:
     assert {name for name, roots in importers.items() if "langfuse" in roots} == {
         "langfuse_adapter.py"}
     assert {name for name, roots in importers.items() if "opentelemetry" in roots} == set()
-    assert {name for name, roots in importers.items() if ".langfuse_adapter" in roots} == set()
+    # Human-approved Story 7/Story 8 reconciliation (Option A extension): the
+    # accepted Story 8 contract authorizes failure_lab.py — and only
+    # failure_lab.py — to exercise the accepted Langfuse adapter's PUBLIC
+    # deterministic/offline/fake/seam surfaces. No other module gains
+    # langfuse_adapter access and no adapter behavior below changes.
+    assert {name for name, roots in importers.items() if ".langfuse_adapter" in roots} == {
+        "failure_lab.py"}
     forbidden = {"aiohttp", "requests", "urllib3", "langsmith", "helicone",
                  "guardrails", "openai", "anthropic"}
     assert importers["langfuse_adapter.py"].isdisjoint(forbidden)

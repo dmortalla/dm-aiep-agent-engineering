@@ -335,8 +335,17 @@ def test_03_requests_imports_confined_and_no_authority_import():
             for name in names:
                 assert "helicone_adapter" not in name and "langsmith_adapter" not in name
         for other in sorted(SRC.glob("*.py")):
-            if other.name in {"helicone_adapter.py", "langsmith_adapter.py",
-                              "__init__.py"}:
+            skip = {"helicone_adapter.py", "langsmith_adapter.py", "__init__.py"}
+            # Human-approved Story 7 / Story 8 reconciliation (Option A): the
+            # accepted Story 8 contract (vendor-import rule) authorizes
+            # failure_lab.py — and only failure_lab.py — to exercise the
+            # accepted adapter public deterministic/offline/fake/seam
+            # surfaces. This named allowance narrows nothing else: the
+            # confined `requests` rule above and every other module's
+            # helicone_adapter prohibition remain fully in force.
+            if other.name == "failure_lab.py":
+                skip.add("failure_lab.py")
+            if other.name in skip:
                 continue
             tree = ast.parse(other.read_text(encoding="utf-8"))
             for node in ast.walk(tree):

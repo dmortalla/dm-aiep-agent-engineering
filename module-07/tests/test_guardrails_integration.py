@@ -252,3 +252,110 @@ def test_guardrails_skipping_the_validator_fails_closed(
 
     with pytest.raises(SafetyProviderError, match="did not execute"):
         provider.check("A safe sentence.", SafetyStage.INPUT)
+
+
+def _vendor_span_workers() -> list[str]:
+    """Return the vendor span-processor worker threads (duplicates preserved)."""
+    return [
+        thread.name
+        for thread in __import__("threading").enumerate()
+        if thread.name.startswith("OtelBatch")
+        and (
+            getattr(thread._target, "__qualname__", "")
+            == "BatchProcessor.worker"
+        )
+    ]
+
+
+def test_provider_construction_reaches_supported_telemetry_singleton(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Document the vendor's construction-owned telemetry singleton of record."""
+    baseline = _vendor_span_workers()
+    monkeypatch.setattr(HubTelemetry, "_instance", None)
+    provider = GuardrailsCredentialProvider()
+    instance = HubTelemetry._instance
+    try:
+        assert instance is not None
+        assert instance._enabled is False
+        assert instance._tracer_provider is not None
+        assert len(_vendor_span_workers()) == len(baseline) + 1
+    finally:
+        provider.close()
+
+
+def test_provider_close_terminates_worker_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lifecycle boundary ends the vendor worker without GC/exit reliance."""
+    baseline = _vendor_span_workers()
+    monkeypatch.setattr(HubTelemetry, "_instance", None)
+    provider = GuardrailsCredentialProvider()
+    assert len(_vendor_span_workers()) == len(baseline) + 1
+    try:
+        closed = provider.close()
+    finally:
+        _ = closed
+    assert provider.close() is True  # Idempotent lifecycle boundary.
+    assert len(_vendor_span_workers()) == len(baseline)
+
+    # Real, unmocked Guardrails validation still executes after shutdown;
+    # semantics, decisions and evidence classification are unchanged.
+    allowed = provider.check("A safe sentence.", SafetyStage.INPUT)
+    denied = provider.check(SECRET, SafetyStage.OUTPUT)
+    assert (allowed.decision, denied.decision) == (Decision.ALLOW, Decision.DENY)
+    assert allowed.evidence_class is EvidenceClass.DETERMINISTIC_FIXTURE
+    assert provider._guard.history.last is None
+
+
+def test_repeated_provider_construction_does_not_accumulate_workers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The vendor singleton keeps at most one worker across constructions."""
+    baseline = _vendor_span_workers()
+    monkeypatch.setattr(HubTelemetry, "_instance", None)
+    providers = [GuardrailsCredentialProvider() for _ in range(4)]
+    try:
+        assert len(_vendor_span_workers()) == len(baseline) + 1
+    finally:
+        for provider in providers:
+            provider.close()
+    assert len(_vendor_span_workers()) == len(baseline)
+
+
+def test_provider_construction_makes_no_outbound_connection_or_export(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lifecycle construction/close introduce no network or OTLP export."""
+    outbound: list[object] = []
+    exports: list[int] = []
+    real_connect = socket.socket.connect
+    real_getaddrinfo = socket.getaddrinfo
+
+    def guarded_connect(sock: socket.socket, address: object) -> None:
+        host = address[0] if isinstance(address, tuple) else address
+        if host not in LOOPBACK:
+            outbound.append(address)
+            raise OSError("outbound connection blocked by Story 2 lifecycle test")
+        real_connect(sock, address)
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if host not in LOOPBACK and host is not None:
+            outbound.append(host)
+            raise OSError("name resolution blocked by Story 2 lifecycle test")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(
+        OTLPSpanExporter, "export", lambda self, spans: exports.append(1)
+    )
+    monkeypatch.setattr(HubTelemetry, "_instance", None)
+    provider = GuardrailsCredentialProvider()
+    try:
+        allowed = provider.check("A safe sentence.", SafetyStage.INPUT)
+        assert allowed.decision is Decision.ALLOW
+    finally:
+        provider.close()
+    assert outbound == []
+    assert exports == []
