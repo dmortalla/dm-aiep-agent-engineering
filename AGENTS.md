@@ -51,6 +51,7 @@ Passing tests, successful functionality, or a runnable UI alone does not establi
 18. Escalate genuine requirement, architecture, security, authority, release, or material-cost decisions to the human.
 19. Do not block deterministic work on unnecessary approval after authority has already been granted.
 20. Keep temporary engineering evidence outside the repository under the parent TECHADEMY/EVIDENCE directory.
+21. Every production-grade TAIE module that supports provider-backed AI must provide deterministic/no-key reviewer operation AND secure explicit opt-in BYOK/live operation. Server-side credentials may supplement BYOK but may not replace it.
 
 ## Python implementation standard
 
