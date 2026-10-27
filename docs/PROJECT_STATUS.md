@@ -9,8 +9,8 @@
 | Branch | main |
 | Remote | origin: https://github.com/dmortalla/dm-aiep-agent-engineering.git |
 | Current module | Module 6.5 - Harness Engineering |
-| Module 6.5 phase | Architecture frozen; Stories 1-12 complete and independently accepted (Story 12 Slice 1 `1666e99`, module-wide reconciliation closed `d4d2fd0`, reviewer-UI reconciliation `7ce1bd8`); corrective production-grade dual-mode contract ENG-008 adopted (ADR 002, 2026-10-23); Story 13 secure dual-mode live seam implemented as a Builder candidate pending independent review (uncommitted) |
-| Implementation | 69/69 approved requirements reconciled and accepted; additive ENG-008 (secure dual-mode provider completion, deterministic default preserved) adopted; Story 13 candidate verifies the live seam credential-free (deterministic, mocked and adapter evidence only); the live-path exercise remains a later human-authorized gate with no live-provider evidence yet |
+| Module 6.5 phase | Architecture frozen; Stories 1-12 complete and independently accepted (Story 12 Slice 1 `1666e99`, module-wide reconciliation closed `d4d2fd0`, reviewer-UI reconciliation `7ce1bd8`); corrective production-grade dual-mode contract ENG-008 adopted (ADR 002, 2026-10-23); Story 13 secure dual-mode live seam implemented, repaired after two failed live attempts, and its live-provider evidence gate satisfied 2026-10-27 (third bounded exercise independently accepted) |
+| Implementation | 69/69 approved requirements reconciled and accepted; additive ENG-008 (secure dual-mode provider completion, deterministic default preserved) adopted; Story 13 live seam verified credential-free (deterministic, mocked, adapter) and exercised once per provider under human authorization; independently accepted live-provider evidence is recorded with a hash-pinned external artifact (gpt-6-luna, claude-haiku-5-5; not deployment or SLA validation) |
 | Release | Engineering release reconciliation accepted (`d4d2fd0`); deployment verification separate and not complete; no provider-level production-readiness or deployment claim |
 
 ## Governance
@@ -30,7 +30,7 @@ The Module 6.5 architecture was human-approved and frozen on 2026-10-11. All of 
 
 ## Next recommended work
 
-Independently review the Story 13 secure dual-mode live-seam candidate (module-06-5/docs/STORY_13.md). If accepted, a separate human decision authorizes the bounded live OpenAI/Anthropic exercise (model catalog, tariff bounds, server-side credentials, expiring authorization) and its independently reviewed live-provider evidence.
+Independently review this Story 13 live-evidence reconciliation (module-06-5/docs/STORY_13.md). Remaining Module 6.5 closeout: deployment verification (separate human-authorized gate), final documentation and root README reconciliation, then the closeout post. Module 6.5 is not complete.
 
 Earlier recorded recommendation: independently review the Story 12 Slice 2 module-wide release-reconciliation candidate (69/69 requirement evidence, labs, deliverables, technology roles, release non-claims) and decide engineering release acceptance. Deployment verification would then be a separate, human-authorized gate; no deployment exists.
 

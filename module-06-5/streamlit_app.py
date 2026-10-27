@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from harness_engineering.live_readiness import provider_readiness
+from harness_engineering.live_readiness import live_evidence_caption, provider_readiness
 from harness_engineering.reviewer_service import GUIDES, Demo, DemoView, ReviewerBusyError, run_demo
 
 st.set_page_config(page_title="Module 6.5 · Harness reviewer", page_icon=":material/account_tree:")
@@ -73,9 +73,10 @@ st.subheader("Evidence boundaries")
 st.write("Deterministic means fixed local fixtures exercising accepted services. Local integration "
          "means SQLite persistence or the in-process MCP SDK. Approval identities and decisions "
          "are simulated fixtures. Application sandboxing is not OS isolation.")
-st.write("Optional OpenAI, Anthropic, Mem0, Guardrails, LangSmith, Langfuse and Helicone "
-         "capabilities are not exercised as live services. No credentials are requested. "
-         "Fixture costs are not verified billing; local latency is not production performance.")
+st.write("The demonstrations on this page do not call live services: Mem0, Guardrails, "
+         "LangSmith, Langfuse and Helicone are not exercised as live services here, and no "
+         "provider is called. No credentials are requested. Fixture costs are not verified "
+         "billing; local latency is not production performance.")
 
 st.subheader("Provider modes")
 st.write("This reviewer always runs in deterministic no-key mode. Live OpenAI or Anthropic "
@@ -89,11 +90,11 @@ with st.container(border=True):
         evidence = item.evidence.value if item.evidence else "configuration"
         st.markdown(f"**{item.capability}** · `{item.status.value}` · {evidence}  \n"
                     f"{item.summary}")
-st.caption("Live-provider evidence: not yet authorized and not yet executed. Adapter and "
-           "mocked evidence never count as live-provider evidence.")
+st.caption(live_evidence_caption())  # Derived from the same records as the rows above.
 st.caption("Module 6.5 engineering release-readiness is independently accepted and "
            "published to GitHub. The Streamlit deployment is undergoing final live "
-           "verification. No live-provider, hosted-service or production-readiness claim.")
+           "verification and is not yet verified. No hosted-service, deployment or "
+           "production-readiness claim is made.")
 
 st.divider()
 st.caption(

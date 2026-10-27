@@ -2,7 +2,7 @@
 
 ## Status
 
-`ENGINEERING RELEASE RECONCILIATION ACCEPTED (Story 12 closed, commit d4d2fd0; reviewer-UI reconciliation 7ce1bd8) — module release/deployment verification and provider-level production readiness not claimed; corrective ENG-008 secure live seam implemented as a Story 13 Builder candidate with deterministic verification only; the human-authorized live exercise is outstanding.`
+`ENGINEERING RELEASE RECONCILIATION ACCEPTED (Story 12 closed, commit d4d2fd0; reviewer-UI reconciliation 7ce1bd8) — module release/deployment verification and provider-level production readiness not claimed; corrective ENG-008 secure live seam implemented (Story 13); a bounded, human-authorized exercise independently accepted 2026-10-27 as live-provider evidence (hash-pinned external artifact; not deployment evidence), so the Story 13 live-evidence gate is satisfied while deployment verification and module closeout remain.`
 
 This document consolidates reviewer-verifiable engineering acceptance for
 Module 6.5 (Harness Engineering). It does not duplicate the full
@@ -61,12 +61,20 @@ Deployment verification and final module closeout are separate gates.
 - `mocked`: the Story 13 secure live seam (allowlists, trusted credential
   sources, human authorization, retry/latency/token/cost bounds) verified with
   patched SDK resources and no network; never counted as live-provider evidence.
-- `live-provider`: none.
+- `live-provider`: one bounded, human-authorized exercise per provider (`openai` /
+  `gpt-6-luna` and `anthropic` / `claude-haiku-5-5`; one attempt, no retry,
+  exposure 0.0000215 and 0.0000170 USD under a 0.001 USD cap), independently
+  accepted on 2026-10-27 as `LIVE_PROVIDER` evidence. Baseline `e1e5e1a`;
+  external artifact `module-06-5-third-live-evidence-20261027-002708.json`,
+  SHA256 `389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4`.
+  Not an SLA, billing, deployment or universal provider validation. Two earlier
+  attempts failed (`docs/STORY_13.md`).
 - `deployment`: none.
 
 ## Release non-claims summary
 
-- No live OpenAI or Anthropic provider verification; no verified billing; all
+- No live OpenAI or Anthropic provider verification beyond the single bounded
+  Story 13 exercise per provider; no verified billing beyond that run; all other
   monetary values are deterministic fixtures, not provider prices.
 - No hosted LangSmith/Langfuse traffic, no live Helicone routing, no live Mem0
   service, no external production MCP service.
@@ -88,22 +96,20 @@ Already accepted (recorded chronology, not outstanding):
   hosted Streamlit reviewer experience **does exist**; its accepted record
   states it is published to GitHub with the Streamlit deployment undergoing
   final live verification.
-- No live-provider evidence is claimed yet.
+- Story 13 live-provider evidence was independently accepted on 2026-10-27; it
+  is not deployment evidence and does not make a provider-level
+  production-readiness claim.
 
 Still outstanding:
 
 1. **Final live deployment verification** — a separate, human-authorized gate
    against the hosted reviewer experience.
-2. **Story 13 live-provider completion remains outstanding** (ENG-008
-   dual-mode gate). The Story 13 Builder candidate (`docs/STORY_13.md`)
-   implements the secure opt-in live seam (documented provider/model
-   allowlist; trusted server-side/environment/secret-store credentials, never
-   public browser BYOK; bounded retries/token/output/latency/cost;
-   connectivity-only credentials; expiring human live-execution
-   authorization) and verifies it without credentials or network. What
-   remains is the bounded live exercise under an explicit human-authorized
-   cost/credential/execution boundary, independently evidenced.
-   Provider-level production readiness may be claimed only then; adapter
-   and mocked evidence may never substitute for live-provider evidence.
+2. **Final documentation and root README reconciliation** after deployment
+   verification.
 3. **Final module closeout** (README status flip, LinkedIn closeout) only
    after gates 1–2.
+
+Satisfied (no longer outstanding): **Story 13 live-provider gate** (ENG-008 dual-mode). The secure opt-in
+live seam (`docs/STORY_13.md`) was exercised by a bounded, human-authorized
+run and independently accepted. Adapter and mocked evidence never substitute for live-provider evidence, and
+provider-level production readiness is not claimed; it is not part of what the accepted run validates.

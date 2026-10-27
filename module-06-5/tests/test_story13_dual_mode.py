@@ -565,10 +565,19 @@ def test_authorization_scope_window_and_expiry_fail_closed(vendor: str) -> None:
 
 # 15. Adapter evidence never equals live-provider evidence.
 def test_adapter_and_mocked_evidence_never_satisfy_live_readiness() -> None:
-    assert not any(record.evidence is EvidenceClass.LIVE_PROVIDER
-                   for record in REPOSITORY_EVIDENCE)
+    # Lower classes alone (everything except accepted live records) never satisfy it.
+    non_live = tuple(record for record in REPOSITORY_EVIDENCE
+                     if record.evidence is not EvidenceClass.LIVE_PROVIDER)
+    assert {r.evidence for r in non_live} >= {EvidenceClass.ADAPTER, EvidenceClass.MOCKED}
     for vendor in VENDORS:
-        assert live_provider_ready(REPOSITORY_EVIDENCE, vendor) is False
+        assert live_provider_ready(non_live, vendor) is False
+    without_live = {i.capability: i for i in provider_readiness(non_live)}
+    for label in ("Live OpenAI evidence", "Live Anthropic evidence"):
+        assert without_live[label].status is ReadinessStatus.NOT_EXECUTED
+    # Live-provider records exist only as independently accepted, hash-pinned exercises.
+    live = [r for r in REPOSITORY_EVIDENCE if r.evidence is EvidenceClass.LIVE_PROVIDER]
+    assert {r.subject for r in live} == {"openai", "anthropic"}
+    assert all(r.independent_review and r.authorization_reference for r in live)
     with pytest.raises(ValidationError):
         EvidenceRecord(evidence=EvidenceClass.ADAPTER, subject="openai", basis="adapter",
                        authorization_reference="forged-authorization",
@@ -583,7 +592,8 @@ def test_adapter_and_mocked_evidence_never_satisfy_live_readiness() -> None:
     assert readiness["Provider adapter readiness"].status is ReadinessStatus.VERIFIED
     assert readiness["Live mode in this deployment"].status is ReadinessStatus.NOT_CONFIGURED
     for label in ("Live OpenAI evidence", "Live Anthropic evidence"):
-        assert readiness[label].status is ReadinessStatus.NOT_EXECUTED
+        assert readiness[label].status is ReadinessStatus.ACCEPTED
+    assert readiness["Deployment verification"].status is ReadinessStatus.PENDING
     assert (readiness["Provider-level production readiness"].status
             is ReadinessStatus.NOT_CLAIMED)
     lower = tuple(EvidenceRecord(evidence=cls, subject="openai", basis="claimed")
@@ -610,7 +620,9 @@ def test_reviewer_ui_exposes_no_credential_input_and_truthful_readiness() -> Non
                       "getenv", "text_input", "text_area"):
         assert forbidden not in source
     text = "\n".join(item.value for item in at.markdown)
-    assert "Live OpenAI evidence" in text and "`not_executed`" in text
+    assert "Live OpenAI evidence" in text and "Live Anthropic evidence" in text
+    assert "`accepted`" in text and "`not_executed`" not in text
+    assert "`pending`" in text and "Deployment verification" in text
     assert "`not_claimed`" in text and "`not_configured`" in text
     assert any("explicit human authorization" in item.value for item in at.markdown)
     at.button[0].click().run()

@@ -72,16 +72,22 @@ def test_implementation_plan_and_traceability_propagate_the_contract() -> None:
     plan = (DOCS / "IMPLEMENTATION_PLAN.md").read_text(encoding="utf-8")
     assert "Story 13 - Secure Dual-Mode Provider Completion" in plan
     assert "ENG-008 (additive corrective, ADR 002)" in plan
-    assert "- [ ] ENG-008 dual-mode completion implemented and verified" in plan
+    # Story 13 live-evidence gate satisfied by independently accepted bounded evidence.
+    assert "- [x] ENG-008 dual-mode completion implemented and verified" in plan
+    assert "- [ ] ENG-008 dual-mode completion" not in plan
+    assert "not deployment" in plan and "not a provider-level production-readiness claim" in plan
     traceability = (DOCS / "TRACEABILITY.md").read_text(encoding="utf-8")
     assert "Corrective dual-mode contract (ENG-008)" in traceability
-    assert "completion outstanding" in traceability
+    assert "live-evidence gate satisfied" in traceability
+    assert "Deployment evidence does not exist" in traceability
     assert "live-path exercising" in traceability and "human-authorized" in traceability
 
 
 def test_release_readiness_carries_dual_mode_outstanding_gate() -> None:
     readiness = (DOCS / "RELEASE_READINESS.md").read_text(encoding="utf-8")
-    assert "Story 13 live-provider completion remains outstanding" in readiness
+    assert "Story 13 live-evidence gate is satisfied" in readiness
+    assert "independently accepted" in readiness and "389287FC" in readiness
+    assert "deployment verification and module closeout remain" in readiness
     assert "ENG-008" in readiness
     assert "never substitute for live-provider evidence" in readiness
     assert "provider-level production readiness" in readiness

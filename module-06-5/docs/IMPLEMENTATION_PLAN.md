@@ -139,7 +139,7 @@ mechanism plus finite cost budget; structural contract tests
 exercising happens only inside a later human-authorized execution gate with
 its own recorded live-provider evidence.
 
-Implementation record (Builder candidate, `docs/STORY_13.md`): the secure
+Implementation record (`docs/STORY_13.md`): the secure
 live seam is implemented and verified credential-free. It adds the
 `LiveProviderPolicy` allowlist and live ceilings (`config.py`), the trusted
 environment/secret-store credential seam (`live_credentials.py`), the
@@ -148,9 +148,12 @@ reservation (`live_authorization.py`, `providers.py`), allowlist enforcement in
 the adapter binding (`vendor_providers.py`), evidence-derived readiness
 (`live_readiness.py`), and a reviewer "Provider modes" section with no
 credential input. Verification is deterministic, mocked, and adapter class
-only (`tests/test_story13_dual_mode.py`). The authorized live exercise and its
-live-provider evidence remain outstanding, so the ENG-008 Definition-of-Done
-item below stays open.
+only (`tests/test_story13_dual_mode.py`). The human-authorized live exercise then
+succeeded on its third attempt (two earlier attempts failed and were repaired) and
+was independently accepted as live-provider evidence on 2026-10-27 (hash-pinned
+external artifact; `docs/STORY_13.md`), so the Story 13 live-evidence gate and the
+ENG-008 Definition-of-Done item below are satisfied. This is not deployment
+validation and not a provider-level production-readiness claim.
 
 ## Definition of Done
 
@@ -168,5 +171,6 @@ item below stays open.
 - [ ] Independent architecture-conformance and source-faithfulness review passes.
 - [ ] PROJECT_STATUS and README accurately reflect verified implementation state.
 - [ ] Repository contains no temporary evidence or unrelated module modifications.
-- [ ] ENG-008 dual-mode completion implemented and verified, with live-path
-      exercising only inside a later human-authorized execution gate.
+- [x] ENG-008 dual-mode completion implemented and verified, with live-path
+      exercising only inside a later human-authorized execution gate (satisfied:
+      independently accepted bounded live exercise, 2026-10-27).

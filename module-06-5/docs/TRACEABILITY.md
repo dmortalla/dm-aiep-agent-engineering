@@ -66,7 +66,9 @@ and gate evidence: `docs/STORY_10_SLICE_4.md`. Candidate gates: Ruff PASS,
 All monetary values are deterministic fixtures, not current provider prices or
 verified billing. Optional genuine SDK-over-offline-boundary evidence is not
 hosted/live-provider/deployment evidence. No live provider, hosted telemetry or
-Helicone routing is authorized or exercised by this implementation.
+Helicone routing is authorized or exercised by this implementation. (Story 13 later
+added separately accepted, bounded live-provider evidence; it is not deployment
+evidence. See the ENG-008 section.)
 
 ## Story 11 implementation evidence — independently accepted
 
@@ -78,7 +80,9 @@ committed at `1666e99`; module-wide release reconciliation is the current
 Slice 2 candidate and module release remains subject to independent review.
 Evidence is `deterministic` and `local_integration` only; no live-provider,
 hosted-service, deployment, genuine-identity, verified-billing or
-production-latency claim is made.
+production-latency claim is made. (Story 13 later added separately accepted,
+bounded live-provider evidence; see the ENG-008 section. It is not part of this
+story-board evidence.)
 
 | Requirement | Implementation evidence | Verification / reviewer evidence |
 | --- | --- | --- |
@@ -126,7 +130,8 @@ Evidence-class terminology: the story board uses labels
 map directly onto the approved classes `deterministic` (fixed local fixtures)
 and `local-integration` (local SQLite persistence and the in-process MCP SDK
 memory transport). No new, higher-assurance category is created or implied, and
-no live-provider or deployment evidence exists in this module.
+no deployment evidence exists in this module, and live-provider evidence exists
+only as the later Story 13 bounded accepted record, not part of the story board.
 
 ## Story 12 Slice 2 — module-wide release reconciliation
 
@@ -153,7 +158,7 @@ those tables; the matrix below closes the remainder. Paths are relative to
 | REQ-MCP-001..003, REQ-TECH-003 | `mcp_discovery.py`, `mcp_binding.py`, `mcp_local.py`, `mcp_lab.py` | `test_mcp_discovery.py`, `test_mcp_binding.py`, `test_mcp_local.py`, `test_mcp_lab.py`; story board segment 2 inert-discovery/trusted-binding/denial checks |
 | REQ-SAFE-001 | `providers.py` (`OutputFilter`, `ProviderOutputRejected`), `guardrails_adapter.py` (additive) | `test_providers.py`, `test_guardrails_adapter.py`; story board filtered-output check |
 | REQ-TECH-006 | `guardrails_adapter.py` (Guardrails AI schema validation; locked extra; never inference or authority) | `test_guardrails_adapter.py` real `guardrails` lifecycle tests; additive validation only, no hosted service |
-| REQ-TECH-008, REQ-TECH-009 | `vendor_providers.py` (`OpenAIProvider`, `AnthropicProvider` optional adapters behind the provider-neutral `providers.py` contracts) | `test_vendor_providers.py` credential-free adapter tests; adapters only, never exercised as live providers |
+| REQ-TECH-008, REQ-TECH-009 | `vendor_providers.py` (`OpenAIProvider`, `AnthropicProvider` optional adapters behind the provider-neutral `providers.py` contracts) | `test_vendor_providers.py` credential-free adapter tests at adapter class; Story 13 adds one bounded, independently accepted live-provider exercise per provider (ENG-008 section), not deployment or universal validation |
 | REQ-DEL-001 | The accepted runtime composition of Stories 2–11 (parallel services, each with its own tests) integrated by `story_board.py` | `test_story_board.py` composed evidence; individual service suites cited in the rows above |
 | ENG-002..ENG-005 | Untrusted-data validation with no model/agent authority feedback across the capabilities, permissions, execution, MCP, provider, guardrail, ledger, telemetry and golden-set boundaries; bounded retries, loops, calls, resources, latency and cost in the same accepted implementations; credential-free deterministic reviewer path | Failure/adversarial/zero-external-attempt coverage in the cited per-service suites plus `test_story_board.py` redlines; full module regression suites |
 
@@ -212,8 +217,8 @@ verified evidence, not architectural mapping alone.
 | --- | --- | --- | --- | --- | --- | --- |
 | LangGraph | Core typed lifecycle orchestration (`StateGraph` compiled and invoked) | deterministic core (critical path) | `orchestration.py` | `test_orchestration.py`, `test_orchestration_controls.py`, integrated/story-board suites | deterministic | no LangGraph cloud/server/platform services are used |
 | MCP SDK | Primary MCP integration boundary (in-process memory transport demonstrated end-to-end) | local integration (critical path) | `mcp_discovery.py`, `mcp_binding.py`, `mcp_local.py`, `story_board.py` segment 2 | MCP test suites; accepted story board | local-integration | no remote protocol, hosted MCP service or hostile-isolation claim |
-| OpenAI SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `OpenAIProvider` | `test_vendor_providers.py` (credential-free) | adapter | no live OpenAI provider verification; not on the deterministic reviewer path |
-| Anthropic SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `AnthropicProvider` | `test_vendor_providers.py` | adapter | no live Anthropic provider verification |
+| OpenAI SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `OpenAIProvider` | `test_vendor_providers.py` (credential-free); Story 13 accepted bounded live exercise (`gpt-6-luna`) | adapter; live-provider (bounded, accepted) | one bounded exercise only: no SLA, billing or deployment validation; not on the deterministic reviewer path |
+| Anthropic SDK | Optional live-provider adapter behind provider-neutral contracts | optional adapter integration | `vendor_providers.py` `AnthropicProvider` | `test_vendor_providers.py`; Story 13 accepted bounded live exercise (`claude-haiku-5-5`) | adapter; live-provider (bounded, accepted) | one bounded exercise only: no SLA, billing or deployment validation |
 | Guardrails AI | Additive local schema validation of provider output | optional adapter integration | `guardrails_adapter.py` | `test_guardrails_adapter.py` | adapter (locked extra) | not the sole security boundary; no hosted service |
 | Mem0 | Optional long-term semantic-memory adapter boundary; owns no recovery or authority | optional adapter integration | `memory.py` adapter seam | `test_memory.py` boundary tests | adapter | no live Mem0 service; never exercised as a hosted dependency |
 | LangSmith | Optional observability projection over a controlled offline transport | optional adapter integration | `observability_adapters.py`, `_offline_observability_worker.py` | `test_observability_adapters.py`, fresh-process probes | adapter | no hosted LangSmith verification |
@@ -222,8 +227,11 @@ verified evidence, not architectural mapping alone.
 
 ### Release non-claims (module-wide)
 
-- No live OpenAI or Anthropic provider verification; vendor SDKs are optional
-  adapters over provider-neutral contracts and are never exercised live.
+- No live OpenAI or Anthropic provider verification beyond the single bounded,
+  human-authorized Story 13 exercise per provider (independently accepted
+  live-provider evidence, not an SLA, billing, deployment or universal
+  validation); vendor SDKs are optional adapters over provider-neutral contracts
+  and are never exercised live by the reviewer path.
 - No paid inference is required for any normal reviewer/CLI path; the approval
   story board, all six labs and the reviewer interface run credential-free.
 - No hosted LangSmith or Langfuse verification; both project over offline
@@ -259,10 +267,13 @@ unchanged. Evidence remains `deterministic` and `local-integration` only.
 Story 12 was closed and the module-wide reconciliation accepted (commit
 `d4d2fd0`; reviewer-UI reconciliation `7ce1bd8`). On 2026-10-23 the corrective
 additive ENG-008 restored the production-grade dual-mode invariant (ADR 002),
-with completion tracked by Story 13 and the section above; no provider-level
-production-readiness claim exists and live-provider evidence remains none.
+with completion tracked by Story 13 and the section above. At that time no
+provider-level production-readiness claim existed and live-provider evidence
+was none; since 2026-10-27 accepted, bounded live-provider evidence exists for
+the reviewed run (ENG-008 section below). The provider-level
+production-readiness claim is still not made, and deployment is not verified.
 
-## Corrective dual-mode contract (ENG-008) — adopted 2026-10-23, completion outstanding
+## Corrective dual-mode contract (ENG-008) — adopted 2026-10-23, Story 13 live-evidence gate satisfied 2026-10-27
 
 Repository governance requires production-grade engineering unless a module is
 explicitly declared DEMO-ONLY; Module 6.5 has never been declared DEMO-ONLY.
@@ -297,8 +308,8 @@ credential-free adapter tests plus
 safe-missing-configuration tests (`test_vendor_providers.py`);
 `EvidenceClass.LIVE_PROVIDER` distinct in `providers.py`/evidence contracts.
 
-Story 13 Builder candidate (`docs/STORY_13.md`), verified at deterministic,
-mocked, and adapter class only:
+Story 13 (`docs/STORY_13.md`) implementation, verified at deterministic,
+mocked, and adapter class; its live exercise is recorded below:
 
 | ENG-008 clause | Implementation | Verification |
 | --- | --- | --- |
@@ -310,16 +321,22 @@ mocked, and adapter class only:
 | Human authorization | Expiring `LiveExecutionAuthorization`, re-checked pre-dispatch | authorization scope/window/expiry/forgery tests |
 | Distinct evidence classes | `live_readiness.py`; `evidence_class` capped at adapter | adapter/mocked-never-live test |
 
-Outstanding (later human-authorized gate): live-path exercising with real
-credentials under a separate human-authorized cost/credential/execution
-boundary. No live-provider evidence exists yet; it requires that exercise and
-an independent review. Until then, no provider-level production-readiness claim is made,
-and adapter or mocked evidence must not be represented as live-provider
-evidence.
+Live-provider evidence (accepted 2026-10-27): after two failed attempts, the third
+human-authorized, bounded exercise succeeded for `openai` / `gpt-6-luna` and
+`anthropic` / `claude-haiku-5-5` (one attempt, no retry, exposure 0.0000215 and
+0.0000170 USD under a 0.001 USD cap) and was independently accepted as
+`LIVE_PROVIDER` evidence (`ACCEPTED — LIVE_PROVIDER EVIDENCE VERIFIED`). The
+raw artifact stays external; baseline commit `e1e5e1a`; SHA256
+`389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4`; typed record in
+`live_readiness.py`. The live-path exercising happened only inside the separate human-authorized gate.
+This satisfies the ENG-008 live-evidence requirement for these
+providers and models only. Deployment evidence does not exist, no provider-level
+production-readiness claim is made, and adapter or mocked evidence must not be
+represented as live-provider evidence.
 
 `tests/test_dual_mode_contract.py` mechanically protects this contract:
 the ENG-008 wording, ADR 002/ADR 001 addendum, Story 13/DoD entries,
-release-readiness outstanding gate, unchanged evidence taxonomy, the
+release-readiness gate state, unchanged evidence taxonomy, the
 `HarnessConfig` structural defaults and validator, the adapter gate, and the
 negation-bound discipline that release documents may not claim live-provider
 evidence exists.

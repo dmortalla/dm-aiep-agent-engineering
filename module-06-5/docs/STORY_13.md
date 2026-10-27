@@ -1,10 +1,13 @@
 # Story 13: secure dual-mode provider completion (ENG-008, ADR 002)
 
-Builder candidate record. Story 13 implements the secure opt-in live-provider
-seam and the deterministic verification proving it is technically ready for a
-separately authorized live exercise. No live provider call was made, no real
-credential was accessed or requested, no cost was incurred, and nothing was
-staged, committed, pushed, or deployed. Live-provider evidence remains none.
+Story 13 implements the secure opt-in live-provider seam and the deterministic
+verification proving it ready for a separately authorized live exercise. The
+sections up to "Second live-run compatibility repair" are the original Builder
+record, written before any live call; at that time no live call was made and
+live-provider evidence was none. A later bounded, human-authorized exercise
+succeeded and was independently accepted as live-provider evidence; see "Live-
+provider evidence chronology and acceptance" below. That evidence is not
+deployment validation.
 
 ## Baseline
 
@@ -160,7 +163,7 @@ repair, verified credential-free only:
   live context ceiling (8,000 + 256 tokens) additionally keeps every live
   prompt inside the short-context tier.
 
-Neither model has been live-tested.
+At the time of this repair neither model had been live-tested.
 
 ## Output unit contract repair (2026-10-26)
 
@@ -185,7 +188,7 @@ usage. When unset the legacy rule applies unchanged (byte ceiling equals
 requires it explicitly and caps it at `LIVE_MAX_OUTPUT_BYTES` (8,192). The
 byte ceiling is not an unlimited path; the provider token cap, cost
 reservation, usage validation, and payload limits are unchanged. This repair
-does not claim to resolve the live failures and the new models remain not
+does not claim to resolve the live failures and, at that time, the new models were not
 live-tested.
 
 ## Second live-run compatibility repair (2026-10-26)
@@ -193,8 +196,8 @@ live-tested.
 Evidence: the sanitized artifact of the second human-authorized live exercise
 (256 output tokens, 4,096 output bytes; one attempt per provider). Proven live:
 both providers authenticated and returned SDK-parsed responses and reached
-application response validation. No successful application-level live-provider
-result exists yet, so no live-provider readiness is claimed. The first run's
+application response validation. At that time no successful application-level live-provider
+result existed yet, so no live-provider readiness was claimed. The first run's
 exact rejection points remain unknown.
 
 Proven rejection boundaries (rejecting source lines from the retained traces,
@@ -258,16 +261,72 @@ live evidence shows legitimate responses carry such metadata. They now assert
 that bounded metadata is ignored and inert while unbounded metadata still fails
 closed. Neither new model has produced a successful live-provider result.
 
-## Outstanding (human-authorized gate)
+## Live-provider evidence chronology and acceptance (2026-10-27)
 
-- Confirm the tariff upper bounds for the first live exercise (catalog:
-  `gpt-6-luna`, `claude-haiku-5-5`; authorizations may not go below the
-  published floors).
-- Provision credentials in the server environment or secret store, outside
-  the repository and the reviewer UI.
-- Issue a `LiveExecutionAuthorization`, run the bounded live exercise, and
-  record independently reviewed live-provider evidence.
+Three human-authorized, bounded live exercises were run from outside the
+repository; the operator-run scripts and raw artifacts stay external.
 
-Until then no live OpenAI or Anthropic execution, live-provider evidence, or
-provider-level production readiness is claimed, and the ENG-008
-Definition-of-Done item stays open.
+1. **First attempt: failed.** Both providers returned
+   `ProviderOutputRejected` at `max_output_tokens=64`. The exact rejection
+   points were not retained. The output-unit defect (provider tokens vs UTF-8
+   bytes) it exposed was repaired; whether it caused those failures was never
+   established.
+2. **Second attempt: failed**, with sanitized structural diagnostics that
+   captured the application validation boundaries: OpenAI at the generic
+   payload check for unmodeled top-level response fields, Anthropic at the
+   usage handler for unmodeled usage keys. The reasoning-item contract,
+   bounded unknown-metadata policy and rejection-point codes were repaired
+   and independently reviewed.
+3. **Third attempt: succeeded for both providers.** Baseline
+   `e1e5e1ac5f931f95a146c85baaace40cc3357230`. The independent review
+   disposition is `ACCEPTED — LIVE_PROVIDER EVIDENCE VERIFIED`: evidence hash
+   matched, the artifact was unchanged, the worktree was clean, both runs were
+   genuinely live with one attempt and no retry, and both responses satisfied
+   the reviewed application contract.
+
+Accepted record (repository-owned, typed, in `live_readiness.py`
+`ACCEPTED_LIVE_EXERCISES`; no response text, reasoning content, credentials or
+raw provider errors are representable):
+
+| Item | OpenAI `gpt-6-luna` | Anthropic `claude-haiku-5-5` |
+| --- | --- | --- |
+| Status / attempts / retries | success / 1 / 0 | success / 1 / 0 |
+| Input / output tokens | 20 / 39 | 35 / 27 |
+| Returned text | 27 UTF-8 bytes | 86 UTF-8 bytes |
+| Cache creation / read input tokens | n/a | 0 / 0 |
+| Live exposure | 0.0000215 USD | 0.0000170 USD |
+
+Bounds: `max_context_tokens=512`, `max_output_tokens=256`,
+`max_output_bytes=4096`, `max_cost_usd=0.001` per provider,
+`max_provider_attempts=1`, `max_retries_per_action=0`,
+`action_timeout_seconds=20`. The sanitizer recorded counts only for fields the
+SDK does not model (OpenAI: six unmodeled top-level fields; Anthropic: one
+unmodeled usage key), confirming that live responses carry such metadata; their
+names were not retained.
+
+External artifact (immutable, stored under the engineering evidence folder, not
+in this repository): `module-06-5-third-live-evidence-20261027-002708.json`,
+SHA256 `389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4`.
+It records no response content and no credential values, and the repository was
+unchanged during the run. No deployment was performed.
+
+Classification: the runtime reports `adapter` for itself and cannot promote
+itself; the `live_provider` class is applied only by the repository evidence
+record, as the outcome of independent review, never by runtime code. The
+claim this supports is: the bounded, human-authorized live-provider path was
+exercised against both currently supported providers and models under the
+reviewed controls. It is not universal provider validation, provider-SLA
+validation, billing accuracy beyond this run, deployment validation, or
+scale readiness.
+
+Auditability without committing the one-off runner: the actual calls were made
+by the repository implementation (`ProviderRuntime`, the vendor adapters, the
+authorization and credential seams) at the pinned baseline commit; the artifact
+is pinned by SHA256; the parameters, models and outcomes are recorded above;
+and the independent review disposition is recorded. The ephemeral external
+script was deleted after execution and adds no authority. The repository defines
+no maintained live-validation tool, so none was added.
+
+Story 13's live-evidence gate is satisfied. Module 6.5 overall closeout is not
+complete: deployment verification, final documentation reconciliation, root
+README reconciliation and the closeout post remain.

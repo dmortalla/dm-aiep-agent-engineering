@@ -76,11 +76,11 @@ A compiled LangGraph state graph owns the finite lifecycle (schedule → execute
 
 ### Boundaries and exact status
 
-- No live OpenAI/Anthropic provider verification; no hosted LangSmith/Langfuse; no live Helicone routing; no live Mem0 service.
+- No live OpenAI/Anthropic provider verification beyond the single bounded, independently accepted Story 13 exercise per provider (not an SLA, billing or deployment validation); no hosted LangSmith/Langfuse; no live Helicone routing; no live Mem0 service.
 - Fixture monetary values are not provider prices; local latency cohorts are not production certification.
 - No genuine production identity/authentication claim; approval identities are simulated fixtures.
-- No provider-level production-readiness claim: provider adapters are verified at their accepted boundaries only; live-provider execution remains opt-in, securely configured (trusted server-side/secret-store credentials, provider/model allowlist, bounded cost/latency), and awaits a separate human-authorized execution gate with its own live-provider evidence (ENG-008, ADR 002).
-- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) closed and accepted (commit `d4d2fd0`); the corrective production-grade dual-mode contract (Release-readiness gate 4/Story 13) completes provider-level readiness and remains outstanding. Deployment verification and final module closeout are separate gates.
+- No provider-level production-readiness claim: provider adapters are verified at their accepted boundaries, and live-provider execution remains opt-in, securely configured (trusted server-side/secret-store credentials, provider/model allowlist, bounded cost/latency) and human-authorized. One bounded live exercise per provider (gpt-6-luna, claude-haiku-5-5; one attempt, no retries) was independently accepted as live-provider evidence on 2026-10-27 (ENG-008, ADR 002); it does not validate deployment, an SLA, billing accuracy, or every provider scenario.
+- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) closed and accepted (commit `d4d2fd0`); the corrective production-grade dual-mode contract (Story 13) has its live-evidence gate satisfied (2026-10-27). Deployment verification and final module closeout are separate gates.
 
 See [Module 6.5](module-06-5/docs/RELEASE_READINESS.md) and [Traceability](module-06-5/docs/TRACEABILITY.md) for exact requirement-to-implementation evidence and the full release non-claims record.
 
