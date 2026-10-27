@@ -188,6 +188,76 @@ reservation, usage validation, and payload limits are unchanged. This repair
 does not claim to resolve the live failures and the new models remain not
 live-tested.
 
+## Second live-run compatibility repair (2026-10-26)
+
+Evidence: the sanitized artifact of the second human-authorized live exercise
+(256 output tokens, 4,096 output bytes; one attempt per provider). Proven live:
+both providers authenticated and returned SDK-parsed responses and reached
+application response validation. No successful application-level live-provider
+result exists yet, so no live-provider readiness is claimed. The first run's
+exact rejection points remain unknown.
+
+Proven rejection boundaries (rejecting source lines from the retained traces,
+reproduced offline with genuine SDK classes over mocked HTTP):
+
+- OpenAI `gpt-6-luna`: generic `_payload()` at the check that the dumped
+  response has no top-level key outside the installed SDK model's fields.
+  Reproduced at the identical line only with an unmodeled top-level key. The
+  size of `encrypted_content` is not the cause: sizes of 16,385 bytes and above
+  reject at a different line (the per-string check), and smaller values pass
+  `_payload()`. Which unmodeled key the live response carried is unknown (the
+  sanitizer retained field names only for output items). Independently, the
+  observed reasoning item would have been rejected next by the former
+  single-output-item rule.
+- Anthropic `claude-haiku-5-5`: `_usage()` (the handler that re-raises every
+  usage failure). With the observed values (35/33, cache counts 0, within all
+  bounds) every field the installed SDK models is accepted; the only offline
+  reproduction at this line is a usage key the SDK does not model. By
+  elimination the live usage carried such a key, whose name is unknown.
+
+Repairs, all fail-closed and text-only:
+
+- Unknown top-level response fields and unknown usage keys are untrusted
+  informational metadata under one shared rule (`_unknown_names_acceptable`):
+  at most 16 unknown fields per object (top level: fields outside the SDK
+  model; usage: keys outside the application's per-provider known usage keys,
+  which do not count toward the 16), each named by an ASCII identifier of 1 to
+  64 characters (`[A-Za-z0-9_]`); any other name, or a 17th field, fails closed
+  (`payload_shape` at the top level, `usage_shape` for usage). Values are
+  subject to every generic bound (depth, collection, string, 65,536-byte
+  total). Unknown fields are ignored and discarded and do not influence
+  authority, accounting, returned text, provider or model selection, tools,
+  retries, budgets or pricing; their names are never echoed. Models unknown to the SDK still cannot change
+  text extraction, accounting, budget, retry, pricing, or authority.
+- OpenAI output accepts only zero to four validated `reasoning` items followed
+  by exactly one final assistant message (last). The reasoning structure is
+  closed (known keys, bounded summary/content parts, `encrypted_content` string
+  only, status absent or completed) and is discarded before text extraction;
+  tool, function, computer, MCP, search, unknown, extra or misplaced items are
+  rejected. Reasoning text and encrypted content are never returned, persisted,
+  or granted authority.
+- `encrypted_content` alone has an explicit separate 32,768-byte cap; every
+  other string keeps 16,384; the 65,536-byte total is unchanged.
+- Usage normalization trusts only exact integer `input_tokens`/`output_tokens`
+  within the context and output-token bounds (plus a consistent OpenAI
+  `total_tokens`). Anthropic cache token counts must be absent or zero because
+  caching is never requested. Anything else records MALFORMED (or MISSING),
+  never an invented zero. Cost settlement uses only these normalized facts.
+- `ProviderOutputRejected.point` carries a finite content-free
+  `RejectionPoint` code (payload_shape, payload_limits, usage_shape,
+  usage_bounds, output_profile, output_items, text_blocks, text_bytes, and
+  others); the public message is unchanged. `describe_usage_shape` reports only
+  field names, type classes, and the accounting counts.
+- The unit contract from the previous repair is unchanged: `max_output_tokens`
+  is the SDK and reported-usage token ceiling, `max_output_bytes` the returned
+  text ceiling, and the cost reservation remains token-based.
+
+Contract change flagged for review: two accepted tests asserted that unmodeled
+top-level or usage metadata (including hostile-looking values) is rejected. The
+live evidence shows legitimate responses carry such metadata. They now assert
+that bounded metadata is ignored and inert while unbounded metadata still fails
+closed. Neither new model has produced a successful live-provider result.
+
 ## Outstanding (human-authorized gate)
 
 - Confirm the tariff upper bounds for the first live exercise (catalog:

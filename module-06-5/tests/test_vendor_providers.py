@@ -240,7 +240,10 @@ def test_unsupported_vendor_output_rejected(vendor: str, mutation: str) -> None:
             "incomplete" if vendor == "openai" else "max_tokens"
         )
     elif mutation == "authority":
-        data["approved"] = True
+        # Second live run: bounded unmodeled top-level metadata is ignored (see
+        # test_bounded_unmodeled_top_level_metadata_is_discarded_and_grants_nothing);
+        # unbounded hostile metadata still fails closed.
+        data["approved"] = ["x"] * 300
     elif mutation == "nan-usage":
         data["usage"]["input_tokens"] = float("nan")
     elif mutation == "bad-usage":

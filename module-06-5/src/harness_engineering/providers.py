@@ -57,8 +57,40 @@ class ProviderTimeoutError(BudgetExceededError):
     """Provider action/workflow time expired; rejected results grant nothing."""
 
 
+class RejectionPoint(StrEnum):
+    """Finite application-owned identifiers for where a provider result was refused.
+
+    Codes carry no provider content, values, credentials, or SDK diagnostics, so
+    they are safe to retain as live-evidence structure.
+    """
+
+    SDK_VALIDATION = "sdk_validation"
+    MALFORMED_JSON = "malformed_json"
+    RESPONSE_TYPE = "response_type"
+    PAYLOAD_SHAPE = "payload_shape"
+    PAYLOAD_LIMITS = "payload_limits"
+    USAGE_SHAPE = "usage_shape"
+    USAGE_BOUNDS = "usage_bounds"
+    OUTPUT_PROFILE = "output_profile"
+    OUTPUT_ITEMS = "output_items"
+    TEXT_BLOCKS = "text_blocks"
+    TEXT_BYTES = "text_bytes"
+    RESULT_SHAPE = "result_shape"
+    OUTPUT_FILTER = "output_filter"
+    GUARDRAILS = "guardrails"
+
+
 class ProviderOutputRejected(ContractValidationError):
-    """Provider output violates the application text profile or content filter."""
+    """Provider output violates the application text profile or content filter.
+
+    Attributes:
+        point: Optional finite ``RejectionPoint``; the public message is unchanged.
+    """
+
+    def __init__(self, message: str = "", point: RejectionPoint | None = None) -> None:
+        """Bind a fixed public message and an optional content-free rejection point."""
+        super().__init__(message)
+        self.point = point
 
 
 class ProviderExecutionError(HarnessError):
@@ -562,12 +594,15 @@ class ProviderRuntime:
                     raw = self._provider.generate(value, context)
                     context.checkpoint()
                     if type(raw) is not dict or set(raw) != {"text"}:
-                        raise ProviderOutputRejected("Provider must return only plain text data.")
+                        raise ProviderOutputRejected(
+                            "Provider must return only plain text data.",
+                            RejectionPoint.RESULT_SHAPE,
+                        )
                     try:
                         response = _TextResponse.model_validate(raw)
                     except ValidationError as exc:
                         raise ProviderOutputRejected(
-                            "Provider text response is malformed."
+                            "Provider text response is malformed.", RejectionPoint.RESULT_SHAPE
                         ) from exc
                     if _units(response.text) > b.output_byte_limit:
                         raise BudgetExceededError(
@@ -575,12 +610,16 @@ class ProviderRuntime:
                         )
                     if any(term in response.text.casefold() for term in self._terms):
                         raise ProviderOutputRejected(
-                            "Provider output rejected by application filter."
+                            "Provider output rejected by application filter.",
+                            RejectionPoint.OUTPUT_FILTER,
                         )
                     context.checkpoint()
                     if self._guardrails is not None:
                         if self._guardrails.validate(response.text) is not None:
-                            raise ProviderOutputRejected("Unsupported Guardrails adapter result.")
+                            raise ProviderOutputRejected(
+                                "Unsupported Guardrails adapter result.",
+                                RejectionPoint.GUARDRAILS,
+                            )
                         context.checkpoint()
                     result.put(ModelResult(text=response.text))
                 except BaseException as exc:
