@@ -116,9 +116,50 @@ Primary requirements: all 69 approved requirements, REQ-DEL-001 through REQ-DEL-
 
 Exit evidence: full fail-fast quality gate passes; requirement-to-test evidence is complete; deterministic end-to-end demo passes; source-faithfulness and architecture-conformance reviews pass; release evidence is captured without unsupported production claims.
 
+## Story 13 - Secure Dual-Mode Provider Completion (additive, ENG-008)
+
+Complete the already-supporting dual-mode machinery so that live OpenAI and
+Anthropic provider execution is securely activatable without weakening the
+deterministic/no-key default: provider/model allowlist enforcement in the
+live-provider configuration seam, trusted server-side/environment/secret-store
+credential mechanisms and a session-scoped secure BYOK path (server-side credentials supplement but never replace BYOK), bounded retries,
+token/output limits, latency deadlines and cost exposure for the live path,
+distinct live-provider evidence, and provider-neutral failure handling. No live
+provider call is executed without a separate explicit human authorization that
+supplies the credentials and approves the bounded run.
+
+Primary requirements: ENG-008 (additive corrective, ADR 002), ENG-002 through
+ENG-005 unchanged.
+
+Exit evidence: deterministic default tests remain green and credential-free;
+the live configuration seam fails closed without explicit
+`allow_live_providers` plus allowlisted provider/model plus trusted-secret
+mechanism plus finite cost budget; structural contract tests
+(`tests/test_dual_mode_contract.py`) keep the invariant enforced; live-path
+exercising happens only inside a later human-authorized execution gate with
+its own recorded live-provider evidence.
+
+Implementation record (`docs/STORY_13.md`): the secure
+live seam is implemented and verified credential-free. It adds the
+`LiveProviderPolicy` allowlist and live ceilings (`config.py`), the trusted
+environment/secret-store credential seam (`live_credentials.py`), the
+expiring human `LiveExecutionAuthorization` and pre-dispatch worst-case cost
+reservation (`live_authorization.py`, `providers.py`), allowlist enforcement in
+the adapter binding (`vendor_providers.py`), evidence-derived readiness
+(`live_readiness.py`), and a reviewer "Provider modes" section with no
+credential input. Verification is deterministic, mocked, and adapter class
+only (`tests/test_story13_dual_mode.py`). The human-authorized live exercise then
+succeeded on its third attempt (two earlier attempts failed and were repaired) and
+was independently accepted as live-provider evidence on 2026-10-27 (hash-pinned
+external artifact; `docs/STORY_13.md`), so the Story 13 live-evidence gate and the
+ENG-008 Definition-of-Done item below are satisfied. This is not deployment
+validation and not a provider-level production-readiness claim.
+
 ## Definition of Done
 
-- [ ] 69 of 69 approved requirements implemented and verified.
+- [ ] 69 of 69 approved requirements implemented and verified (the approved
+      2026-10-10 baseline: 62 source-derived + ENG-001..ENG-007 additive;
+      the corrective additive ENG-008 is item 13 below).
 - [ ] 6 of 6 source labs runnable and evidenced.
 - [ ] 5 of 5 source deliverables complete.
 - [ ] 9 of 9 named technologies retain explicit source-faithful roles.
@@ -130,3 +171,6 @@ Exit evidence: full fail-fast quality gate passes; requirement-to-test evidence 
 - [ ] Independent architecture-conformance and source-faithfulness review passes.
 - [ ] PROJECT_STATUS and README accurately reflect verified implementation state.
 - [ ] Repository contains no temporary evidence or unrelated module modifications.
+- [x] ENG-008 dual-mode completion implemented and verified, with live-path
+      exercising only inside a later human-authorized execution gate (satisfied:
+      independently accepted bounded live exercise, 2026-10-27).

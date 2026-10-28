@@ -62,6 +62,13 @@ class RuntimeBudget(BaseModel):
 
     All limits are explicit positive values. Later runtime components may
     consume less than these limits but may not silently exceed them.
+
+    Units are distinct. ``max_context_tokens`` and ``max_output_tokens`` are
+    provider-token counts: the output value is the cap sent to the vendor SDK
+    and validated against reported usage. ``max_output_bytes`` is a separate
+    local ceiling on returned text, counted in UTF-8 bytes. When it is unset,
+    the legacy conservative rule applies and the byte ceiling equals
+    ``max_output_tokens``; the live-provider policy requires it to be explicit.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -72,6 +79,7 @@ class RuntimeBudget(BaseModel):
     max_tool_calls: int = Field(default=12, ge=0, le=100)
     max_context_tokens: int = Field(default=12_000, ge=1)
     max_output_tokens: int = Field(default=2_000, ge=1)
+    max_output_bytes: int | None = Field(default=None, ge=1, le=16_384)
     action_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
     workflow_deadline_seconds: float = Field(default=180.0, gt=0, le=3600)
     latency_slo_p95_seconds: float = Field(default=5.0, gt=0)
@@ -90,6 +98,16 @@ class RuntimeBudget(BaseModel):
         if self.latency_slo_p95_seconds > self.workflow_deadline_seconds:
             raise ValueError("latency SLO cannot exceed workflow deadline")
         return self
+
+    @property
+    def output_byte_limit(self) -> int:
+        """Return the local UTF-8 byte ceiling for returned provider text.
+
+        Returns:
+            The explicit ``max_output_bytes`` when set; otherwise the legacy
+            conservative ceiling equal to ``max_output_tokens``.
+        """
+        return self.max_output_tokens if self.max_output_bytes is None else self.max_output_bytes
 
 
 class WorkflowIdentity(BaseModel):

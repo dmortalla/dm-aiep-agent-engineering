@@ -2,14 +2,13 @@
 
 ## Status
 
-`CANDIDATE — pending independent review (2026-10-22)`
+`ENGINEERING RELEASE RECONCILIATION ACCEPTED (Story 12 closed, commit d4d2fd0; reviewer-UI reconciliation 7ce1bd8) — module release/deployment verification and provider-level production readiness not claimed; corrective ENG-008 secure live seam implemented (Story 13); a bounded, human-authorized exercise independently accepted 2026-10-27 as live-provider evidence (hash-pinned external artifact; not deployment evidence), so the Story 13 live-evidence gate is satisfied while deployment verification and module closeout remain.`
 
 This document consolidates reviewer-verifiable engineering acceptance for
 Module 6.5 (Harness Engineering). It does not duplicate the full
 requirement-to-implementation tables in `TRACEABILITY.md`; it states what a
 reviewer can check, at what evidence class, and with which boundaries.
-Deployment verification and final module closeout are separate gates that have
-not occurred.
+Deployment verification and final module closeout are separate gates.
 
 ## Engineering acceptance state
 
@@ -37,6 +36,8 @@ not occurred.
   UI requests fixed demonstrations only; status copy reconciled to the
   accepted chronology.
 
+- Provider modes: deterministic/no-key reviewer mode is the default; secure explicit opt-in BYOK/live mode is also supported (session-only key, allowlisted provider and model, application-owned bounds), with trusted server-side credentials as a supplement that stays disabled on a public deployment unless a separate operator-spend control or global quota exists. The application never persists a BYOK key (no disk, logs, evidence, prompts or durable storage); Streamlit may hold the widget value in server memory until its rerun/session lifecycle clears it. A session call is adapter-class evidence at most; the accepted live-provider evidence used trusted environment credentials and is unchanged. Deployment is not verified.
+
 ## Verification performed for this candidate
 
 1. `ruff check .` — PASS.
@@ -58,12 +59,24 @@ not occurred.
   LangSmith/Langfuse genuine SDK activity over controlled offline transports
   (zero external attempts); Helicone strict disabled header/configuration
   boundary; Mem0 semantic-memory adapter protocol/seam (no live service).
-- `live-provider`: none.
+  Adapter evidence never substitutes for live-provider evidence (ENG-008).
+- `mocked`: the Story 13 secure live seam (allowlists, trusted credential
+  sources, human authorization, retry/latency/token/cost bounds) verified with
+  patched SDK resources and no network; never counted as live-provider evidence.
+- `live-provider`: one bounded, human-authorized exercise per provider (`openai` /
+  `gpt-6-luna` and `anthropic` / `claude-haiku-5-5`; one attempt, no retry,
+  exposure 0.0000215 and 0.0000170 USD under a 0.001 USD cap), independently
+  accepted on 2026-10-27 as `LIVE_PROVIDER` evidence. Baseline `e1e5e1a`;
+  external artifact `module-06-5-third-live-evidence-20261027-002708.json`,
+  SHA256 `389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4`.
+  Not an SLA, billing, deployment or universal provider validation. Two earlier
+  attempts failed (`docs/STORY_13.md`).
 - `deployment`: none.
 
 ## Release non-claims summary
 
-- No live OpenAI or Anthropic provider verification; no verified billing; all
+- No live OpenAI or Anthropic provider verification beyond the single bounded
+  Story 13 exercise per provider; no verified billing beyond that run; all other
   monetary values are deterministic fixtures, not provider prices.
 - No hosted LangSmith/Langfuse traffic, no live Helicone routing, no live Mem0
   service, no external production MCP service.
@@ -77,9 +90,28 @@ not occurred.
 
 ## What remains after this candidate
 
-1. Independent review of this Slice 2 release-reconciliation candidate and an
-   engineering-release decision.
-2. Deployment verification as a separate, human-authorized gate (hosted
-   reviewer experience does not exist for this module).
-3. Final module closeout (README status flip, LinkedIn closeout) only after
-   the above two gates.
+Already accepted (recorded chronology, not outstanding):
+
+- Engineering release reconciliation was independently accepted and committed
+  at `d4d2fd0` ("feat(module-06-5): close story 12 release reconciliation").
+- Reviewer-UI reconciliation was accepted and committed at `7ce1bd8`: the
+  hosted Streamlit reviewer experience **does exist**; its accepted record
+  states it is published to GitHub with the Streamlit deployment undergoing
+  final live verification.
+- Story 13 live-provider evidence was independently accepted on 2026-10-27; it
+  is not deployment evidence and does not make a provider-level
+  production-readiness claim.
+
+Still outstanding:
+
+1. **Final live deployment verification** — a separate, human-authorized gate
+   against the hosted reviewer experience.
+2. **Final documentation and root README reconciliation** after deployment
+   verification.
+3. **Final module closeout** (README status flip, LinkedIn closeout) only
+   after gates 1–2.
+
+Satisfied (no longer outstanding): **Story 13 live-provider gate** (ENG-008 dual-mode). The secure opt-in
+live seam (`docs/STORY_13.md`) was exercised by a bounded, human-authorized
+run and independently accepted. Adapter and mocked evidence never substitute for live-provider evidence, and
+provider-level production readiness is not claimed; it is not part of what the accepted run validates.

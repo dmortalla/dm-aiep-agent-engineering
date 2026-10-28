@@ -50,6 +50,9 @@ Mocks, fixtures, simulators, and injected doubles remain appropriate for determi
 Evidence must distinguish deterministic fixture, mocked, adapter or SDK-construction, local integration, live external-service, and deployment evidence.
 Claims must not exceed the strongest evidence actually obtained.
 
+Every production-grade TAIE module that supports provider-backed AI must provide deterministic/no-key reviewer operation AND secure explicit opt-in BYOK/live operation. Server-side credentials may supplement BYOK but may not replace it.
+A bring-your-own-key credential must be session-scoped and never persisted, logged, serialized, or exposed, and it grants connectivity only, never authority; live execution stays explicitly opted in, allowlisted, bounded, and separately classified as evidence.
+
 ## Reliability
 
 Where relevant, integrate bounded execution, deadlines, retries, backoff, fallback, recovery, checkpointing, idempotency, concurrency limits, resource limits, and explicit stop conditions.

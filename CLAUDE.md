@@ -23,6 +23,7 @@ Claude-specific behavior must not weaken or reinterpret provider-neutral reposit
 8. Use only bounded safe repair; never weaken tests or controls to obtain green status.
 9. Escalate genuine human decisions rather than silently choosing them.
 10. Keep temporary engineering evidence under TECHADEMY/EVIDENCE, not inside this repository.
+11. Every production-grade TAIE module that supports provider-backed AI must provide deterministic/no-key reviewer operation AND secure explicit opt-in BYOK/live operation. Server-side credentials may supplement BYOK but may not replace it.
 
 ## Completion
 

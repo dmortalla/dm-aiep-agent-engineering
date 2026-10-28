@@ -39,7 +39,7 @@ AI coding agents are used as engineering tools within this controlled process. G
 
 | Module | Topic | Status |
 | --- | --- | --- |
-| 6.5 | Harness Engineering | In Progress (engineering release candidate, pending review) |
+| 6.5 | Harness Engineering | In Progress (engineering, live-provider evidence and secure BYOK accepted; main integration under release closeout; deployment pending) |
 | 7 | Reliability, Safety and Observability | In Progress |
 | 8 | MCP and Modern AI Infrastructure | ✅ Complete |
 | 9 | Multimodal and Voice AI Systems | ✅ Complete |
@@ -51,7 +51,7 @@ Module development can proceed independently and out of numerical order. Consult
 
 Module 6.5 implements a harness-engineered agent runtime: an application that keeps end-to-end operational control and governance over an agent workflow from task decomposition through safe execution, state recovery, human oversight and cost governance. Model output is always treated as untrusted data; application-owned, typed policy retains every authority decision.
 
-**Reviewer app (local, deterministic):** run `streamlit run streamlit_app.py` from `module-06-5`. No API key is requested and no paid inference is required.
+**Reviewer app (local):** run `streamlit run streamlit_app.py` from `module-06-5`. The default deterministic mode requests no API key and requires no paid inference; live provider mode is an explicit opt-in that accepts a temporary, session-only BYOK key.
 
 ### Architecture and control plane
 
@@ -68,18 +68,20 @@ A compiled LangGraph state graph owns the finite lifecycle (schedule → execute
 - MCP SDK integration where discovery is inert until explicit trusted binding; denied and cancelled calls stay inert and unbound candidates never register.
 - Structured observability with optional offline-boundary LangSmith/Langfuse projections, a strict disabled Helicone boundary, spend alerts, hard token budgets and latency SLO measurement.
 - Golden-set evaluation and an exact-comparison regression harness with bounded guided CLI.
+- Dual-mode provider operation: deterministic/no-key reviewer mode (the default) plus secure explicit opt-in BYOK/live mode with allowlisted providers and models (OpenAI `gpt-6-luna`, Anthropic `claude-haiku-5-5`), fixed application-owned bounds, and credentials that grant connectivity only, never authority. Server-side credentials may supplement BYOK but are disabled by default and must stay disabled on a public deployment unless a separate operator-spend control exists.
 - A composed deterministic story board executing four disjoint governance segments — the core governed workflow, the MCP SDK transport, the durable approval lifecycle with its out-of-band consumption redline, and recovery after commit — without credentials or paid inference.
 
 ### Testing and evidence posture
 
-1,765 automated tests (full module suite) plus Ruff and compileall pass in fail-fast order. Tests actively cover security, authority, recovery, failure, budget, latency and off-switch paths, including zero-external-attempt guarantees in reviewer paths. Evidence is `deterministic` and `local-integration` (local SQLite, in-process MCP SDK transport) only; all providers and MCP handlers are deterministic local fixtures.
+1,996 automated tests (full module suite) plus Ruff and compileall pass in fail-fast order, independently reviewed on the accepted release. Tests actively cover security, authority, recovery, failure, budget, latency, off-switch and secret-handling paths, including zero-external-attempt guarantees in reviewer paths. Evidence classes stay separate: `deterministic` and `local-integration` (local SQLite, in-process MCP SDK transport) for the reviewer labs, whose providers and MCP handlers are deterministic local fixtures; `adapter` for the runtime and the genuine OpenAI/Anthropic SDK adapters (the runtime never classifies itself higher); `live_provider` only as an independently accepted, hash-pinned record of one bounded, human-authorized exercise per provider (OpenAI `gpt-6-luna`, Anthropic `claude-haiku-5-5`; one attempt, no retries, fixed token, byte, time and cost caps); and `deployment`, which is still pending and not verified.
 
 ### Boundaries and exact status
 
-- No live OpenAI/Anthropic provider verification; no hosted LangSmith/Langfuse; no live Helicone routing; no live Mem0 service.
+- No live OpenAI/Anthropic provider verification beyond the single bounded, independently accepted Story 13 exercise per provider (not an SLA, billing or deployment validation); no hosted LangSmith/Langfuse; no live Helicone routing; no live Mem0 service.
 - Fixture monetary values are not provider prices; local latency cohorts are not production certification.
-- No production identity/authentication, deployment, or production-readiness claim.
-- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) is a candidate pending independent review. Deployment verification and final module closeout are separate gates and have not occurred.
+- No genuine production identity/authentication claim; approval identities are simulated fixtures.
+- No provider-level production-readiness claim: provider adapters are verified at their accepted boundaries, and live-provider execution remains explicit opt-in with an approved credential source (a temporary session-only BYOK key, or trusted server-side/secret-store credentials that may supplement but never replace BYOK), provider/model allowlists, and bounded cost/latency; BYOK credentials grant connectivity only, are not persisted by the application (Streamlit may hold the widget value in server memory until its lifecycle clears it), and a session call is adapter-class evidence at most. One bounded live exercise per provider (gpt-6-luna, claude-haiku-5-5; one attempt, no retries) was independently accepted as live-provider evidence on 2026-10-27 (ENG-008, ADR 002); it does not validate deployment, an SLA, billing accuracy, or every provider scenario. The planned public deployment allows BYOK live mode with operator/server credentials disabled.
+- State: Stories 1–11 implemented and independently accepted; the end-to-end story board (Story 12 Slice 1) accepted at commit `1666e99`; Story 12 Slice 2 module-wide release reconciliation (69/69 requirements, 6/6 labs, 5/5 deliverables, 9/9 technologies) closed and accepted (commit `d4d2fd0`); the corrective production-grade dual-mode contract (Story 13) has its live-evidence gate satisfied (2026-10-27), and the secure explicit opt-in BYOK/live mode is implemented and independently accepted; the accepted release is under main-integration closeout. Deployment verification (deployed deterministic and BYOK behavior) and final module closeout are separate gates; Module 6.5 is not yet complete.
 
 See [Module 6.5](module-06-5/docs/RELEASE_READINESS.md) and [Traceability](module-06-5/docs/TRACEABILITY.md) for exact requirement-to-implementation evidence and the full release non-claims record.
 

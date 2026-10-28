@@ -9,6 +9,7 @@ Python callbacks are trusted code; timeout rejects results, not external effects
 from __future__ import annotations
 
 from collections import deque
+from datetime import UTC, datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 from math import isfinite
@@ -23,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from harness_engineering.anomaly_signals import AnomalyDetector
 from harness_engineering.config import HarnessConfig
 from harness_engineering.cost_governance import FixtureLedger, ProviderAlias
-from harness_engineering.domain import RuntimeBudget, WorkflowIdentity
+from harness_engineering.domain import EvidenceClass, RuntimeBudget, WorkflowIdentity
 from harness_engineering.errors import (
     AuthorityViolationError,
     BudgetExceededError,
@@ -33,6 +34,13 @@ from harness_engineering.errors import (
 from harness_engineering.governance_facts import GovernanceKind
 from harness_engineering.latency import Measurement, Outcome
 from harness_engineering.lifecycle_controls import OffSwitch
+from harness_engineering.live_authorization import (
+    LIVE_INPUT_OVERHEAD_TOKENS,
+    MAX_AUTHORIZATION_WINDOW,
+    LiveExecutionAuthorization,
+    require_tariff_floor,
+)
+from harness_engineering.live_credentials import CREDENTIAL_SOURCE_TYPES, CredentialSource
 from harness_engineering.observability import (
     TelemetrySession,
     TraceContext,
@@ -49,8 +57,40 @@ class ProviderTimeoutError(BudgetExceededError):
     """Provider action/workflow time expired; rejected results grant nothing."""
 
 
+class RejectionPoint(StrEnum):
+    """Finite application-owned identifiers for where a provider result was refused.
+
+    Codes carry no provider content, values, credentials, or SDK diagnostics, so
+    they are safe to retain as live-evidence structure.
+    """
+
+    SDK_VALIDATION = "sdk_validation"
+    MALFORMED_JSON = "malformed_json"
+    RESPONSE_TYPE = "response_type"
+    PAYLOAD_SHAPE = "payload_shape"
+    PAYLOAD_LIMITS = "payload_limits"
+    USAGE_SHAPE = "usage_shape"
+    USAGE_BOUNDS = "usage_bounds"
+    OUTPUT_PROFILE = "output_profile"
+    OUTPUT_ITEMS = "output_items"
+    TEXT_BLOCKS = "text_blocks"
+    TEXT_BYTES = "text_bytes"
+    RESULT_SHAPE = "result_shape"
+    OUTPUT_FILTER = "output_filter"
+    GUARDRAILS = "guardrails"
+
+
 class ProviderOutputRejected(ContractValidationError):
-    """Provider output violates the application text profile or content filter."""
+    """Provider output violates the application text profile or content filter.
+
+    Attributes:
+        point: Optional finite ``RejectionPoint``; the public message is unchanged.
+    """
+
+    def __init__(self, message: str = "", point: RejectionPoint | None = None) -> None:
+        """Bind a fixed public message and an optional content-free rejection point."""
+        super().__init__(message)
+        self.point = point
 
 
 class ProviderExecutionError(HarnessError):
@@ -120,8 +160,12 @@ class ProviderCallContext:
         self._off_switch = off_switch
         self._cancelled = Event()
         self._max_output_tokens = 2_000
+        self._max_output_bytes = 2_000
         self._max_context_tokens = 12_000
         self._live_allowed = False
+        self._authorization: LiveExecutionAuthorization | None = None
+        self._credentials: CredentialSource | None = None
+        self._dispatched = Event()
         self._trace_context: TraceContext | None = None
         self._usage = UsageCapture()
 
@@ -138,8 +182,13 @@ class ProviderCallContext:
 
     @property
     def max_output_tokens(self) -> int:
-        """Return the application-owned per-call output limit."""
+        """Return the application-owned per-call provider output-token limit."""
         return self._max_output_tokens
+
+    @property
+    def max_output_bytes(self) -> int:
+        """Return the local per-call UTF-8 byte ceiling for returned text."""
+        return self._max_output_bytes
 
     def checkpoint(self) -> None:
         """Deny cancelled or expired work without resetting consumed budgets."""
@@ -185,6 +234,8 @@ class ProviderRuntime:
         output_filter: OutputFilter | None = None,
         off_switch: OffSwitch | None = None,
         live_config: HarnessConfig | None = None,
+        live_authorization: LiveExecutionAuthorization | None = None,
+        credentials: CredentialSource | None = None,
         guardrails: GuardrailsTextValidator | None = None,
         telemetry: TelemetrySession | None = None,
         ledger: FixtureLedger | None = None,
@@ -200,7 +251,13 @@ class ProviderRuntime:
             output_filter: Optional trusted literal output rejection policy.
             off_switch: Shared one-way application cancellation source.
             live_config: Explicit non-deterministic live opt-in with a finite monetary
-                budget matching this runtime. Never inferred from credentials.
+                budget matching this runtime and a live provider/model allowlist
+                policy. Never inferred from credentials.
+            live_authorization: Optional current human live-execution
+                authorization for exactly the bound provider/model. Without it
+                a live-configured runtime binds but can never dispatch.
+            credentials: Trusted server-side credential source whose kind matches
+                the live policy; required for, and only accepted by, live runtimes.
             guardrails: Optional exact local Guardrails text validator from trusted bootstrap.
             telemetry: Optional exact application-owned local telemetry session.
             ledger: Optional dedicated fixture-only exposure/token authority.
@@ -208,7 +265,10 @@ class ProviderRuntime:
             anomalies: Optional advisory-only provider event observer.
 
         Raises:
-            ContractValidationError: For invalid bootstrap or unsupported adapters.
+            ContractValidationError: For invalid bootstrap or unsupported adapters,
+                or live authorization/credential bindings that do not match.
+            AuthorityViolationError: For a vendor adapter without explicit live
+                opt-in, budget and allowlist policy.
         """
         try:
             supplied = RuntimeBudget() if budget is None else budget
@@ -245,11 +305,13 @@ class ProviderRuntime:
             raise ContractValidationError("Bind unique bounded application action IDs.")
         if any(type(t) is not str or not 1 <= len(t) <= 128 for t in policy.blocked_terms):
             raise ContractValidationError("Output filter terms must contain 1 to 128 characters.")
-        self._live_allowed = False
+        live: HarnessConfig | None = None
         if provider is not None and type(provider) is not FakeProvider:
             from harness_engineering.vendor_providers import _validate_binding
 
-            self._live_allowed = _validate_binding(provider, live_config, b)
+            live = _validate_binding(provider, live_config, b)
+        self._live_allowed = live is not None
+        self._bind_live(provider, live, live_authorization, credentials)
         if off_switch is not None and type(off_switch) is not OffSwitch:
             raise ContractValidationError("Bind an application OffSwitch.")
         self._provider: ModelProvider = FakeProvider() if provider is None else provider
@@ -321,6 +383,82 @@ class ProviderRuntime:
         self._actions = dict.fromkeys(action_ids, 0)
         self._slot = Lock()
         self._audit: deque[ProviderEvent] = deque(maxlen=128)
+
+    def _bind_live(
+        self,
+        provider: object,
+        live: HarnessConfig | None,
+        authorization: object,
+        credentials: object,
+    ) -> None:
+        """Bind live-only authorization, credential source and exposure accounting.
+
+        Raises:
+            ContractValidationError: If a live-only binding is supplied to an
+                offline runtime, a live runtime lacks its policy's credential
+                source, or the authorization mismatches, is outside its window,
+                or cannot afford one fully bounded call.
+        """
+        self._authorization: LiveExecutionAuthorization | None = None
+        self._credentials: CredentialSource | None = None
+        self._live_cap = Decimal(0)
+        self._live_exposure = Decimal(0)
+        self._live_call_bound = Decimal(0)
+        if live is None:
+            if authorization is not None or credentials is not None:
+                raise ContractValidationError(
+                    "Live authorization and credentials bind only to a live runtime."
+                )
+            return
+        if live.live is None or live.budget.max_cost_usd is None:
+            raise ContractValidationError("Live runtime requires its validated live policy.")
+        if (
+            type(credentials) not in CREDENTIAL_SOURCE_TYPES
+            or credentials.kind != live.live.credential_source  # type: ignore[union-attr]
+        ):
+            raise ContractValidationError(
+                "Bind the trusted credential source named by the live policy."
+            )
+        self._credentials = credentials  # type: ignore[assignment]
+        self._live_cap = Decimal(str(live.budget.max_cost_usd))
+        if authorization is None:
+            return  # Adapter readiness only: dispatch stays denied without authorization.
+        if type(authorization) is not LiveExecutionAuthorization:
+            raise ContractValidationError("Bind an exact human live-execution authorization.")
+        now = datetime.now(UTC)
+        if (
+            authorization.provider != provider._sdk  # type: ignore[attr-defined]
+            or authorization.model != provider._model  # type: ignore[attr-defined]
+            or not now < authorization.expires_at <= now + MAX_AUTHORIZATION_WINDOW
+        ):
+            raise ContractValidationError(
+                "Live authorization must cover this provider/model inside its window."
+            )
+        b = self._budget
+        prompt_bound = b.max_context_tokens + LIVE_INPUT_OVERHEAD_TOKENS
+        # Price the full prompt exposure at its published tier; never underprice.
+        require_tariff_floor(authorization, prompt_bound)
+        self._live_call_bound = authorization.worst_case_usd(prompt_bound, b.max_output_tokens)
+        if self._live_call_bound > self._live_cap:
+            raise ContractValidationError("Live budget cannot afford one fully bounded call.")
+        self._authorization = authorization
+
+    @property
+    def evidence_class(self) -> EvidenceClass:
+        """Return the strongest evidence this runtime can self-report.
+
+        In-process execution never self-certifies live-provider evidence: that
+        class is established only by a separately authorized, independently
+        evidenced live exercise. Vendor adapters report adapter evidence.
+        """
+        if type(self._provider) is FakeProvider:
+            return EvidenceClass.DETERMINISTIC
+        return EvidenceClass.ADAPTER
+
+    @property
+    def live_exposure_usd(self) -> Decimal:
+        """Return conservative live cost exposure, never verified billing."""
+        return self._live_exposure
 
     @property
     def attempts(self) -> int:
@@ -398,7 +536,9 @@ class ProviderRuntime:
         launched = False
         charged = False
         completed = False
+        finished = False
         reservation = None
+        live_reserved = Decimal(0)
         context = None
         attempt_id = uuid4()
         failure_state = None
@@ -416,14 +556,23 @@ class ProviderRuntime:
                 min(self._deadline, monotonic() + b.action_timeout_seconds), self._off_switch
             )
             context._max_output_tokens = b.max_output_tokens
+            context._max_output_bytes = b.output_byte_limit
             context._max_context_tokens = b.max_context_tokens
             context._live_allowed = self._live_allowed
+            context._authorization = self._authorization
+            context._credentials = self._credentials
             context._trace_context = current_trace()
             context.checkpoint()
             if self._attempts >= b.max_provider_attempts:
                 raise BudgetExceededError("Workflow provider-attempt budget exhausted.")
             if self._actions[action_id] >= b.max_retries_per_action + 1:
                 raise BudgetExceededError("Application action retry budget exhausted.")
+            if (
+                self._authorization is not None
+                and self._live_exposure + self._live_call_bound > self._live_cap
+            ):
+                # Pre-dispatch cost gate: reserve the fully bounded worst case.
+                raise BudgetExceededError("Live cost exposure would exceed the approved budget.")
             step_index = tuple(self._actions).index(action_id) + 1
             if self._ledger is not None:
                 reservation = self._ledger.reserve(step_index)
@@ -431,6 +580,9 @@ class ProviderRuntime:
             self._attempts += 1
             self._actions[action_id] += 1
             charged = True
+            if self._authorization is not None:
+                live_reserved = self._live_call_bound
+                self._live_exposure += live_reserved
             if self._actions[action_id] > 1:
                 self._advisory(GovernanceKind.RETRY_BURST)
             self._audit.append(ProviderEvent.STARTED)
@@ -442,25 +594,32 @@ class ProviderRuntime:
                     raw = self._provider.generate(value, context)
                     context.checkpoint()
                     if type(raw) is not dict or set(raw) != {"text"}:
-                        raise ProviderOutputRejected("Provider must return only plain text data.")
+                        raise ProviderOutputRejected(
+                            "Provider must return only plain text data.",
+                            RejectionPoint.RESULT_SHAPE,
+                        )
                     try:
                         response = _TextResponse.model_validate(raw)
                     except ValidationError as exc:
                         raise ProviderOutputRejected(
-                            "Provider text response is malformed."
+                            "Provider text response is malformed.", RejectionPoint.RESULT_SHAPE
                         ) from exc
-                    if _units(response.text) > b.max_output_tokens:
+                    if _units(response.text) > b.output_byte_limit:
                         raise BudgetExceededError(
                             "Provider output exceeds its conservative budget."
                         )
                     if any(term in response.text.casefold() for term in self._terms):
                         raise ProviderOutputRejected(
-                            "Provider output rejected by application filter."
+                            "Provider output rejected by application filter.",
+                            RejectionPoint.OUTPUT_FILTER,
                         )
                     context.checkpoint()
                     if self._guardrails is not None:
                         if self._guardrails.validate(response.text) is not None:
-                            raise ProviderOutputRejected("Unsupported Guardrails adapter result.")
+                            raise ProviderOutputRejected(
+                                "Unsupported Guardrails adapter result.",
+                                RejectionPoint.GUARDRAILS,
+                            )
                         context.checkpoint()
                     result.put(ModelResult(text=response.text))
                 except BaseException as exc:
@@ -478,6 +637,7 @@ class ProviderRuntime:
             launched = True
             try:
                 outcome = result.get(timeout=max(0, context._deadline - monotonic()))
+                finished = True
             except Empty as exc:
                 context._cancelled.set()
                 self._audit.append(ProviderEvent.TIMEOUT)
@@ -523,6 +683,14 @@ class ProviderRuntime:
                     else UsageState.UNAVAILABLE
                 )
                 facts = context._usage.close(fallback)
+                if live_reserved and self._authorization is not None:
+                    if (finished or not launched) and not context._dispatched.is_set():
+                        self._live_exposure -= live_reserved  # Provably never dispatched.
+                    elif facts.state is UsageState.REPORTED:
+                        self._live_exposure += self._authorization.worst_case_usd(
+                            facts.input_tokens or 0, facts.output_tokens or 0,
+                        ) - live_reserved
+                    # Otherwise the worst-case reservation stays consumed.
                 receipt = UsageReceipt(
                     workflow_id=self._identity.workflow_id, thread_id=self._identity.thread_id,
                     attempt_id=attempt_id, step_index=step_index, provider=self._provider_alias,
