@@ -93,6 +93,11 @@ def live_session_budget() -> RuntimeBudget:
     )
 
 
+def server_credential_path_enabled() -> bool:
+    """Return operator path enablement from the exact flag, without reading credentials."""
+    return os.environ.get(SERVER_PATH_ENABLE_VARIABLE) == "1"
+
+
 def server_credentials_available(provider: str) -> bool:
     """Report whether the operator enabled the server-credential path for a provider.
 
@@ -108,7 +113,7 @@ def server_credentials_available(provider: str) -> bool:
     name = ENVIRONMENT_VARIABLES.get(provider)
     return (
         name is not None
-        and os.environ.get(SERVER_PATH_ENABLE_VARIABLE) == "1"
+        and server_credential_path_enabled()
         and bool(os.environ.get(name))
     )
 

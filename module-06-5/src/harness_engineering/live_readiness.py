@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from harness_engineering.config import HarnessConfig, default_config
 from harness_engineering.domain import EvidenceClass
+from harness_engineering.live_credentials import CREDENTIAL_SOURCE_TYPES
 
 
 class ReadinessStatus(StrEnum):
@@ -27,6 +28,8 @@ class ReadinessStatus(StrEnum):
     VERIFIED = "verified"
     ACCEPTED = "accepted"
     CONFIGURED = "configured"
+    AVAILABLE = "available"
+    DISABLED = "disabled"
     PENDING = "pending"
     NOT_CONFIGURED = "not_configured"
     NOT_EXECUTED = "not_executed"
@@ -256,6 +259,8 @@ def live_evidence_caption(records: tuple[EvidenceRecord, ...] | None = None) -> 
 def provider_readiness(
     records: tuple[EvidenceRecord, ...] | None = None,
     config: HarnessConfig | None = None,
+    *,
+    server_path_enabled: bool = False,
 ) -> tuple[ReadinessItem, ...]:
     """Derive truthful dual-mode readiness for presentation.
 
@@ -264,6 +269,8 @@ def provider_readiness(
             call time so presentation always follows the authoritative records.
         config: Serving configuration; defaults to the deterministic reviewer
             configuration. Credentials are never consulted.
+        server_path_enabled: Operator flag state supplied by trusted bootstrap.
+            Presentation only; never enables execution or establishes credential presence.
 
     Returns:
         Readiness items for deterministic, adapter, mocked live-seam, live
@@ -276,6 +283,27 @@ def provider_readiness(
 
     def verified(evidence: EvidenceClass) -> ReadinessStatus:
         return ReadinessStatus.VERIFIED if evidence in classes else ReadinessStatus.NOT_EXECUTED
+
+    # Status and summary come from the same capability branch so they cannot disagree.
+    if any(source.kind == "byok" for source in CREDENTIAL_SOURCE_TYPES):
+        byok_status = ReadinessStatus.AVAILABLE
+        byok_summary = (
+            "Available through explicit per-session opt-in, a temporary user-supplied "
+            "credential and provider-charge acknowledgement for a bounded call. "
+            "Credentials grant connectivity only, never application authority."
+        )
+    else:
+        byok_status = ReadinessStatus.NOT_CONFIGURED
+        byok_summary = (
+            "Not supported: this deployment has no BYOK credential source, so live calls "
+            "with a user-supplied key cannot run."
+        )
+    if server_path_enabled is not True:
+        server_status = ReadinessStatus.DISABLED  # Default: intentionally off.
+    elif serving.live is not None and serving.live.credential_source != "byok":
+        server_status = ReadinessStatus.CONFIGURED
+    else:
+        server_status = ReadinessStatus.NOT_CONFIGURED  # Flag alone is not configuration.
 
     items = [
         ReadinessItem(
@@ -295,13 +323,21 @@ def provider_readiness(
                     "offline with patched SDK resources; not a live call.",
         ),
         ReadinessItem(
-            # A configuration fact, not evidence of any class.
-            capability="Live mode in this deployment", evidence=None,
-            status=ReadinessStatus.CONFIGURED if serving.live is not None
-            else ReadinessStatus.NOT_CONFIGURED,
-            summary="Server configuration stays deterministic by default. Live mode is an "
-                    "explicit per-session opt-in with a temporary BYOK key or trusted "
-                    "server-side configuration; credentials grant connectivity only.",
+            # A capability fact derived from the credential-source contract, not evidence of
+            # any class: BYOK is available only if the application supports the byok source.
+            capability="BYOK live mode in this deployment", evidence=None,
+            status=byok_status,
+            summary=byok_summary,
+        ),
+        ReadinessItem(
+            # Independent of BYOK availability: the operator/server path is separately gated.
+            capability="Server credential path", evidence=None,
+            status=server_status,
+            summary=("Intentionally disabled for public deployment. "
+                     if server_path_enabled is not True else
+                     "Operator path enabled; credential presence is not verified here. ")
+                    + "Server credentials are not required for BYOK. Enabling requires "
+                    "MODULE_6_5_ENABLE_SERVER_CREDENTIAL_PATH=1 and separate operational controls.",
         ),
     ]
     for provider, label in (("openai", "OpenAI"), ("anthropic", "Anthropic")):

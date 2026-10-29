@@ -396,3 +396,33 @@ def test_ui_offers_server_credentials_only_when_available(
     at.selectbox(key="live_path").select("server").run()
     assert not at.text_input  # No key field when using server-side configuration.
     assert DUMMY_KEY not in str(at.get("text_input"))
+
+
+@pytest.mark.parametrize("flag", [None, "", "0", "true", "True", "yes", "01", "1 ", " 1", "1"])
+def test_server_path_and_readiness_require_the_exact_enable_flag(
+    monkeypatch: pytest.MonkeyPatch, flag: str | None,
+) -> None:
+    from harness_engineering.live_readiness import ReadinessStatus
+
+    if flag is not None:
+        monkeypatch.setenv(SERVER_PATH_ENABLE_VARIABLE, flag)
+    monkeypatch.setenv("OPENAI_API_KEY", SERVER_KEY)  # Synthetic fixture, never a real key.
+    enabled = live_session.server_credential_path_enabled()
+    assert enabled is (flag == "1")
+    assert server_credentials_available("openai") is enabled
+    items = {item.capability: item for item in provider_readiness(server_path_enabled=enabled)}
+    expected = ReadinessStatus.NOT_CONFIGURED if enabled else ReadinessStatus.DISABLED
+    assert items["Server credential path"].status is expected
+    assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
+    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+
+
+def test_path_enablement_probe_never_reads_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FlagOnly(dict):
+        def get(self, key: str, default: object = None) -> object:
+            assert key == SERVER_PATH_ENABLE_VARIABLE
+            return super().get(key, default)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(live_session.os, "environ", FlagOnly({SERVER_PATH_ENABLE_VARIABLE: "1"}))
+        assert live_session.server_credential_path_enabled() is True

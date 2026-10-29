@@ -95,7 +95,7 @@ def test_readiness_shows_accepted_evidence_without_implying_more() -> None:
         assert "Not an SLA or billing validation" in items[label].summary
     assert items["Deployment verification"].status is ReadinessStatus.PENDING
     assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
-    assert items["Live mode in this deployment"].status is ReadinessStatus.NOT_CONFIGURED
+    assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
     assert items["Deterministic no-key mode"].status is ReadinessStatus.VERIFIED
     assert items["Provider adapter readiness"].status is ReadinessStatus.VERIFIED
     text = " ".join(i.summary for i in items.values())
@@ -238,3 +238,65 @@ def test_traceability_states_both_the_evidence_and_the_unclaimed_readiness() -> 
     assert "accepted, bounded live-provider evidence exists for the reviewed run" in text
     assert "production-readiness claim is still not made" in text
     assert "No longer true" not in text
+
+
+@pytest.mark.parametrize("serving_live", [False, True])
+def test_public_byok_availability_is_separate_from_server_configuration(serving_live: bool) -> None:
+    from harness_engineering.config import default_config
+    from tests.live_seam import live_config
+
+    config = live_config("openai") if serving_live else default_config()
+    items = {item.capability: item for item in provider_readiness(config=config)}
+    byok = items["BYOK live mode in this deployment"]
+    server = items["Server credential path"]
+    assert byok.status is ReadinessStatus.AVAILABLE and byok.evidence is None
+    assert server.status is ReadinessStatus.DISABLED and server.evidence is None
+    assert "Live mode in this deployment" not in items
+    assert "temporary user-supplied" in byok.summary
+    assert "connectivity only, never application authority" in byok.summary
+    assert "Intentionally disabled for public deployment" in server.summary
+    assert "not required for BYOK" in server.summary
+    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
+    assert items["Secure live seam (credential-free)"].evidence is EvidenceClass.MOCKED
+
+
+def test_server_flag_alone_does_not_establish_configuration_or_evidence() -> None:
+    items = {item.capability: item for item in provider_readiness(server_path_enabled=True)}
+    assert items["Server credential path"].status is ReadinessStatus.NOT_CONFIGURED
+    assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
+    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
+
+
+def test_byok_availability_is_derived_from_the_credential_source_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import harness_engineering.live_readiness as readiness
+    from harness_engineering.live_credentials import (
+        EnvironmentCredentialSource,
+        SecretStoreCredentialSource,
+    )
+
+    present = {i.capability: i for i in provider_readiness()}
+    available = present["BYOK live mode in this deployment"]
+    assert available.status is ReadinessStatus.AVAILABLE
+    for phrase in ("explicit per-session opt-in", "temporary user-supplied credential",
+                   "bounded call", "connectivity only, never application authority"):
+        assert phrase in available.summary, phrase
+    monkeypatch.setattr(
+        readiness, "CREDENTIAL_SOURCE_TYPES",
+        (EnvironmentCredentialSource, SecretStoreCredentialSource),
+    )
+    absent = {i.capability: i for i in provider_readiness()}
+    unavailable = absent["BYOK live mode in this deployment"]
+    assert unavailable.status is ReadinessStatus.NOT_CONFIGURED
+    # The summary comes from the same branch as the status: no stale positive wording.
+    assert unavailable.summary.startswith("Not supported:")
+    assert "no BYOK credential source" in unavailable.summary
+    assert "Available" not in unavailable.summary
+    for implied in ("available", "enabled", "ready", "configured", "usable", "opt-in"):
+        assert implied not in unavailable.summary.lower(), implied
+    assert unavailable.summary != available.summary
+    assert absent["Server credential path"].status is ReadinessStatus.DISABLED  # Independent.
+    assert "Live mode in this deployment" not in absent

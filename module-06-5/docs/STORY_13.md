@@ -418,3 +418,19 @@ Tests: `tests/test_byok_live_mode.py` (credential lifecycle, authority separatio
 bounds, evidence, UI) and `tests/test_byok_invariant_contract.py` (the invariant is
 present in ENG-008, ADR 002, the SOP, AGENTS.md, CLAUDE.md and the UI, and a
 server-side-only rule or removal of BYOK fails acceptance).
+
+### Reviewer status model for live mode
+
+The reviewer evidence panel separates availability from server configuration. The
+row "BYOK live mode in this deployment" is `available` (derived from the credential-source
+contract: the application supports the `byok` source), meaning explicit per-session
+opt-in, a temporary user-supplied credential, a charges acknowledgement and a bounded
+call, with connectivity only and never authority. The row "Server credential path" is
+`disabled` by default ("intentionally disabled for public deployment"; server
+credentials are not required for BYOK) and changes only when the exact operator flag
+`MODULE_6_5_ENABLE_SERVER_CREDENTIAL_PATH=1` is set, and even then the flag alone is
+reported as `not_configured` because credential presence is not verified by the page.
+The former single row "Live mode in this deployment · not_configured" conflated the two
+and was misleading; it was removed. Evidence classes are unchanged (deterministic,
+adapter, mocked live seam, accepted live_provider), deployment verification stays
+`pending`, and provider-level production readiness stays `not_claimed`.
