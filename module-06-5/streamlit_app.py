@@ -11,6 +11,7 @@ from harness_engineering.live_session import (
     LiveCheckView,
     LiveSession,
     run_live_check,
+    server_credential_path_enabled,
     server_credentials_available,
 )
 from harness_engineering.reviewer_service import GUIDES, Demo, DemoView, ReviewerBusyError, run_demo
@@ -157,7 +158,7 @@ if live_mode:
                        "and is not accepted live-provider evidence.")
 # Readiness is derived by the application from classified evidence, not by the UI.
 with st.container(border=True):
-    for item in provider_readiness():
+    for item in provider_readiness(server_path_enabled=server_credential_path_enabled()):
         evidence = item.evidence.value if item.evidence else "configuration"
         st.markdown(f"**{item.capability}** · `{item.status.value}` · {evidence}  \n"
                     f"{item.summary}")
