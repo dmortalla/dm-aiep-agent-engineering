@@ -349,31 +349,47 @@ def main() -> None:
                         help="Read private UUID only from an operator-owned pipe; no fallback.")
     args = parser.parse_args()
     try:
-        require(not args.subscription_stdin or args.verify_cloud,
-                "Private subscription stdin is only valid with --verify-cloud.")
-        config = AzureConfig(args.suffix, args.reviewer_cidr)
-        output = destination(args.output)
-        if args.verify_cloud or args.render == "app":
-            if not args.digest:
-                raise ValueError("App/verification requires the reviewed manifest digest.")
-            config.image(args.digest)
-        elif args.digest:
-            raise ValueError("Foundation rendering does not accept an image digest.")
+        try:
+            require(not args.subscription_stdin or args.verify_cloud,
+                    "Private subscription stdin is only valid with --verify-cloud.")
+            config = AzureConfig(args.suffix, args.reviewer_cidr)
+            output = destination(args.output)
+            if args.verify_cloud or args.render == "app":
+                if not args.digest:
+                    raise ValueError("App/verification requires the reviewed manifest digest.")
+                config.image(args.digest)
+            elif args.digest:
+                raise ValueError("Foundation rendering does not accept an image digest.")
+        except VerificationError:
+            raise
+        except (ValueError, OSError) as exc:
+            raise VerificationError(
+                "Pre-verification input/configuration validation failed; correct the "
+                "operator inputs and rerun. No cloud acceptance was recorded.") from exc
         data = (verify(config, args.digest,
                        private_subscription(from_stdin=args.subscription_stdin))
                 if args.verify_cloud
                 else arm_template(config, args.digest))
         encoded = json.dumps(data, indent=2) + "\n"
         require(len(encoded.encode()) <= 32768, "Generated output exceeds metadata bound.")
-        with output.open("x", encoding="utf-8") as stream:
-            stream.write(encoded)
+        try:
+            with output.open("x", encoding="utf-8") as stream:
+                stream.write(encoded)
+        except (ValueError, OSError) as exc:
+            raise VerificationError(
+                "Success evidence could not be persisted; no cloud acceptance was "
+                "recorded.") from exc
         print("Cloud verification passed." if args.verify_cloud else
               f"Offline ARM contract rendered for {REGION}; no deployment authorized.")
-    except (ValueError, OSError) as exc:
-        # Never print arbitrary OS/HTTP/Azure diagnostics or account identifiers.
+    except VerificationError as exc:
+        # Keep application-controlled sanitized diagnostics; never print arbitrary
+        # OS/HTTP/Azure diagnostics or account identifiers.
+        parser.exit(1, str(exc) + "\n")
+    except (ValueError, OSError):
+        # Unexpected internal failure at an unclassified boundary: fail closed on
+        # the fixed generic message; arbitrary exception text stays unprinted.
         parser.exit(1, "Module 10 deployment command failed; check inputs/access/state. "
-                    "No cloud acceptance was recorded.\n" if not isinstance(exc, VerificationError)
-                    else str(exc) + "\n")
+                    "No cloud acceptance was recorded.\n")
 
 
 if __name__ == "__main__":

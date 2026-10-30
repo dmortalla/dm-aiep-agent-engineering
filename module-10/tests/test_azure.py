@@ -1123,6 +1123,98 @@ def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
         assert value.strip() not in captured.out + captured.err
 
 
+def test_prevalidation_failure_attribution(monkeypatch: pytest.MonkeyPatch,
+                                           tmp_path: Path,
+                                           capsys: pytest.CaptureFixture) -> None:
+    """Operator input/config failures one-shot the fixed pre-verification stage text."""
+    output = tmp_path / "no-acceptance.json"
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", "evil;rm",
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "foundation",
+                        "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert "Pre-verification input/configuration validation failed" in transcript
+    assert "No cloud acceptance was recorded" in transcript
+    for leak in ("evil;rm", "tmp_path", "output"):
+        assert leak not in transcript
+
+
+def test_prevalidation_keeps_expected_verifier_message(monkeypatch: pytest.MonkeyPatch,
+                                                       capsys: pytest.CaptureFixture) -> None:
+    """A require-raised VerificationError keeps its own text, not the stage collapse."""
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "foundation",
+                        "--output", "unused.json", "--subscription-stdin"])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert error.value.code == 1
+    assert "Private subscription stdin is only valid with --verify-cloud." in transcript
+    assert "Pre-verification input/configuration validation failed" not in transcript
+
+
+def test_unexpected_internal_failure_cannot_echo_exception_text(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        capsys: pytest.CaptureFixture) -> None:
+    """Arbitrary ValueError text from an unclassified stage stays out of CLI output."""
+    output = tmp_path / "no-acceptance.json"
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+
+    def leaking(config: object, digest: object | None) -> object:
+        raise ValueError("synthetic secret path E:/tmp/x; rm -rf")
+
+    monkeypatch.setattr(deployment, "arm_template", leaking)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "foundation",
+                        "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert "Module 10 deployment command failed; check inputs/access/state" in transcript
+    assert "No cloud acceptance was recorded" in transcript
+    for leak in ("synthetic secret", "rm -rf", "E:/tmp", str(tmp_path), str(output)):
+        assert leak not in transcript
+
+
+@pytest.mark.parametrize("error", [
+    PermissionError(13, "synthetic os secret E:/tmp/x"),
+    FileExistsError(17, "synthetic os secret E:/tmp/x"),
+])
+def test_persistence_failure_reports_no_acceptance(error: Exception,
+                                                  monkeypatch: pytest.MonkeyPatch,
+                                                  tmp_path: Path,
+                                                  capsys: pytest.CaptureFixture) -> None:
+    """A persistence failure at the success boundary is sanitized and yields no evidence."""
+    output = tmp_path / "blocked.json"
+    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+
+    def broken_open(self: Path, *args: object, **kwargs: object) -> object:
+        raise error
+
+    monkeypatch.setattr(deployment.Path, "open", broken_open)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "app",
+                        "--digest", DIGEST, "--output", str(output)])
+    with pytest.raises(SystemExit) as exit_error:
+        deployment.main()
+    assert exit_error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert "Success evidence could not be persisted" in transcript
+    assert "no cloud acceptance was recorded" in transcript
+    assert "Cloud verification passed." not in transcript
+    assert "Offline ARM contract rendered" not in transcript
+    for leak in ("synthetic os secret", "E:/tmp", str(tmp_path), str(output)):
+        assert leak not in transcript
+
+
 def test_private_pipe_rejects_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     """Explicit pipe mode cannot silently become an echoing terminal read."""
     stream = synthetic_pipe(SUBSCRIPTION.encode("ascii"))
