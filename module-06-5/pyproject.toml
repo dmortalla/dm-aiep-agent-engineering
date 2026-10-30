@@ -10,14 +10,19 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "langgraph>=1.2,<2",
     "pydantic>=2.12,<3",
+    # Supported provider SDKs are runtime dependencies: secure opt-in BYOK live mode is an
+    # intentional production capability of the deployed app, and a plain `uv sync` (the
+    # hosted install path) must provide them without selecting an optional extra.
+    "openai>=2.54,<3",
+    "anthropic>=1.13,<2",
+    # The MCP SDK is a runtime dependency: reviewer demonstrations 7 (MCP boundary) and 8
+    # (evaluation and regression) import it, and the hosted app exposes both.
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]
 orchestration = [
     "langgraph-checkpoint-sqlite>=3,<4",
-]
-mcp = [
-    "mcp>=2.3,<3",
 ]
 memory = [
     "mem0ai>=2.2,<3",
@@ -28,10 +33,6 @@ observability = [
 ]
 guardrails = [
     "guardrails-ai>=0.11,<1",
-]
-providers = [
-    "openai>=2.54,<3",
-    "anthropic>=1.13,<2",
 ]
 ui = [
     "streamlit>=1.50,<2",

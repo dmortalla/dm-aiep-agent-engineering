@@ -111,7 +111,7 @@ def _load(name: str) -> Any:
             raise  # A broken dependency/programming import is not optional absence.
         failure = True
     if failure:
-        raise ProviderConfigurationError("Install the Module 6.5 providers extra.")
+        raise ProviderConfigurationError("Install the Module 6.5 runtime dependencies.")
     return module
 
 
@@ -237,9 +237,13 @@ class _Vendor:
                     "module-06-5-offline-dummy" if credential is None
                     else credential.reveal_for_sdk()
                 )
-                # Explicit ancillary settings avoid environment-derived alternate auth.
+                # Explicit ancillary settings avoid environment-derived routing identifiers.
+                # Only options every supported SDK constructor accepts are passed: newer
+                # SDKs add ``admin_api_key``, which older ones (e.g. 2.15.0) reject. It is
+                # not needed: the SDK uses it solely for admin-only endpoints and never in
+                # place of the explicit ``api_key`` on the bearer-auth endpoints used here.
                 if self._sdk == "openai":
-                    options.update(admin_api_key="", organization="", project="", webhook_secret="")
+                    options.update(organization="", project="", webhook_secret="")
                     client_type = sdk.OpenAI
                 else:
                     options["webhook_key"] = ""
