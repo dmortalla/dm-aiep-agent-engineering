@@ -434,3 +434,33 @@ The former single row "Live mode in this deployment · not_configured" conflated
 and was misleading; it was removed. Evidence classes are unchanged (deterministic,
 adapter, mocked live seam, accepted live_provider), deployment verification stays
 `pending`, and provider-level production readiness stays `not_claimed`.
+
+### Deployment dependency contract
+
+The supported provider SDKs (`openai>=2.54,<3`, `anthropic>=1.13,<2`; locked at 2.54.0 and
+1.13.0) and the MCP SDK (`mcp>=2.3,<3`; locked at 2.3.0) are base runtime dependencies in
+`pyproject.toml`; the former `providers` and `mcp` extras were removed rather than
+duplicated. The MCP SDK is promoted because reviewer demonstrations 7 (MCP boundary) and 8
+(evaluation and regression) import it and the hosted app advertises both; without it exactly
+those two degrade to "Demonstration unavailable" while the other six still run. Reason: secure opt-in BYOK live mode is an intentional
+production capability, and the hosted install path is a plain `uv sync` from `uv.lock`,
+which does not select optional extras. Before the repair that plan installed 39 packages
+without either SDK (`uv sync --frozen --offline --dry-run`); it then installed 45 (both SDKs),
+and now installs 63, including `openai==2.54.0`, `anthropic==1.13.0` and `mcp==2.3.0` and their
+transitive dependencies, with no extra flag. The lock was regenerated with `uv lock --offline` (only the project entry changed; no
+locked version moved) and verified with `uv lock --check`.
+
+Streamlit stays in the `ui` extra: the hosting platform installs Streamlit itself after the
+project sync, whereas nothing else supplies the provider SDKs, so only they were promoted.
+The remaining optional groups (`orchestration`, `observability`, `guardrails`, `memory`) stay
+optional because the hosted reviewer path does not need them: persistence uses the standard
+library `sqlite3`, `langsmith` already arrives transitively, and `langfuse` and Guardrails are
+off by default and reachable only through arguments the deployed app never passes. A test
+makes every optional package outside the base closure unimportable and runs all eight
+demonstrations, so a future base-set regression fails acceptance.
+
+The hosted `configuration` failure (no tokens, USD 0, adapter) matches the SDK being absent,
+not the earlier `admin_api_key` `TypeError`, which would escape as a defect. Dependency
+absence still surfaces only as the fixed `configuration` category with a fixed message; no
+module-not-found text, paths or environment details are exposed, and no extra diagnostic
+code was added because the dependency guarantee removes the cause.

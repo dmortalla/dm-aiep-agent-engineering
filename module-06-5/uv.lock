@@ -378,7 +378,10 @@ name = "dm-aiep-harness-engineering"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
     { name = "langgraph" },
+    { name = "mcp" },
+    { name = "openai" },
     { name = "pydantic" },
 ]
 
@@ -391,9 +394,6 @@ dev = [
 guardrails = [
     { name = "guardrails-ai" },
 ]
-mcp = [
-    { name = "mcp" },
-]
 memory = [
     { name = "mem0ai" },
 ]
@@ -404,32 +404,28 @@ observability = [
 orchestration = [
     { name = "langgraph-checkpoint-sqlite" },
 ]
-providers = [
-    { name = "anthropic" },
-    { name = "openai" },
-]
 ui = [
     { name = "streamlit" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'providers'", specifier = ">=1.13,<2" },
+    { name = "anthropic", specifier = ">=1.13,<2" },
     { name = "guardrails-ai", marker = "extra == 'guardrails'", specifier = ">=0.11,<1" },
     { name = "langfuse", marker = "extra == 'observability'", specifier = ">=4.17,<5" },
     { name = "langgraph", specifier = ">=1.2,<2" },
     { name = "langgraph-checkpoint-sqlite", marker = "extra == 'orchestration'", specifier = ">=3,<4" },
     { name = "langsmith", marker = "extra == 'observability'", specifier = ">=0.14,<1" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
+    { name = "mcp", specifier = ">=2.3,<3" },
     { name = "mem0ai", marker = "extra == 'memory'", specifier = ">=2.2,<3" },
-    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.54,<3" },
+    { name = "openai", specifier = ">=2.54,<3" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6,<8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14,<1" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.50,<2" },
 ]
-provides-extras = ["orchestration", "mcp", "memory", "observability", "guardrails", "providers", "ui", "dev"]
+provides-extras = ["orchestration", "memory", "observability", "guardrails", "ui", "dev"]
 
 [[package]]
 name = "docstring-parser"
