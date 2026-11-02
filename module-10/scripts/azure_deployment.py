@@ -34,6 +34,12 @@ READ_COMMANDS = frozenset({
     ("role", "assignment", "list"), ("containerapp", "revision", "list"),
     ("monitor", "log-analytics", "query"),
 })
+READ_LABELS = ("group-observation", "resource-inventory", "registry-resource",
+               "workspace-resource", "environment-resource", "app-resource",
+               "identity-resource", "acr-arm-auth", "acr-manifest-metadata",
+               "role-assignments-all", "role-assignments-inherited",
+               "containerapp-revisions", "monitor-log-analytics")
+READ_PHASES = ("", "initial-collection", "monitor-receipt", "final-drift-check")
 
 
 def _git_lines(cwd: Path, *args: str) -> list[str]:
@@ -197,13 +203,16 @@ def child_environment() -> dict[str, str]:
     return environment
 
 
-def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
-    """Run only fixed read-only CLI operations, with timeout and minimized failures.
+def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
+            phase: str = "") -> object:
+    """Run only fixed read-only CLI operations, with timeout and attributed failures.
 
     Args:
         command: One exact allowlisted read-only Azure command.
         args: Trusted collector arguments; never interpreted by a shell.
         subscription: Independent expected subscription; passed on every CLI read.
+        label: One fixed source-controlled operation identity from ``READ_LABELS``.
+        phase: Optional fixed verification phase from ``READ_PHASES``.
 
     Returns:
         Parsed observations in memory, never raw printed evidence.
@@ -212,8 +221,12 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
         VerificationError: CLI, timeout, response size, JSON parsing or the
             known operator-local resource-group default/persistence contract
             failures. The state-interference class is sanitized and actionable;
-            unrelated failures keep the generic non-echoing message.
+            unrelated failures keep the generic non-echoing message and every
+            diagnostic carries only the fixed operation/phase identity.
     """
+    require(label in READ_LABELS, "Azure read label is not an approved operation identity.")
+    require(phase in READ_PHASES, "Azure read phase is not an approved verification phase.")
+    scope = f" ({label}" + (f" during {phase})" if phase else ")")
     if command not in READ_COMMANDS:
         raise VerificationError("Azure mutation/unknown CLI operation is forbidden.")
     subscription = identifier(subscription)
@@ -245,38 +258,47 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
                     "with deterministic verifier reads; clear the operator-local az "
                     "defaults or persisted group state and rerun. No acceptance evidence "
                     "was recorded.")
-            raise VerificationError(
-                "Azure read failed; inspect access, extensions and resource state.")
+            raise VerificationError(f"Azure read{scope} failed; inspect access, "
+                                    "extensions and resource state.")
         if len(result.stdout.encode()) > 1_048_576:
-            raise VerificationError(
-                "Azure read failed; inspect access, extensions and resource state.")
+            raise VerificationError(f"Azure read{scope} exceeded the response size bound; "
+                                    "no acceptance recorded.")
         return json.loads(result.stdout)
     except (OSError, subprocess.TimeoutExpired, UnicodeError, json.JSONDecodeError) as exc:
-        raise VerificationError("Azure read/JSON failed; no cloud acceptance recorded.") from exc
+        raise VerificationError(f"Azure read{scope} failed at the process/JSON stage; "
+                                "no cloud acceptance recorded.") from exc
 
 
-def collect(config: AzureConfig, digest: str, expected_subscription: str) -> dict:
+def collect(config: AzureConfig, digest: str, expected_subscription: str,
+            phase: str = "initial-collection") -> dict:
     """Collect fresh resource and revision observations; never accept snapshot files."""
+    require(phase in ("initial-collection", "final-drift-check"),
+            "Disallowed verification phase for collection.")
     n = config.names
     subscription = identifier(expected_subscription)
 
-    def read(command: tuple[str, ...], *args: str) -> object:
-        return az_read(command, *args, subscription=subscription)
+    def read(label: str, command: tuple[str, ...], *args: str) -> object:
+        return az_read(command, *args, subscription=subscription, label=label, phase=phase)
 
-    state = {"group": read(("group", "show"), "--name", n["group"]),
-             "inventory": read(("resource", "list"), "--resource-group", n["group"])}
-    kinds = {"registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01"),
-             "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01"),
-             "environment": ("Microsoft.App/managedEnvironments", "2025-01-01"),
-             "app": ("Microsoft.App/containerApps", "2025-01-01"),
-             "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31")}
-    for key, (kind, version) in kinds.items():
-        state[key] = read(("resource", "show"), "--resource-group", n["group"],
-                             "--name", n[key], "--resource-type", kind, "--api-version", version)
-    state["arm_auth"] = read(("acr", "config", "authentication-as-arm", "show"),
-                                "--registry", n["registry"])
-    state["manifest"] = read(("acr", "manifest", "show-metadata"), "--registry", n["registry"],
-                                "--name", "module10-ai@" + digest)
+    state = {"group": read("group-observation", ("group", "show"), "--name", n["group"]),
+             "inventory": read("resource-inventory", ("resource", "list"),
+                               "--resource-group", n["group"])}
+    kinds = {"registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01",
+                          "registry-resource"),
+             "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01",
+                           "workspace-resource"),
+             "environment": ("Microsoft.App/managedEnvironments", "2025-01-01",
+                             "environment-resource"),
+             "app": ("Microsoft.App/containerApps", "2025-01-01", "app-resource"),
+             "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31",
+                          "identity-resource")}
+    for key, (kind, version, label) in kinds.items():
+        state[key] = read(label, ("resource", "show"), "--resource-group", n["group"],
+                          "--name", n[key], "--resource-type", kind, "--api-version", version)
+    state["arm_auth"] = read("acr-arm-auth", ("acr", "config", "authentication-as-arm", "show"),
+                             "--registry", n["registry"])
+    state["manifest"] = read("acr-manifest-metadata", ("acr", "manifest", "show-metadata"),
+                             "--registry", n["registry"], "--name", "module10-ai@" + digest)
     try:
         principal = identifier(state["identity"]["properties"]["principalId"])
         registry_id = state["registry"]["id"]
@@ -296,11 +318,13 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str) -> dic
     role_args = ("--assignee-object-id", principal, "--include-groups",
                  "--fill-principal-name", "false",
                  "--fill-role-definition-name", "false")
-    state["roles"] = read(("role", "assignment", "list"), *role_args, "--all")
-    state["inherited_roles"] = read(("role", "assignment", "list"), *role_args,
-                                    "--scope", expected_registry, "--include-inherited")
-    state["revisions"] = read(("containerapp", "revision", "list"),
-                                 "--resource-group", n["group"], "--name", n["app"])
+    state["roles"] = read("role-assignments-all", ("role", "assignment", "list"),
+                          *role_args, "--all")
+    state["inherited_roles"] = read("role-assignments-inherited", ("role", "assignment", "list"),
+                                    *role_args, "--scope", expected_registry,
+                                    "--include-inherited")
+    state["revisions"] = read("containerapp-revisions", ("containerapp", "revision", "list"),
+                              "--resource-group", n["group"], "--name", n["app"])
     return state
 
 
@@ -397,7 +421,8 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
     for attempt in range(6):
         rows = az_read(("monitor", "log-analytics", "query"), "--workspace", workspace,
                        "--analytics-query", query, "--timespan", "PT10M",
-                       subscription=subscription)
+                       subscription=subscription, label="monitor-log-analytics",
+                       phase="monitor-receipt")
         if (isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)
                 and type(rows[0].get("successes")) is int and rows[0]["successes"] >= 2
                 and type(rows[0].get("failures")) is int and rows[0]["failures"] >= 1):
@@ -405,7 +430,7 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
         if attempt == 5:
             raise VerificationError("Azure Monitor receipt missing; wait for ingestion then rerun.")
         time.sleep(20)
-    final = collect(config, digest, subscription)
+    final = collect(config, digest, subscription, phase="final-drift-check")
     require(validate_state(config, digest, final, subscription) == fqdn
             and final["app"]["properties"]["latestRevisionName"] == revision,
             "Cloud configuration/revision changed during acceptance; rerun after stabilization.")

@@ -384,7 +384,7 @@ def test_collector_cannot_mutate(command: tuple[str, ...], monkeypatch: pytest.M
     """Unknown and privileged commands fail before process execution or credential inspection."""
     monkeypatch.setattr(deployment.subprocess, "run", lambda *a, **kw: pytest.fail("CLI reached"))
     with pytest.raises(VerificationError, match="forbidden"):
-        deployment.az_read(command, subscription=SUBSCRIPTION)
+        deployment.az_read(command, subscription=SUBSCRIPTION, label="group-observation")
 
 
 @pytest.mark.parametrize("result", [subprocess.CompletedProcess([], 1, "sensitive", "sensitive"),
@@ -397,7 +397,7 @@ def test_cli_boundary_minimizes_errors(result: subprocess.CompletedProcess,
     monkeypatch.setattr(deployment.subprocess, "run", lambda *a, **kw: result)
     with pytest.raises(VerificationError) as error:
         deployment.az_read(("group", "show"), "--name", CONFIG.names["group"],
-                           subscription=SUBSCRIPTION)
+                           subscription=SUBSCRIPTION, label="group-observation")
     assert "sensitive" not in str(error.value)
 
 
@@ -412,8 +412,135 @@ def test_cli_timeout_and_bound(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(deployment.subprocess, "run", run)
     with pytest.raises(VerificationError) as error:
-        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION, label="group-observation")
     assert isinstance(error.value.__cause__, subprocess.TimeoutExpired)
+    assert "(group-observation) failed at the process/JSON stage" in str(error.value)
+    assert "sensitive" not in str(error.value)
+
+
+OPERATION_LABELS = {
+    "group-observation": ("group", "show"),
+    "resource-inventory": ("resource", "list"),
+    "registry-resource": ("resource", "show"),
+    "workspace-resource": ("resource", "show"),
+    "environment-resource": ("resource", "show"),
+    "app-resource": ("resource", "show"),
+    "identity-resource": ("resource", "show"),
+    "acr-arm-auth": ("acr", "config", "authentication-as-arm", "show"),
+    "acr-manifest-metadata": ("acr", "manifest", "show-metadata"),
+    "role-assignments-all": ("role", "assignment", "list"),
+    "role-assignments-inherited": ("role", "assignment", "list"),
+    "containerapp-revisions": ("containerapp", "revision", "list"),
+    "monitor-log-analytics": ("monitor", "log-analytics", "query"),
+}
+
+
+@pytest.mark.parametrize(("label", "command"), sorted(OPERATION_LABELS.items()))
+def test_azure_read_operation_labels_are_complete(label: str, command: tuple[str, ...]) -> None:
+    """Every source-controlled operation label maps to an exact allowlisted read."""
+    assert label in deployment.READ_LABELS
+    assert command in deployment.READ_COMMANDS
+    assert len(deployment.READ_LABELS) == len(set(deployment.READ_LABELS)) == 13
+
+
+@pytest.mark.parametrize("label", sorted(OPERATION_LABELS))
+def test_azure_read_failure_names_the_operation(
+        label: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A nonzero CLI exit attributes the fixed operation and never reflects runtime data."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    hostile = ("dns-token=" + SUBSCRIPTION + "; resource " + CONFIG.names["group"]
+               + "; raw path C:/hostile; azure session expired")
+    monkeypatch.setattr(deployment.subprocess, "run",
+                        lambda command, **kwargs: subprocess.CompletedProcess(
+                            command, 1, "", hostile))
+    with pytest.raises(VerificationError) as error:
+        deployment.az_read(OPERATION_LABELS[label], subscription=SUBSCRIPTION, label=label)
+    assert str(error.value) == (
+        f"Azure read ({label}) failed; inspect access, extensions and resource state.")
+    for leak in (SUBSCRIPTION, CONFIG.names["group"], CONFIG.names["registry"],
+                 CONFIG.names["app"], "hostile", "raw path", "token", "rm -rf"):
+        assert leak not in str(error.value)
+
+
+def test_azure_read_rejects_unapproved_identity_or_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Labels and phases are finite application-owned identities, never free text."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
+    for identity in ("", "evil;rm", "group-observation ", "monitoor-log-analytics"):
+        with pytest.raises(VerificationError, match="approved operation identity"):
+            deployment.az_read(("group", "show"), subscription=SUBSCRIPTION, label=identity)
+    with pytest.raises(VerificationError, match="approved verification phase"):
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION,
+                           label="group-observation", phase="attacker-phase")
+
+
+def test_azure_read_phase_attribution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase-bearing diagnostics distinguish collection and monitor work deterministically."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    monkeypatch.setattr(deployment.subprocess, "run",
+                        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", ""))
+    for phase in ("initial-collection", "monitor-receipt", "final-drift-check"):
+        with pytest.raises(VerificationError) as error:
+            deployment.az_read(("group", "show"), subscription=SUBSCRIPTION,
+                               label="group-observation", phase=phase)
+        assert str(error.value) == (f"Azure read (group-observation during {phase}) failed; "
+                                    "inspect access, extensions and resource state.")
+
+
+def test_monitor_failure_is_distinguishable_from_collection(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    """A Monitor receipt failure carries the monitor phase while collection stays attributed."""
+    real_az_read = deployment.az_read
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), []))
+
+    def staging(command: tuple[str, ...], *args: str, label: str, subscription: str,
+                phase: str = "") -> object:
+        if label == "monitor-log-analytics":
+            monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+            monkeypatch.setattr(deployment.subprocess, "run",
+                                lambda call, **kw: subprocess.CompletedProcess(call, 3, "",
+                                                                              "raw"))
+            return real_az_read(command, *args, subscription=subscription,
+                                label=label, phase=phase)
+        return collector_double(observed(), [])(command, *args, label=label,
+                                                subscription=subscription, phase=phase)
+
+    monkeypatch.setattr(deployment, "az_read", staging)
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    with pytest.raises(VerificationError) as error:
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+    message = str(error.value)
+    assert "(monitor-log-analytics during monitor-receipt) failed" in message
+    assert "group-observation" not in message
+    assert "raw" not in message and SUBSCRIPTION not in message
+
+
+def test_final_drift_collection_failure_is_distinguishable(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A final drift-phase read names its operation and phase distinctly from initial work."""
+    real_az_read = deployment.az_read
+    double = collector_double(observed(), [])
+    calls = []
+
+    def staging(command: tuple[str, ...], *args: str, label: str, subscription: str,
+                phase: str = "") -> object:
+        calls.append((label, phase))
+        if phase == "final-drift-check" and label == "resource-inventory":
+            monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+            monkeypatch.setattr(deployment.subprocess, "run",
+                                lambda call, **kw: subprocess.CompletedProcess(call, 2, "", ""))
+            return real_az_read(command, *args, subscription=subscription,
+                                label=label, phase=phase)
+        return double(command, *args, label=label, subscription=subscription, phase=phase)
+
+    monkeypatch.setattr(deployment, "az_read", staging)
+    monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    with pytest.raises(VerificationError) as error:
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+    message = str(error.value)
+    assert "(resource-inventory during final-drift-check) failed" in message
+    assert ("resource-inventory", "monitor-receipt") not in calls
+    assert calls.count(("resource-inventory", "initial-collection")) == 1
+    assert calls.count(("resource-inventory", "final-drift-check")) == 1
 
 
 def test_monitor_query_is_correlated_and_minimized() -> None:
@@ -433,7 +560,7 @@ def test_verifier_no_success_on_required_failure(failure: str,
     """Every stage failure prevents construction of genuine-cloud success metadata."""
     calls = []
 
-    def collect(*args: object) -> dict:
+    def collect(*args: object, **kwargs: object) -> dict:
         state = observed()
         calls.append("collect")
         if failure == "state" or (failure == "drift" and len(calls) > 1):
@@ -612,10 +739,11 @@ def test_windows_cli_avoids_batch_shell(monkeypatch: pytest.MonkeyPatch, tmp_pat
         return subprocess.CompletedProcess(command, 0, "{}", "")
 
     monkeypatch.setattr(deployment.subprocess, "run", execute)
-    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION) == {}
+    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION,
+                              label="group-observation") == {}
     runtime.unlink()
     with pytest.raises(VerificationError, match="batch execution forbidden"):
-        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION, label="group-observation")
 
 
 def expected_registry() -> str:
@@ -626,34 +754,47 @@ def expected_registry() -> str:
 
 def collector_double(state: dict, calls: list) -> object:
     """Adapt synthetic observations to real collector commands without calling Azure."""
-    def read(command: tuple[str, ...], *args: str, subscription: str) -> object:
+    def read(command: tuple[str, ...], *args: str, label: str, subscription: str,
+             phase: str = "") -> object:
         calls.append((command, args, subscription))
+        assert label in deployment.READ_LABELS
+        assert phase in ("initial-collection", "monitor-receipt", "final-drift-check")
         assert subscription == SUBSCRIPTION
         assert not ("--scope" in args and "--all" in args)
         if command == ("group", "show"):
+            assert label == "group-observation"
             return copy.deepcopy(state["group"])
         if command == ("resource", "list"):
+            assert label == "resource-inventory"
             return copy.deepcopy(state["inventory"])
         if command == ("resource", "show"):
             name = args[args.index("--name") + 1]
+            assert label == {"registry": "registry-resource", "workspace": "workspace-resource",
+                             "environment": "environment-resource", "app": "app-resource",
+                             "identity": "identity-resource"}[
+                next(k for k, v in CONFIG.names.items() if v == name)]
             return copy.deepcopy(state[next(k for k, v in CONFIG.names.items() if v == name)])
         if command == ("role", "assignment", "list"):
             assert "--assignee-object-id" in args and "--include-groups" in args
             assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
             assert "--resource-group" not in args and "" not in args
             if "--all" in args:
-                assert "--scope" not in args
+                assert label == "role-assignments-all" and "--scope" not in args
                 return copy.deepcopy(state["roles"])
             assert args[args.index("--scope") + 1] == expected_registry()
-            assert "--include-inherited" in args
+            assert "--include-inherited" in args and label == "role-assignments-inherited"
             return copy.deepcopy(state["inherited_roles"])
         if command == ("containerapp", "revision", "list"):
+            assert label == "containerapp-revisions"
             return copy.deepcopy(state["revisions"])
         if command == ("acr", "manifest", "show-metadata"):
+            assert label == "acr-manifest-metadata"
             return copy.deepcopy(state["manifest"])
         if command == ("acr", "config", "authentication-as-arm", "show"):
+            assert label == "acr-arm-auth"
             return copy.deepcopy(state["arm_auth"])
         if command == ("monitor", "log-analytics", "query"):
+            assert label == "monitor-log-analytics" and phase == "monitor-receipt"
             return [{"successes": 2, "failures": 1}]
         pytest.fail("Unexpected collector command")
     return read
@@ -798,7 +939,7 @@ def test_invalid_subscription_never_reaches_cli(bad: object,
     """Missing independent binding cannot fall back to the CLI account default."""
     monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
     with pytest.raises(VerificationError):
-        deployment.az_read(("group", "show"), subscription=bad)
+        deployment.az_read(("group", "show"), subscription=bad, label="group-observation")
 
 
 @pytest.mark.parametrize("args", [("--scope", "synthetic", "--all"),
@@ -808,7 +949,8 @@ def test_cli_forbids_invalid_scope_and_subscription_override(
     """Reject invalid role flags and subscription substitution before process execution."""
     monkeypatch.setattr(deployment.shutil, "which", lambda *a: pytest.fail("CLI reached"))
     with pytest.raises(VerificationError):
-        deployment.az_read(("role", "assignment", "list"), *args, subscription=SUBSCRIPTION)
+        deployment.az_read(("role", "assignment", "list"), *args, subscription=SUBSCRIPTION,
+                            label="role-assignments-all")
 
 
 def test_rbac_reads_omit_resource_group_and_keep_required_bindings(
@@ -851,7 +993,8 @@ def test_cli_explicit_subscription_ignores_default(monkeypatch: pytest.MonkeyPat
         return subprocess.CompletedProcess(command, 0, "{}", "")
 
     monkeypatch.setattr(deployment.subprocess, "run", run)
-    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION) == {}
+    assert deployment.az_read(("group", "show"), subscription=SUBSCRIPTION,
+                              label="group-observation") == {}
 
 
 RBAC_WIDE_ARGS = ("--assignee-object-id", PRINCIPAL, "--include-groups",
@@ -884,9 +1027,11 @@ def rbac_child_reads(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
 
     monkeypatch.setattr(deployment.subprocess, "run", run)
     assert deployment.az_read(("role", "assignment", "list"), *RBAC_WIDE_ARGS,
-                              subscription=SUBSCRIPTION) == {}
+                              subscription=SUBSCRIPTION,
+                              label="role-assignments-all") == {}
     assert deployment.az_read(("role", "assignment", "list"), *RBAC_NARROW_ARGS,
-                              subscription=SUBSCRIPTION) == {}
+                              subscription=SUBSCRIPTION,
+                              label="role-assignments-inherited") == {}
     assert len(environments) == 2
     return environments
 
@@ -952,7 +1097,7 @@ def test_residual_group_state_failure_is_sanitized(stderr: str,
                             command, 2, "", stderr))
     with pytest.raises(VerificationError) as error:
         deployment.az_read(("role", "assignment", "list"), *RBAC_WIDE_ARGS,
-                           subscription=SUBSCRIPTION)
+                           subscription=SUBSCRIPTION, label="role-assignments-all")
     message = str(error.value)
     assert "resource-group defaults or parameter persistence" in message
     assert "No acceptance evidence" in message
@@ -968,8 +1113,9 @@ def test_unrelated_cli_failure_stays_generic(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(deployment.subprocess, "run", lambda command, **kwargs:
                         subprocess.CompletedProcess(command, 3, "",
                                                     "unrelated sensitive diagnostic"))
-    with pytest.raises(VerificationError, match="Azure read failed; inspect access") as error:
-        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION)
+    with pytest.raises(VerificationError, match=r"\(group-observation\) failed; inspect access") \
+            as error:
+        deployment.az_read(("group", "show"), subscription=SUBSCRIPTION, label="group-observation")
     assert "sensitive" not in str(error.value)
 
 
@@ -991,13 +1137,15 @@ def test_residual_group_state_failure_records_no_evidence(stderr: str,
 
     real_az_read = deployment.az_read
 
-    def az_read(command: tuple[str, ...], *args: str, subscription: str) -> object:
+    def az_read(command: tuple[str, ...], *args: str, label: str, subscription: str,
+                phase: str = "") -> object:
         if command == ("role", "assignment", "list"):
             monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
             monkeypatch.setattr(deployment.subprocess, "run", lambda cmd, **kw:
                                 subprocess.CompletedProcess(cmd, 2, "", stderr))
-            return real_az_read(command, *args, subscription=subscription)
-        return double(command, *args, subscription=subscription)
+            return real_az_read(command, *args, subscription=subscription, label=label,
+                                phase=phase)
+        return double(command, *args, label=label, subscription=subscription, phase=phase)
 
     monkeypatch.setattr(deployment, "az_read", az_read)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
@@ -1020,12 +1168,13 @@ def test_failed_rbac_read_prevents_evidence(view: str, monkeypatch: pytest.Monke
     """Either failed authority read prevents HTTP and success evidence construction."""
     read = collector_double(observed(), [])
 
-    def failing(command: tuple[str, ...], *args: str, subscription: str) -> object:
+    def failing(command: tuple[str, ...], *args: str, label: str, subscription: str,
+                phase: str = "") -> object:
         if command == ("role", "assignment", "list") and (
                 (view == "roles" and "--all" in args)
                 or (view == "inherited_roles" and "--scope" in args)):
             raise VerificationError("Synthetic RBAC collection failure.")
-        return read(command, *args, subscription=subscription)
+        return read(command, *args, label=label, subscription=subscription, phase=phase)
 
     monkeypatch.setattr(deployment, "az_read", failing)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
