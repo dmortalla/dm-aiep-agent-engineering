@@ -502,7 +502,7 @@ def test_https_failures(bad: str, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_render_is_offline_and_no_cloud_claim(monkeypatch: pytest.MonkeyPatch,
                                             tmp_path: Path) -> None:
     """Rendering has no Azure/Docker/HTTP calls and never emits deployed status."""
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment, "verify", lambda *args: pytest.fail("cloud reached"))
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", "reviewa",
                         "--reviewer-cidr", "8.8.8.8/32", "--render", "foundation",
@@ -984,7 +984,7 @@ def test_residual_group_state_failure_records_no_evidence(stderr: str,
     """Residual default-state interference through main leaves no artifact and echoes nothing."""
     double = collector_double(observed(), [])
     output = tmp_path / "no-acceptance.json"
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
 
@@ -1068,7 +1068,7 @@ def test_cli_acceptance_never_writes_failed_evidence(failure: str,
         state["app"]["properties"]["template"]["containers"][0]["probes"][0]["httpGet"][
             "host"] = "external.example"
     output = tmp_path / "no-acceptance.json"
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment, "az_read", collector_double(state, []))
     monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
@@ -1103,7 +1103,7 @@ def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
     output = tmp_path / "acceptance.json"
     monkeypatch.setattr(sys, "stdin", synthetic_pipe(value.encode("ascii")))
     monkeypatch.setattr(deployment.getpass, "getpass", lambda *a: pytest.fail("fallback"))
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
@@ -1128,7 +1128,7 @@ def test_prevalidation_failure_attribution(monkeypatch: pytest.MonkeyPatch,
                                            capsys: pytest.CaptureFixture) -> None:
     """Operator input/config failures one-shot the fixed pre-verification stage text."""
     output = tmp_path / "no-acceptance.json"
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", "evil;rm",
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "foundation",
                         "--output", str(output)])
@@ -1163,7 +1163,7 @@ def test_unexpected_internal_failure_cannot_echo_exception_text(
         capsys: pytest.CaptureFixture) -> None:
     """Arbitrary ValueError text from an unclassified stage stays out of CLI output."""
     output = tmp_path / "no-acceptance.json"
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
 
     def leaking(config: object, digest: object | None) -> object:
         raise ValueError("synthetic secret path E:/tmp/x; rm -rf")
@@ -1193,7 +1193,7 @@ def test_persistence_failure_reports_no_acceptance(error: Exception,
                                                   capsys: pytest.CaptureFixture) -> None:
     """A persistence failure at the success boundary is sanitized and yields no evidence."""
     output = tmp_path / "blocked.json"
-    monkeypatch.setattr(deployment, "EVIDENCE_ROOT", tmp_path)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
 
     def broken_open(self: Path, *args: object, **kwargs: object) -> object:
         raise error
@@ -1545,3 +1545,168 @@ def test_revision_running_states_from_approved_contract(running_state: str) -> N
     expected_fqdn = CONFIG.names["app"] + ".synthetic.southcentralus.azurecontainerapps.io"
     assert validate_state(CONFIG, DIGEST, state, SUBSCRIPTION) == expected_fqdn
     assert state == original
+
+
+@pytest.fixture(params=["primary", "linked"])
+def evidence_topology(request: pytest.FixtureRequest, tmp_path: Path,
+                      monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Path]:
+    """Create real local Git metadata at unrelated synthetic checkout/worktree depths."""
+    project = tmp_path / "academy" / "project"
+    hooks = tmp_path / "empty-hooks"
+    hooks.mkdir()
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.upper().startswith("GIT_")}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "-c", "commit.gpgsign=false",
+                        "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                        *args], capture_output=True, check=True, timeout=10, env=environment)
+
+    git("init", "--quiet", f"--template={hooks}", str(project))
+    git("-C", str(project), "commit", "--quiet", "--allow-empty", "-m", "Synthetic topology")
+    checkout = project
+    if request.param == "linked":
+        checkout = tmp_path / "academy" / "WORKTREES" / "extra" / "depth" / "review"
+        git("-C", str(project), "worktree", "add", "--quiet", "--detach", str(checkout))
+    module = checkout / "module-10"
+    module.mkdir()
+    approved = project.parent / "EVIDENCE"
+    approved.mkdir()
+    monkeypatch.setattr(deployment, "ROOT", module)
+    return project, checkout, approved
+
+
+def test_evidence_topology_accepts_canonical_destination(
+        evidence_topology: tuple[Path, Path, Path]) -> None:
+    """Both actual Git topologies resolve the same approved external project sibling."""
+    _, _, approved = evidence_topology
+    output = approved / "synthetic-new.json"
+    assert deployment.evidence_root() == approved.resolve()
+    assert deployment.destination(output) == output.resolve()
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("target", ["primary", "checkout", "sibling", "worktrees-evidence",
+                                    "prefix", "traversal", "existing"])
+def test_evidence_topology_rejects_unapproved_destinations(
+        evidence_topology: tuple[Path, Path, Path], target: str) -> None:
+    """Repository paths, arbitrary evidence lookalikes, traversal and existing files fail."""
+    project, checkout, approved = evidence_topology
+    paths = {"primary": project / "internal.json", "checkout": checkout / "internal.json",
+             "sibling": project.parent / "other" / "EVIDENCE" / "new.json",
+             "worktrees-evidence": project.parent / "WORKTREES" / "EVIDENCE" / "new.json",
+             "prefix": approved.with_name("EVIDENCE-other") / "new.json",
+             "traversal": approved / ".." / "escape.json",
+             "existing": approved / "existing.json"}
+    paths["existing"].write_text("existing artifact")
+    with pytest.raises(ValueError):
+        deployment.destination(paths[target])
+    assert paths["existing"].read_text() == "existing artifact"
+
+
+@pytest.mark.parametrize("placement", ["root", "child"])
+def test_evidence_topology_rejects_symlink_escape(
+        evidence_topology: tuple[Path, Path, Path], placement: str) -> None:
+    """Neither the approved evidence root nor a child may redirect writes outside policy."""
+    project, _, approved = evidence_topology
+    outside = project.parent / "elsewhere"
+    outside.mkdir()
+    link = approved if placement == "root" else approved / "redirect"
+    if placement == "root":
+        approved.rmdir()
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        # Windows directory junctions exercise the same Path.resolve containment
+        # boundary without requiring the optional symlink privilege.
+        if sys.platform != "win32":
+            raise
+        import _winapi
+
+        _winapi.CreateJunction(str(outside), str(link))
+    with pytest.raises(ValueError):
+        deployment.destination(link / "new.json")
+    assert not (outside / "new.json").exists()
+
+
+def test_evidence_topology_ignores_git_environment_overrides(
+        evidence_topology: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Operator Git environment settings cannot choose another evidence authority."""
+    _, checkout, approved = evidence_topology
+    for key in ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE"):
+        monkeypatch.setenv(key, str(checkout / "untrusted-private-override"))
+    assert deployment.evidence_root() == approved.resolve()
+    assert os.environ["GIT_DIR"].endswith("untrusted-private-override")
+
+
+@pytest.mark.parametrize("bad", ["relative", "other-top", "other-common", "extra-line",
+                                 "timeout", "unavailable"])
+def test_evidence_topology_ambiguous_metadata_fails_closed(
+        evidence_topology: tuple[Path, Path, Path], bad: str,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unavailable, malformed or inconsistent Git relationships never select a guessed root."""
+    project, checkout, _ = evidence_topology
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        if bad == "timeout":
+            raise subprocess.TimeoutExpired(command, 5, stderr="private-sentinel")
+        if bad == "unavailable":
+            raise OSError("private-sentinel")
+        responses = {"relative": "relative\n.git\n",
+                     "other-top": f"{project.parent}\n{project / '.git'}\n",
+                     "other-common": f"{checkout}\n{project}\n",
+                     "extra-line": f"{checkout}\n{project / '.git'}\nprivate-sentinel\n"}
+        return subprocess.CompletedProcess(command, 0, responses[bad], "private-sentinel")
+
+    monkeypatch.setattr(deployment.subprocess, "run", run)
+    with pytest.raises(ValueError, match="Cannot establish the trusted project evidence boundary"):
+        deployment.evidence_root()
+
+
+def test_evidence_topology_failure_keeps_sanitized_stage(
+        evidence_topology: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture) -> None:
+    """Git errors keep pre-validation attribution without paths or arbitrary exception text."""
+    _, _, approved = evidence_topology
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise OSError("private-sentinel " + str(approved))
+
+    monkeypatch.setattr(deployment.subprocess, "run", unavailable)
+    monkeypatch.setattr(deployment, "verify", lambda *a: pytest.fail("Verifier reached"))
+    monkeypatch.setattr(deployment, "private_subscription",
+                        lambda **kw: pytest.fail("Stdin reached"))
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
+                        "--verify-cloud", "--output", str(approved / "never.json")])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1
+    transcript = capsys.readouterr().err
+    assert "Pre-verification input/configuration validation failed" in transcript
+    assert "private-sentinel" not in transcript and str(approved) not in transcript
+    assert not (approved / "never.json").exists()
+
+
+def test_evidence_topology_exclusive_create_preserved(
+        evidence_topology: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture) -> None:
+    """A file created after destination validation cannot be overwritten or report success."""
+    _, _, approved = evidence_topology
+    output = approved / "race.json"
+
+    def render(*args: object) -> dict:
+        output.write_text("concurrent artifact")
+        return {}
+
+    monkeypatch.setattr(deployment, "arm_template", render)
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "foundation",
+                        "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1
+    assert output.read_text() == "concurrent artifact"
+    captured = capsys.readouterr()
+    assert "Success evidence could not be persisted" in captured.err
+    assert "rendered" not in captured.out

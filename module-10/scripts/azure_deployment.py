@@ -28,7 +28,6 @@ from module10_ai.http_schemas import ErrorOutput, InferenceOutput
 from module10_ai.telemetry import correlation_id
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_ROOT = ROOT.parent.parent / "EVIDENCE"
 READ_COMMANDS = frozenset({
     ("group", "show"), ("resource", "list"), ("resource", "show"),
     ("acr", "config", "authentication-as-arm", "show"), ("acr", "manifest", "show-metadata"),
@@ -37,10 +36,51 @@ READ_COMMANDS = frozenset({
 })
 
 
+def evidence_root() -> Path:
+    """Derive the approved evidence sibling from Git's primary checkout relationship.
+
+    Git resolves linked-worktree gitfiles and commondir metadata. Only a standard
+    primary checkout with a real .git directory is supported; ambiguous/separate
+    Git directories and redirected evidence roots fail closed. Git environment
+    overrides cannot substitute another repository for the running module.
+    """
+    message = "Cannot establish the trusted project evidence boundary; inspect Git checkout setup."
+    try:
+        repository = ROOT.parent.resolve()
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+            cwd=repository, capture_output=True, text=True, check=True, timeout=5,
+            env={key: value for key, value in os.environ.items()
+                 if not key.upper().startswith("GIT_")},
+        )
+        lines = result.stdout.splitlines()
+        if len(result.stdout) > 8192 or len(lines) != 2:
+            raise ValueError(message)
+        top, common = map(Path, lines)
+        if not top.is_absolute() or not common.is_absolute():
+            raise ValueError(message)
+        common = common.resolve(strict=True)
+        if (top.resolve(strict=True) != repository or common.name != ".git"
+                or not common.is_dir() or (common.parent / ".git").is_symlink()):
+            raise ValueError(message)
+        primary_checkout = common.parent
+        approved = primary_checkout.parent / "EVIDENCE"
+        if approved.resolve() != approved:
+            raise ValueError(message)
+        return approved
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        raise ValueError(message) from exc
+
+
 def destination(path: Path) -> Path:
-    """Require a new external evidence file in the repository's parent EVIDENCE folder."""
-    resolved = path.resolve()
-    if not resolved.is_relative_to(EVIDENCE_ROOT.resolve()) or resolved.exists():
+    """Require a new file within the canonical external project evidence directory."""
+    approved = evidence_root()
+    try:
+        resolved = path.resolve()
+    except RuntimeError as exc:
+        raise ValueError("Evidence destination could not be resolved safely.") from exc
+    if (not resolved.is_relative_to(approved) or resolved.is_relative_to(ROOT.parent.resolve())
+            or resolved.exists() or path.is_symlink()):
         raise ValueError("Use a new file under parent TECHADEMY/EVIDENCE.")
     if not resolved.parent.is_dir():
         raise ValueError("Create the external evidence parent directory before this command.")
