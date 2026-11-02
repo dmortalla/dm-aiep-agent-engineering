@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from itertools import permutations
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -1562,17 +1563,27 @@ def evidence_topology(request: pytest.FixtureRequest, tmp_path: Path,
                         "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
                         *args], capture_output=True, check=True, timeout=10, env=environment)
 
+    def git_at(cwd: Path, *args: str) -> None:
+        subprocess.run(["git", "-C", str(cwd), "-c", f"core.hooksPath={hooks}",
+                        "-c", "commit.gpgsign=false", "-c", "user.name=Synthetic",
+                        "-c", "user.email=synthetic@example.invalid", *args],
+                       capture_output=True, check=True, timeout=10, env=environment)
+
     git("init", "--quiet", f"--template={hooks}", str(project))
-    git("-C", str(project), "commit", "--quiet", "--allow-empty", "-m", "Synthetic topology")
+    project_module = project / "module-10" / "scripts" / "azure_deployment.py"
+    project_module.parent.mkdir(parents=True)
+    project_module.write_text("# synthetic verifier module\n", encoding="utf-8")
+    git_at(project, "add", "module-10")
+    git_at(project, "commit", "--quiet", "--allow-empty", "-m", "Synthetic topology")
     checkout = project
     if request.param == "linked":
         checkout = tmp_path / "academy" / "WORKTREES" / "extra" / "depth" / "review"
-        git("-C", str(project), "worktree", "add", "--quiet", "--detach", str(checkout))
-    module = checkout / "module-10"
-    module.mkdir()
+        git_at(project, "worktree", "add", "--quiet", "--detach", str(checkout))
+    tracked_module = checkout / "module-10" / "scripts" / "azure_deployment.py"
     approved = project.parent / "EVIDENCE"
     approved.mkdir()
-    monkeypatch.setattr(deployment, "ROOT", module)
+    monkeypatch.setattr(deployment, "ROOT", checkout / "module-10")
+    monkeypatch.setattr(deployment, "__file__", str(tracked_module))
     return project, checkout, approved
 
 
@@ -1710,3 +1721,99 @@ def test_evidence_topology_exclusive_create_preserved(
     captured = capsys.readouterr()
     assert "Success evidence could not be persisted" in captured.err
     assert "rendered" not in captured.out
+
+
+@pytest.fixture()
+def synthetic_git(tmp_path: Path) -> Callable[..., None]:
+    """Run real local Git commands with a fixed synthetic identity and no hook effects."""
+    hooks = tmp_path / "attack-hooks"
+    hooks.mkdir()
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.upper().startswith("GIT_")}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "-c", "commit.gpgsign=false",
+                        "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                        *args], capture_output=True, check=True, timeout=10, env=environment)
+
+    return git
+
+
+def _tracked_module(git: Callable[..., None], repo: Path) -> Path:
+    """Track a synthetic verifier module in a real Git repository and return its path."""
+    module = repo / "module-10" / "scripts" / "azure_deployment.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# synthetic verifier module\n", encoding="utf-8")
+    git("-C", str(repo), "add", "module-10")
+    git("-C", str(repo), "commit", "--quiet", "--allow-empty", "-m", "Synthetic topology")
+    return module
+
+
+def _registered_dir(project: Path, checkout: Path) -> Path:
+    """Locate the Git worktree registration of a linked checkout inside its common dir."""
+    return next(candidate for candidate in (project / ".git" / "worktrees").iterdir()
+                if candidate.is_dir() and (candidate / "gitdir").is_file()
+                and (Path((candidate / "gitdir").read_text(encoding="utf-8").strip())
+                     == checkout / ".git"))
+
+
+def test_evidence_rejects_separate_git_directory_layouts(
+        tmp_path: Path, synthetic_git: Callable[..., None]) -> None:
+    """Real separate Git directories cannot export the evidence boundary, named or not."""
+    for store in (tmp_path / "attacker" / "department", tmp_path / "attacker" / "variant" / ".git"):
+        checkout = store.parent / "checkout"
+        synthetic_git("init", "--quiet", "--separate-git-dir", str(store), str(checkout))
+        module = _tracked_module(synthetic_git, checkout)
+        with pytest.raises(ValueError, match="Cannot establish the trusted project evidence"):
+            deployment.trusted_evidence(checkout, module)
+        assert module.exists() and not (store.parent / "EVIDENCE").exists()
+
+
+def test_evidence_rejects_redirected_common_directory(
+        tmp_path: Path, synthetic_git: Callable[..., None]) -> None:
+    """A redirected common-directory binding inside real metadata fails closed."""
+    redirected = tmp_path / "cluster" / "external-store"
+    checkout = tmp_path / "cluster" / "checkout"
+    synthetic_git("init", "--quiet", "--separate-git-dir", str(redirected), str(checkout))
+    module = _tracked_module(synthetic_git, checkout)
+    victim = tmp_path / "far" / "community"
+    synthetic_git("init", "--quiet", str(victim))
+    (redirected / "commondir").write_text(str(victim / ".git"), encoding="utf-8")
+    with pytest.raises(ValueError, match="Cannot establish the trusted project evidence"):
+        deployment.trusted_evidence(checkout, module)
+    assert not (victim / "EVIDENCE").exists()
+
+
+def test_evidence_rejects_tampered_worktree_common_directory(
+        tmp_path: Path, synthetic_git: Callable[..., None]) -> None:
+    """A tampered linked-worktree commondir cannot move the authenticated common."""
+    project = tmp_path / "academy" / "project"
+    synthetic_git("init", "--quiet", str(project))
+    _tracked_module(synthetic_git, project)
+    checkout = tmp_path / "academy" / "deeper" / "review"
+    synthetic_git("-C", str(project), "worktree", "add", "--quiet", "--detach", str(checkout))
+    registration = _registered_dir(project, checkout)
+    foreign = tmp_path / "swamp" / "other-repo"
+    synthetic_git("init", "--quiet", str(foreign))
+    (registration / "commondir").write_text(str(foreign / ".git"), encoding="utf-8")
+    module = checkout / "module-10" / "scripts" / "azure_deployment.py"
+    with pytest.raises(ValueError, match="Cannot establish the trusted project evidence"):
+        deployment.trusted_evidence(checkout, module)
+    assert not (foreign / "EVIDENCE").exists()
+
+
+def test_evidence_rejects_foreign_repository_common(
+        tmp_path: Path, synthetic_git: Callable[..., None]) -> None:
+    """A consistent worktree of an unrelated repository is not the module's repository."""
+    foreign = tmp_path / "foreign" / "project"
+    synthetic_git("init", "--quiet", str(foreign))
+    synthetic_git("-C", str(foreign), "commit", "--quiet", "--allow-empty",
+                  "-m", "Unrelated repository")
+    checkout = tmp_path / "foreign" / "worktrees" / "review"
+    synthetic_git("-C", str(foreign), "worktree", "add", "--quiet", "--detach", str(checkout))
+    module = checkout / "module-10" / "scripts" / "azure_deployment.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# untracked synthetic module\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Cannot establish the trusted project evidence"):
+        deployment.trusted_evidence(checkout, module)
+    assert not (foreign / "EVIDENCE").exists()

@@ -36,40 +36,108 @@ READ_COMMANDS = frozenset({
 })
 
 
-def evidence_root() -> Path:
-    """Derive the approved evidence sibling from Git's primary checkout relationship.
+def _git_lines(cwd: Path, *args: str) -> list[str]:
+    """Run a bounded read-only Git query with environment overrides stripped."""
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.upper().startswith("GIT_")}
+    result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True,
+                            text=True, check=True, timeout=5, env=environment)
+    if len(result.stdout.encode()) > 8192:
+        raise ValueError("Git reported an oversized response.")
+    return result.stdout.splitlines()
 
-    Git resolves linked-worktree gitfiles and commondir metadata. Only a standard
-    primary checkout with a real .git directory is supported; ambiguous/separate
-    Git directories and redirected evidence roots fail closed. Git environment
-    overrides cannot substitute another repository for the running module.
+
+def _authenticated_worktree(repository: Path, common: Path) -> None:
+    """Authenticate a linked-worktree checkout against Git's own registration files.
+
+    Args:
+        repository: The running linked-worktree checkout with a ``.git`` pointer file.
+        common: Git's reported common directory; must own the worktree registration.
+
+    Raises:
+        ValueError: The pointer, registration reciprocity or commondir binding is
+            not exactly the relationship Git creates between a real checkout and
+            its owning repository.
+    """
+    pointer = (repository / ".git").read_text(encoding="utf-8").strip()
+    if not pointer.startswith("gitdir: "):
+        raise ValueError("Checkout lacks an authoritative Git worktree pointer.")
+    gitdir = Path(pointer[len("gitdir: "):])
+    if not gitdir.is_absolute():
+        gitdir = repository / gitdir
+    gitdir = gitdir.resolve(strict=True)
+    if gitdir.parent.name != "worktrees" \
+            or os.path.normcase(str(gitdir.parent.parent)) != os.path.normcase(str(common)):
+        raise ValueError("Worktree metadata is not registered inside the common directory.")
+    common_binding = gitdir / "commondir"
+    if not common_binding.is_file() \
+            or os.path.normcase(str((gitdir / common_binding.read_text(encoding="utf-8").strip())
+                                    .resolve(strict=True))) != os.path.normcase(str(common)):
+        raise ValueError("Worktree common-directory binding differs from common metadata.")
+    reciprocal = gitdir / "gitdir"
+    if not reciprocal.is_file() \
+            or os.path.normcase(str(Path(reciprocal.read_text(encoding="utf-8").strip())
+                                    .resolve(strict=True))) \
+            != os.path.normcase(str((repository / ".git").resolve())):
+        raise ValueError("Worktree registration does not point back to this checkout.")
+
+
+def trusted_evidence(checkout: Path, module: Path) -> Path:
+    """Authenticate the checkout/metadata/common/primary relationship and approve EVIDENCE.
+
+    Args:
+        checkout: The running repository or linked-worktree checkout root.
+        module: The executing module file that the authenticated repository must track.
+
+    Returns:
+        The canonical external evidence directory sibling to the authenticated
+        primary checkout's parent.
+
+    Raises:
+        ValueError: Git metadata is redirected, tampered, foreign to the running
+            module's repository or otherwise ambiguous. The relationship must
+            agree from the running checkout and from the presumed primary
+            checkout, and the running module must be tracked there.
     """
     message = "Cannot establish the trusted project evidence boundary; inspect Git checkout setup."
     try:
-        repository = ROOT.parent.resolve()
-        result = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
-            cwd=repository, capture_output=True, text=True, check=True, timeout=5,
-            env={key: value for key, value in os.environ.items()
-                 if not key.upper().startswith("GIT_")},
-        )
-        lines = result.stdout.splitlines()
-        if len(result.stdout) > 8192 or len(lines) != 2:
-            raise ValueError(message)
-        top, common = map(Path, lines)
-        if not top.is_absolute() or not common.is_absolute():
-            raise ValueError(message)
-        common = common.resolve(strict=True)
-        if (top.resolve(strict=True) != repository or common.name != ".git"
-                or not common.is_dir() or (common.parent / ".git").is_symlink()):
-            raise ValueError(message)
-        primary_checkout = common.parent
-        approved = primary_checkout.parent / "EVIDENCE"
+        repository = checkout.resolve()
+        lines = _git_lines(repository, "rev-parse", "--path-format=absolute",
+                           "--show-toplevel", "--git-common-dir")
+        if len(lines) != 2 or Path(lines[0]).resolve(strict=True) != repository \
+                or not Path(lines[1]).is_absolute() or Path(lines[1]).name != ".git" \
+                or not Path(lines[1]).resolve(strict=True).is_dir():
+            raise ValueError("Git metadata does not identify the running checkout.")
+        common = Path(lines[1]).resolve(strict=True)
+        if (repository / ".git").is_dir():
+            if os.path.normcase(str(common)) != os.path.normcase(str((repository / ".git")
+                                                                     .resolve())):
+                raise ValueError("Common metadata does not belong to the primary checkout.")
+        else:
+            _authenticated_worktree(repository, common)
+        primary = common.parent
+        primary_lines = _git_lines(primary, "rev-parse", "--path-format=absolute",
+                                   "--show-toplevel", "--git-common-dir")
+        if len(primary_lines) != 2 \
+                or Path(primary_lines[0]).resolve(strict=True) != primary \
+                or os.path.normcase(str(Path(primary_lines[1]).resolve(strict=True))) \
+                != os.path.normcase(str(common)):
+            raise ValueError("The primary checkout does not authenticate the common directory.")
+        tracked = module.relative_to(repository).as_posix()
+        lines = _git_lines(primary, "ls-files", "--error-unmatch", "--", tracked)
+        if len(lines) != 1 or os.path.normcase(lines[0]) != os.path.normcase(tracked):
+            raise ValueError("Running module is not tracked by the authenticated repository.")
+        approved = primary.parent / "EVIDENCE"
         if approved.resolve() != approved:
-            raise ValueError(message)
+            raise ValueError("Evidence boundary could not be normalized.")
         return approved
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+    except (OSError, UnicodeError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         raise ValueError(message) from exc
+
+
+def evidence_root() -> Path:
+    """Derive the approved evidence sibling for the running module checkout."""
+    return trusted_evidence(ROOT.parent, Path(__file__).resolve())
 
 
 def destination(path: Path) -> Path:
