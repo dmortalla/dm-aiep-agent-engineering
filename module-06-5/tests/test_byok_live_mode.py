@@ -414,7 +414,7 @@ def test_server_path_and_readiness_require_the_exact_enable_flag(
     expected = ReadinessStatus.NOT_CONFIGURED if enabled else ReadinessStatus.DISABLED
     assert items["Server credential path"].status is expected
     assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
-    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Deployment verification"].status is ReadinessStatus.VERIFIED
 
 
 def test_path_enablement_probe_never_reads_credentials(monkeypatch: pytest.MonkeyPatch) -> None:

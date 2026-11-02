@@ -130,8 +130,9 @@ Evidence-class terminology: the story board uses labels
 map directly onto the approved classes `deterministic` (fixed local fixtures)
 and `local-integration` (local SQLite persistence and the in-process MCP SDK
 memory transport). No new, higher-assurance category is created or implied, and
-no deployment evidence exists in this module, and live-provider evidence exists
-only as the later Story 13 bounded accepted record, not part of the story board.
+the story board carries no deployment evidence (hosted deployment verification is
+the separate, later record in the ENG-008 section), and no live-provider evidence is
+part of the story board; the only such evidence is the later Story 13 bounded accepted record.
 
 ## Story 12 Slice 2 — module-wide release reconciliation
 
@@ -247,13 +248,16 @@ verified evidence, not architectural mapping alone.
   the frozen p95 ≤ 5 s SLO is a local workflow target, and the 180 s deadline
   remains a separate safety bound.
 - The application-level sandbox is not OS/container isolation.
-- Deployment evidence does not exist; engineering release for this module ends
-  at independently reviewed engineering acceptance and is distinct from
-  deployment verification, which has not occurred.
+- Hosted deployment verification (recorded 2026-10-30, class `deployment`) is bounded
+  to one startup and one explicit adapter-class OpenAI BYOK call; it is not
+  live-provider evidence, not Anthropic hosted validation, and not an SLA, billing,
+  scale or provider-level production-readiness claim. Engineering release for this
+  module is distinct from that deployment verification and from final closeout.
 
-Module 6.5 engineering release is a Slice 2 candidate pending independent
-review (`docs/STORY_12_SLICE_2.md`, `docs/RELEASE_READINESS.md`); deployment
-verification and final module closeout are separate later gates.
+Module 6.5 engineering release was a Slice 2 candidate (`docs/STORY_12_SLICE_2.md`,
+`docs/RELEASE_READINESS.md`) and has since been independently accepted and committed
+(`d4d2fd0`; reviewer-UI reconciliation `7ce1bd8`); hosted deployment
+verification (recorded later, ENG-008 section) and final module closeout are separate gates.
 
 ## Release reconciliation status
 
@@ -271,7 +275,8 @@ with completion tracked by Story 13 and the section above. At that time no
 provider-level production-readiness claim existed and live-provider evidence
 was none; since 2026-10-27 accepted, bounded live-provider evidence exists for
 the reviewed run (ENG-008 section below). The provider-level
-production-readiness claim is still not made, and deployment is not verified.
+production-readiness claim is still not made; hosted deployment verification was
+recorded on 2026-10-30 at the `deployment` class (ENG-008 section below).
 
 ## Corrective dual-mode contract (ENG-008) — adopted 2026-10-23, Story 13 live-evidence gate satisfied 2026-10-27
 
@@ -331,9 +336,32 @@ raw artifact stays external; baseline commit `e1e5e1a`; SHA256
 `389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4`; typed record in
 `live_readiness.py`. The live-path exercising happened only inside the separate human-authorized gate.
 This satisfies the ENG-008 live-evidence requirement for these
-providers and models only. Deployment evidence does not exist, no provider-level
+providers and models only. No provider-level
 production-readiness claim is made, and adapter or mocked evidence must not be
 represented as live-provider evidence.
+
+Hosted deployment verification (recorded 2026-10-30; class `deployment`, readiness row
+`verified`): traced to ENG-008 (deployment is a distinct evidence class), to the
+reviewer-interface deliverable and to the Story 13 deployment-dependency contract
+(`uv.lock` installs openai, anthropic and mcp). Implementation:
+`HostedDeploymentVerification` / `HOSTED_DEPLOYMENT_VERIFICATIONS` in `live_readiness.py`,
+rendered by `streamlit_app.py`; verification: `tests/test_hosted_deployment_verification.py`
+(including the structural `uv.lock` version tie), `tests/test_dependency_contract.py` and
+`tests/test_deployment_demo_acceptance.py`. Recorded facts: public Streamlit app rebuilt
+from `main`, entrypoint `module-06-5/streamlit_app.py`, openai 2.54.0 / anthropic 1.13.0 /
+mcp 2.3.0 installed from `uv.lock`, Streamlit 1.66.1 host-supplied, startup succeeded, and
+one bounded explicit BYOK OpenAI call (`gpt-6-luna`, one attempt, no retry, 21/47 tokens,
+conservative exposure USD 0.0000256, no server credential). Evidence-class separation:
+that call is `adapter`-class, never `live_provider`; the only `live_provider` records
+remain the two independently accepted Story 13 exercises; `deterministic` and `mocked`
+evidence are unchanged. Anthropic was not exercised through the hosted app. External
+provenance (artifacts held outside the repository, referenced by digest only; never read
+at runtime and granting no authority): Streamlit deployment log SHA256
+`2AA36C78E94D4D4338A8F42513C96C56F91C20DDCDBC518FA61151BC7837499B`; hosted BYOK success
+screenshot SHA256
+`5D80C5E6AA8D5C832CE9904EC4F91E93FF9CE547F2B31FAB0C82E8466063094B`. No SLA,
+billing-certification, scale-readiness or universal provider validation claim is made,
+and provider-level production readiness remains not claimed.
 
 `tests/test_dual_mode_contract.py` mechanically protects this contract:
 the ENG-008 wording, ADR 002/ADR 001 addendum, Story 13/DoD entries,

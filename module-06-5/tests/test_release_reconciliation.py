@@ -243,7 +243,7 @@ def test_release_non_claims_are_preserved_and_not_elevated() -> None:
         "not provider prices; no verified billing exists",
         "not production-latency certification",
         "not OS/container isolation",
-        "Deployment evidence does not exist",
+        "not Anthropic hosted validation",
     ):
         assert non_claim in traceability, f"missing non-claim: {non_claim}"
     _negated_everywhere(traceability, "live-provider")

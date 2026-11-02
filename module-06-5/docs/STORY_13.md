@@ -384,7 +384,8 @@ Architecture, using the existing governed path and no new authority:
 - **Why this is production-grade:** security comes from secret non-persistence,
   explicit opt-in, least authority, application-owned allowlists and bounds,
   independent authorization, and evidence separation, not from hiding the input
-  field. Deployment remains not verified and Module 6.5 is not complete.
+  field. At this checkpoint (before the 2026-10-30 hosted verification recorded below),
+  deployment was not yet verified; Module 6.5 is not complete.
 
 ### Secret lifecycle (precise)
 
@@ -432,8 +433,9 @@ credentials are not required for BYOK) and changes only when the exact operator 
 reported as `not_configured` because credential presence is not verified by the page.
 The former single row "Live mode in this deployment · not_configured" conflated the two
 and was misleading; it was removed. Evidence classes are unchanged (deterministic,
-adapter, mocked live seam, accepted live_provider), deployment verification stays
-`pending`, and provider-level production readiness stays `not_claimed`.
+adapter, mocked live seam, accepted live_provider); as of this checkpoint, deployment
+verification was `pending` (superseded by the 2026-10-30 hosted verification below, where
+it is `verified`), and provider-level production readiness stays `not_claimed`.
 
 ### Deployment dependency contract
 
@@ -464,3 +466,42 @@ not the earlier `admin_api_key` `TypeError`, which would escape as a defect. Dep
 absence still surfaces only as the fixed `configuration` category with a fixed message; no
 module-not-found text, paths or environment details are exposed, and no extra diagnostic
 code was added because the dependency guarantee removes the cause.
+
+### Hosted deployment verification (2026-10-30)
+
+After the runtime-dependency repair, the public Streamlit deployment was rebuilt from the
+accepted `main` release (entrypoint `module-06-5/streamlit_app.py`). The hosted install
+processed `module-06-5/uv.lock` with `uv-sync` and installed `openai==2.54.0`,
+`anthropic==1.13.0` and `mcp==2.3.0`; the platform installed `streamlit==1.66.1`
+separately. The application started successfully. The hosted reviewer panel showed
+deterministic no-key mode, adapter readiness and the secure live seam `verified`, BYOK live
+mode `available`, the server credential path `disabled`, both accepted live-provider
+records `accepted`, and provider-level production readiness `not_claimed`.
+
+One explicitly authorized, bounded hosted OpenAI BYOK call was then made through the
+governed path: `gpt-6-luna`, status succeeded, credential path `byok`, evidence class
+`adapter`, 21 input and 47 output tokens, conservative exposure USD 0.0000256, one attempt,
+no retry, no server-side credential used. The key was not visible in the captured
+screenshot.
+
+This is human-supplied deployment-verification evidence, recorded as a typed
+`HostedDeploymentVerification` in `live_readiness.py`; the "Deployment verification" row
+(`verified`, class `deployment`) and the deployment caption are derived from it, and with
+no record they revert to `pending`. Its call record admits only an OpenAI, adapter-class,
+BYOK call, so it cannot be read as `live_provider` evidence and cannot represent an Anthropic
+hosted call. The independently accepted OpenAI and Anthropic `live_provider` records are
+unchanged. Not claimed: Anthropic exercised on the hosted app, SLA, billing certification,
+unlimited scale, universal provider validation, or provider-level production readiness.
+Anthropic was not exercised through the hosted app.
+
+Provenance: the evidence artifacts stay outside the repository and are referenced by digest
+only (carried in the typed record, never read at runtime, granting no authority): Streamlit
+deployment log SHA256
+`2AA36C78E94D4D4338A8F42513C96C56F91C20DDCDBC518FA61151BC7837499B`; hosted BYOK success
+screenshot SHA256
+`5D80C5E6AA8D5C832CE9904EC4F91E93FF9CE547F2B31FAB0C82E8466063094B`. The recorded
+openai/anthropic/mcp versions are tied to `uv.lock` by a structural test.
+
+`RELEASE_READINESS.md` and `TRACEABILITY.md` now carry the same record. Root `README.md` and
+`docs/PROJECT_STATUS.md` carry the earlier wording and await the later controlled
+main-lane reconciliation.
