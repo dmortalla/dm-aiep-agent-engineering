@@ -1393,11 +1393,13 @@ class _BlockingTransport(HeliconeEvidenceTransport):
     def __init__(self) -> None:
         """Create the bounded blocking fixture."""
         self.gate = threading.Event()
+        self.entered = threading.Event()
         self.submitted = 0
 
     def submit_evidence(self, spec: HeliconeEvidenceExportSpec) -> None:
         _ = spec
         self.submitted += 1
+        self.entered.set()
         self.gate.wait(timeout=_MAX_REAL_STEP_SECONDS)
 
     def read_back(self, spec: HeliconeEvidenceExportSpec) -> list[dict[str, object]]:
@@ -1473,6 +1475,8 @@ def _run_s20(runner: LabRunner) -> dict[str, object]:
         )
         if outcome != "timeout":
             raise _InvariantFailure("s20", "ownership_not_retained")
+        if not blocking.entered.wait(timeout=_MAX_REAL_STEP_SECONDS):
+            raise _InvariantFailure("s20", "worker_not_started")
         busy, _rows, _thread = _run(
             _helicone_submit_evidence_bounded(blocking, spec, 0.05)
         )

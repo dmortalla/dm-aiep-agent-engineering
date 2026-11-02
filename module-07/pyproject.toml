@@ -21,6 +21,8 @@ dependencies = [
     # Story 6: the adapter-owned requests session transport, contradicted only
     # otherwise; locked 2.34.2 resolution reused.
     "requests>=2.32,<3",
+    # Story 9 ownership boundary is validated only against Streamlit 1.66.1.
+    "streamlit==1.66.1",
 ]
 
 [project.optional-dependencies]
