@@ -11,6 +11,7 @@ Live-provider evidence is not deployment validation, an SLA, billing accuracy,
 or universal provider validation.
 """
 
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal, Self
@@ -204,6 +205,103 @@ def live_provider_ready(records: tuple[EvidenceRecord, ...], provider: str) -> b
     )
 
 
+class HostedByokCall(BaseModel):
+    """Sanitized facts of the one bounded BYOK call made on the hosted deployment.
+
+    This is deployment-verification evidence only. It is adapter-class by construction
+    (``evidence_class`` admits nothing else), so it can never be read as ``live_provider``
+    evidence, and it can only describe an OpenAI call: no Anthropic hosted call is
+    representable. It holds no key, response text, or error content.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    provider: Literal["openai"]
+    model: Literal["gpt-6-luna"]
+    status: Literal["succeeded"]
+    credential_path: Literal["byok"]
+    evidence_class: Literal["adapter"]
+    attempts: Annotated[int, Field(ge=1, le=1)]
+    retries: Annotated[int, Field(ge=0, le=0)]
+    input_tokens: Annotated[int, Field(ge=0, le=512)]
+    output_tokens: Annotated[int, Field(ge=0, le=256)]
+    live_exposure_usd: Decimal
+    max_cost_usd: Decimal
+
+    @model_validator(mode="after")
+    def validate_exposure(self) -> Self:
+        """Require positive exposure within the application-owned cost cap.
+
+        Returns:
+            The validated record.
+
+        Raises:
+            ValueError: If exposure is non-positive or exceeds the cap.
+        """
+        if not Decimal(0) < self.live_exposure_usd <= self.max_cost_usd:
+            raise ValueError("hosted exposure must be positive and within the cost cap")
+        return self
+
+
+class HostedDeploymentVerification(BaseModel):
+    """Human-supplied record that the public Streamlit deployment was verified.
+
+    Deployment evidence is a separate class from ``live_provider``: this record never
+    satisfies, creates, or alters live-provider evidence, and it makes no provider-level
+    production-readiness, SLA, billing, or scale claim.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    verified_on: date
+    source: Literal["human-supplied hosted deployment evidence"]
+    branch: Literal["main"]
+    entrypoint: Literal["module-06-5/streamlit_app.py"]
+    dependency_install: Literal["uv-sync of module-06-5/uv.lock"]
+    openai_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+    anthropic_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+    mcp_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+    streamlit_version_host_supplied: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+    startup_succeeded: Literal[True]
+    server_credential_path_used: Literal[False]
+    anthropic_exercised_on_hosted_app: Literal[False]
+    byok_call: HostedByokCall
+    # Immutable provenance only: digests of externally held artifacts. Nothing reads those
+    # artifacts at runtime and the digests grant no authority.
+    deployment_log_sha256: Annotated[str, Field(pattern=r"^[0-9A-F]{64}$")]
+    byok_screenshot_sha256: Annotated[str, Field(pattern=r"^[0-9A-F]{64}$")]
+
+
+# Hosted verification after the accepted runtime-dependency repair. The hosted install
+# processed uv.lock and installed the three runtime packages; Streamlit was installed
+# separately by the platform. One explicit BYOK OpenAI call succeeded through the governed
+# path; no server credential was used and nothing was retried.
+HOSTED_DEPLOYMENT_VERIFICATIONS: tuple[HostedDeploymentVerification, ...] = (
+    HostedDeploymentVerification(
+        verified_on=date(2026, 10, 30),
+        source="human-supplied hosted deployment evidence",
+        branch="main",
+        entrypoint="module-06-5/streamlit_app.py",
+        dependency_install="uv-sync of module-06-5/uv.lock",
+        openai_version="2.54.0", anthropic_version="1.13.0", mcp_version="2.3.0",
+        streamlit_version_host_supplied="1.66.1",
+        startup_succeeded=True, server_credential_path_used=False,
+        anthropic_exercised_on_hosted_app=False,
+        byok_call=HostedByokCall(
+            provider="openai", model="gpt-6-luna", status="succeeded", credential_path="byok",
+            evidence_class="adapter", attempts=1, retries=0, input_tokens=21, output_tokens=47,
+            live_exposure_usd=Decimal("0.0000256"), max_cost_usd=Decimal("0.001"),
+        ),
+        deployment_log_sha256=(
+            "2AA36C78E94D4D4338A8F42513C96C56F91C20DDCDBC518FA61151BC7837499B"
+        ),
+        byok_screenshot_sha256=(
+            "5D80C5E6AA8D5C832CE9904EC4F91E93FF9CE547F2B31FAB0C82E8466063094B"
+        ),
+    ),
+)
+
+
 class ReadinessItem(BaseModel):
     """One inert reviewer-facing readiness line."""
 
@@ -212,7 +310,21 @@ class ReadinessItem(BaseModel):
     capability: Annotated[str, Field(max_length=80)]
     evidence: EvidenceClass | None
     status: ReadinessStatus
-    summary: Annotated[str, Field(max_length=360)]
+    summary: Annotated[str, Field(max_length=480)]
+
+
+def _hosted_summary(record: HostedDeploymentVerification) -> str:
+    """Summarize a hosted verification record without implying more than it states."""
+    call = record.byok_call
+    return (
+        f"Hosted app rebuilt from the accepted main release (uv-sync of uv.lock: openai "
+        f"{record.openai_version}, anthropic {record.anthropic_version}, mcp "
+        f"{record.mcp_version}; Streamlit supplied by the host), started, and ran one bounded "
+        f"explicit BYOK {call.provider} call ({call.model}, {call.evidence_class}-class, "
+        f"{call.input_tokens}/{call.output_tokens} tokens, exposure ${call.live_exposure_usd:f}). "
+        "Not live-provider evidence; Anthropic not exercised on the hosted app; no SLA, "
+        "billing, scale or production-readiness claim."
+    )
 
 
 def _accepted_summary(provider: str) -> str:
@@ -256,11 +368,44 @@ def live_evidence_caption(records: tuple[EvidenceRecord, ...] | None = None) -> 
     )
 
 
+def deployment_caption(
+    deployments: tuple[HostedDeploymentVerification, ...] | None = None,
+) -> str:
+    """Return the reviewer status caption about deployment, from records only.
+
+    Args:
+        deployments: Hosted verification records; defaults to the repository records,
+            read at call time.
+
+    Returns:
+        With a record, a bounded statement of what was verified and what is not claimed;
+        without one, the not-yet-verified statement. Never asserts independently of records.
+    """
+    chosen = HOSTED_DEPLOYMENT_VERIFICATIONS if deployments is None else deployments
+    hosted = next((r for r in chosen if type(r) is HostedDeploymentVerification), None)
+    if hosted is None:
+        return (
+            "Module 6.5 engineering release-readiness is independently accepted and "
+            "published to GitHub. The Streamlit deployment is undergoing final live "
+            "verification and is not yet verified. No hosted-service, deployment or "
+            "production-readiness claim is made."
+        )
+    return (
+        "Module 6.5 engineering release-readiness is independently accepted and published "
+        f"to GitHub. The hosted deployment was verified on {hosted.verified_on.isoformat()}: "
+        "rebuilt from the accepted main release, runtime dependencies installed, started, and "
+        "one bounded explicit BYOK OpenAI call completed (adapter-class, not live-provider "
+        "evidence). No SLA, billing, scale, universal provider-validation or provider-level "
+        "production-readiness claim is made."
+    )
+
+
 def provider_readiness(
     records: tuple[EvidenceRecord, ...] | None = None,
     config: HarnessConfig | None = None,
     *,
     server_path_enabled: bool = False,
+    deployments: tuple[HostedDeploymentVerification, ...] | None = None,
 ) -> tuple[ReadinessItem, ...]:
     """Derive truthful dual-mode readiness for presentation.
 
@@ -271,6 +416,8 @@ def provider_readiness(
             configuration. Credentials are never consulted.
         server_path_enabled: Operator flag state supplied by trusted bootstrap.
             Presentation only; never enables execution or establishes credential presence.
+        deployments: Hosted deployment verification records; defaults to the repository
+            records, read at call time. Without one the deployment row stays pending.
 
     Returns:
         Readiness items for deterministic, adapter, mocked live-seam, live
@@ -279,6 +426,7 @@ def provider_readiness(
     """
     serving = default_config() if config is None else config
     records = REPOSITORY_EVIDENCE if records is None else records
+    deployments = HOSTED_DEPLOYMENT_VERIFICATIONS if deployments is None else deployments
     classes = {record.evidence for record in records if type(record) is EvidenceRecord}
 
     def verified(evidence: EvidenceClass) -> ReadinessStatus:
@@ -348,10 +496,17 @@ def provider_readiness(
             summary=_accepted_summary(provider) if ready
             else "Not yet authorized or executed; adapter evidence does not count.",
         ))
+    # Derived from the hosted-verification records; with none, the deployment stays pending.
+    hosted = next(
+        (r for r in deployments if type(r) is HostedDeploymentVerification), None
+    )
     items.append(ReadinessItem(
         capability="Deployment verification", evidence=EvidenceClass.DEPLOYMENT,
-        status=ReadinessStatus.PENDING,
-        summary="Not verified: live-provider evidence does not validate the hosted deployment.",
+        status=ReadinessStatus.PENDING if hosted is None else ReadinessStatus.VERIFIED,
+        summary=(
+            "Not verified: live-provider evidence does not validate the hosted deployment."
+            if hosted is None else _hosted_summary(hosted)
+        ),
     ))
     items.append(ReadinessItem(
         capability="Provider-level production readiness", evidence=EvidenceClass.LIVE_PROVIDER,

@@ -90,11 +90,20 @@ def test_status_caption_reflects_accepted_state_without_stale_claims() -> None:
     for stale in ("Story 11 remains incomplete", "Slice 3 is outstanding",
                   "Builder candidate only"):
         assert stale not in source
-    assert "engineering release-readiness is independently accepted" in source
-    assert "published to GitHub" in source
-    assert "deployment is undergoing final live" in source
     assert "pending independent review" not in source
-    assert "deployment" in source and "production-readiness claim" in source
+    # The deployment status text comes from the hosted-verification records, not the UI source.
+    from harness_engineering.live_readiness import deployment_caption
+
+    unverified = deployment_caption(())
+    assert "engineering release-readiness is independently accepted" in unverified
+    assert "published to GitHub" in unverified
+    assert "deployment is undergoing final live" in unverified
+    assert "production-readiness claim" in unverified
+    verified = deployment_caption()
+    assert "engineering release-readiness is independently accepted" in verified
+    assert "hosted deployment was verified" in verified and "not live-provider" in verified
+    assert "undergoing final live" not in verified and "not yet verified" not in verified
+    assert "deployment_caption()" in source and "undergoing" not in source
 
 
 @pytest.mark.parametrize("demo", tuple(Demo))
@@ -264,8 +273,10 @@ def test_module_65_live_closeout_presentation_contract() -> None:
     assert 'MCP = "MCP capability boundary"' not in service_source
     assert 'REGRESSION = "Evaluation and regression"' not in service_source
 
-    assert "engineering release-readiness is independently accepted" in app_source
-    assert "Streamlit deployment is undergoing final live" in app_source
+    from harness_engineering.live_readiness import deployment_caption
+
+    assert "engineering release-readiness is independently accepted" in deployment_caption()
+    assert "Streamlit deployment is undergoing final live" in deployment_caption(())
     assert "pending independent review" not in app_source
     assert (
         "Developed from Techademy AI Engineering program requirements."

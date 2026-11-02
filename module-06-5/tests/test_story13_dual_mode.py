@@ -593,7 +593,7 @@ def test_adapter_and_mocked_evidence_never_satisfy_live_readiness() -> None:
     assert readiness["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
     for label in ("Live OpenAI evidence", "Live Anthropic evidence"):
         assert readiness[label].status is ReadinessStatus.ACCEPTED
-    assert readiness["Deployment verification"].status is ReadinessStatus.PENDING
+    assert readiness["Deployment verification"].status is ReadinessStatus.VERIFIED
     assert (readiness["Provider-level production readiness"].status
             is ReadinessStatus.NOT_CLAIMED)
     lower = tuple(EvidenceRecord(evidence=cls, subject="openai", basis="claimed")
@@ -622,7 +622,7 @@ def test_reviewer_ui_exposes_no_credential_input_and_truthful_readiness() -> Non
     text = "\n".join(item.value for item in at.markdown)
     assert "Live OpenAI evidence" in text and "Live Anthropic evidence" in text
     assert "`accepted`" in text and "`not_executed`" not in text
-    assert "`pending`" in text and "Deployment verification" in text
+    assert "Deployment verification" in text and "`verified`" in text
     assert "`not_claimed`" in text and "`disabled`" in text
     assert "BYOK live mode in this deployment" in text and "`available`" in text
     assert "Server credential path" in text

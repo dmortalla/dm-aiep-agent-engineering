@@ -4,7 +4,11 @@ import streamlit as st
 
 from harness_engineering.config import SUPPORTED_LIVE_MODELS
 from harness_engineering.errors import HarnessError
-from harness_engineering.live_readiness import live_evidence_caption, provider_readiness
+from harness_engineering.live_readiness import (
+    deployment_caption,
+    live_evidence_caption,
+    provider_readiness,
+)
 from harness_engineering.live_session import (
     LIVE_PROMPTS,
     MAX_LIVE_CALLS_PER_SESSION,
@@ -163,10 +167,7 @@ with st.container(border=True):
         st.markdown(f"**{item.capability}** · `{item.status.value}` · {evidence}  \n"
                     f"{item.summary}")
 st.caption(live_evidence_caption())  # Derived from the same records as the rows above.
-st.caption("Module 6.5 engineering release-readiness is independently accepted and "
-           "published to GitHub. The Streamlit deployment is undergoing final live "
-           "verification and is not yet verified. No hosted-service, deployment or "
-           "production-readiness claim is made.")
+st.caption(deployment_caption())  # Derived from the hosted-verification records.
 
 st.divider()
 st.caption(

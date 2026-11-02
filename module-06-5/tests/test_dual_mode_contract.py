@@ -83,7 +83,8 @@ def test_implementation_plan_and_traceability_propagate_the_contract() -> None:
     traceability = (DOCS / "TRACEABILITY.md").read_text(encoding="utf-8")
     assert "Corrective dual-mode contract (ENG-008)" in traceability
     assert "live-evidence gate satisfied" in traceability
-    assert "Deployment evidence does not exist" in traceability
+    assert "Hosted deployment verification (recorded 2026-10-30" in traceability
+    assert "Deployment evidence does not exist" not in traceability
     assert "live-path exercising" in traceability and "human-authorized" in traceability
 
 
@@ -91,7 +92,8 @@ def test_release_readiness_carries_dual_mode_outstanding_gate() -> None:
     readiness = (DOCS / "RELEASE_READINESS.md").read_text(encoding="utf-8")
     assert "Story 13 live-evidence gate is satisfied" in readiness
     assert "independently accepted" in readiness and "389287FC" in readiness
-    assert "deployment verification and module closeout remain" in readiness
+    assert "final documentation reconciliation and module closeout remain" in readiness
+    assert "hosted deployment verification recorded 2026-10-30" in readiness
     assert "ENG-008" in readiness
     assert "never substitute for live-provider evidence" in readiness
     assert "provider-level production readiness" in readiness

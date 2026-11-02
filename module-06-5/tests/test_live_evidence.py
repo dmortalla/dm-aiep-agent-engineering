@@ -29,6 +29,8 @@ MODULE = Path(__file__).resolve().parents[1]
 REPO = MODULE.parent
 SRC = MODULE / "src" / "harness_engineering"
 APP = MODULE / "streamlit_app.py"
+HOSTED_LOG_HASH = "2AA36C78E94D4D4338A8F42513C96C56F91C20DDCDBC518FA61151BC7837499B"
+HOSTED_SCREENSHOT_HASH = "5D80C5E6AA8D5C832CE9904EC4F91E93FF9CE547F2B31FAB0C82E8466063094B"
 HASH = "389287FC65C9F51F84850E2D2929C50EC21FDEC4B70BC902FD0CE65100D7FCF4"
 ARTIFACT = "module-06-5-third-live-evidence-20261027-002708.json"
 BASELINE = "e1e5e1ac5f931f95a146c85baaace40cc3357230"
@@ -93,7 +95,8 @@ def test_readiness_shows_accepted_evidence_without_implying_more() -> None:
     for label in ("Live OpenAI evidence", "Live Anthropic evidence"):
         assert items[label].status is ReadinessStatus.ACCEPTED
         assert "Not an SLA or billing validation" in items[label].summary
-    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Deployment verification"].status is ReadinessStatus.VERIFIED
+    assert items["Deployment verification"].evidence is EvidenceClass.DEPLOYMENT
     assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
     assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
     assert items["Deterministic no-key mode"].status is ReadinessStatus.VERIFIED
@@ -130,13 +133,21 @@ def test_external_artifact_stays_external_and_documents_pin_it() -> None:
         assert HASH in (MODULE / "docs" / document).read_text(encoding="utf-8-sig")
 
 
-def test_documents_keep_deployment_not_verified_and_module_incomplete() -> None:
+def test_documents_record_hosted_deployment_and_keep_module_incomplete() -> None:
     readiness = (MODULE / "docs" / "RELEASE_READINESS.md").read_text(encoding="utf-8-sig")
     traceability = (MODULE / "docs" / "TRACEABILITY.md").read_text(encoding="utf-8-sig")
-    assert "`deployment`: none." in readiness
-    assert "Deployment evidence does not exist" in traceability
-    assert "Final live deployment verification" in readiness
+    assert "`deployment`: none." not in readiness
+    assert "Deployment evidence does not exist" not in traceability
+    assert "Final live deployment verification" not in readiness
+    assert "hosted deployment verification recorded 2026-10-30" in readiness
+    assert "Hosted deployment verification (recorded 2026-10-30" in traceability
+    for raw in (readiness, traceability):
+        text = " ".join(raw.split())
+        assert "adapter`-class" in text or "adapter-class" in text
+        assert "Anthropic was not exercised through the hosted app" in text
+        assert "remains not claimed" in text
     assert "deployment complete" not in readiness
+    assert "Final module closeout" in readiness
     readme = (REPO / "README.md").read_text(encoding="utf-8-sig")
     roadmap = next(line for line in readme.splitlines() if line.startswith("| 6.5 |"))
     assert "✅ Complete" not in roadmap
@@ -162,13 +173,15 @@ def test_reconciliation_files_contain_no_secret_like_material() -> None:
             if path == Path(__file__) and hit and "SECRET_LIKE" in text[max(0, hit.start() - 80):]:
                 continue  # This file's own pattern definitions.
             assert hit is None, f"secret-like material in {path.name}: {pattern}"
-    # The only long hex string allowed is the pinned artifact hash and git commits.
+    # The only long hex strings allowed are the pinned live-artifact hash and the two
+    # hosted-deployment provenance digests.
+    allowed = {HASH, HOSTED_LOG_HASH, HOSTED_SCREENSHOT_HASH}
     for path in files[:-1]:
         for token in re.findall(r"\b[0-9A-Fa-f]{64}\b", path.read_text(encoding="utf-8-sig")):
-            assert token == HASH, f"unexpected 64-hex value in {path.name}"
+            assert token in allowed, f"unexpected 64-hex value in {path.name}"
 
 
-def test_reviewer_ui_reports_accepted_live_evidence_and_pending_deployment() -> None:
+def test_reviewer_ui_reports_accepted_live_evidence_and_hosted_deployment_verification() -> None:
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
 
@@ -180,11 +193,14 @@ def test_reviewer_ui_reports_accepted_live_evidence_and_pending_deployment() -> 
     assert "Live OpenAI evidence" in text and "Live Anthropic evidence" in text
     assert "gpt-6-luna" in text and "claude-haiku-5-5" in text
     deployment = next(line for line in text.splitlines() if line.startswith("**Deployment"))
-    assert "`pending`" in deployment
+    assert "`verified`" in deployment and "deployment" in deployment
+    assert "Anthropic not exercised on the hosted app" in text
+    assert "Not live-provider evidence" in text
     production = next(line for line in text.splitlines()
                       if line.startswith("**Provider-level production"))
     assert "`not_claimed`" in production
-    assert "not yet verified" in caption and "not yet authorized" not in text + caption
+    assert "hosted deployment was verified" in caption and "not yet verified" not in caption
+    assert "not yet authorized" not in text + caption
     assert not at.text_input and not at.text_area and not at.number_input
 
 
@@ -220,6 +236,7 @@ def test_ui_without_accepted_records_claims_no_live_evidence(
         r for r in REPOSITORY_EVIDENCE if r.evidence is not EvidenceClass.LIVE_PROVIDER
     )
     monkeypatch.setattr(readiness, "REPOSITORY_EVIDENCE", non_live)
+    monkeypatch.setattr(readiness, "HOSTED_DEPLOYMENT_VERIFICATIONS", ())
     at = AppTest.from_file(APP, default_timeout=30).run()
     assert not at.exception
     text = "\n".join(item.value for item in at.markdown)
@@ -256,7 +273,7 @@ def test_public_byok_availability_is_separate_from_server_configuration(serving_
     assert "connectivity only, never application authority" in byok.summary
     assert "Intentionally disabled for public deployment" in server.summary
     assert "not required for BYOK" in server.summary
-    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Deployment verification"].status is ReadinessStatus.VERIFIED
     assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
     assert items["Secure live seam (credential-free)"].evidence is EvidenceClass.MOCKED
 
@@ -265,7 +282,7 @@ def test_server_flag_alone_does_not_establish_configuration_or_evidence() -> Non
     items = {item.capability: item for item in provider_readiness(server_path_enabled=True)}
     assert items["Server credential path"].status is ReadinessStatus.NOT_CONFIGURED
     assert items["BYOK live mode in this deployment"].status is ReadinessStatus.AVAILABLE
-    assert items["Deployment verification"].status is ReadinessStatus.PENDING
+    assert items["Deployment verification"].status is ReadinessStatus.VERIFIED
     assert items["Provider-level production readiness"].status is ReadinessStatus.NOT_CLAIMED
 
 
