@@ -40,6 +40,13 @@ READ_LABELS = ("group-observation", "resource-inventory", "registry-resource",
                "role-assignments-all", "role-assignments-inherited",
                "containerapp-revisions", "monitor-log-analytics")
 READ_PHASES = ("", "initial-collection", "monitor-receipt", "final-drift-check")
+HTTPS_OPERATIONS = ("cloud-liveness", "cloud-readiness", "deterministic-inference-1",
+                    "deterministic-inference-2", "bounded-validation-rejection")
+
+
+def _https_identity(label: str) -> None:
+    """Validate the finite HTTPS acceptance identity before any network activity."""
+    require(label in HTTPS_OPERATIONS, "HTTPS label is not an approved acceptance identity.")
 
 
 def _git_lines(cwd: Path, *args: str) -> list[str]:
@@ -340,33 +347,56 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
             base_url="https://" + fqdn, timeout=30, follow_redirects=False,
             trust_env=False, headers={"X-Request-ID": request_id}
         ) as client:
-            async def call(path: str, payload: bytes | None = None) -> tuple[int, dict]:
+            async def call(label: str, path: str, payload: bytes | None = None) -> tuple:
+                _https_identity(label)
                 method = "GET" if payload is None else "POST"
-                async with asyncio.timeout(30), client.stream(
-                    method, path, content=payload, headers={"Content-Type": "application/json"}
-                ) as response:
-                    content = bytearray()
-                    async for chunk in response.aiter_bytes(chunk_size=4096):
-                        content.extend(chunk)
-                        require(len(content) <= 65536, "HTTP response exceeded acceptance bound.")
-                    return response.status_code, json.loads(content)
+                try:
+                    async with asyncio.timeout(30), client.stream(
+                        method, path, content=payload, headers={"Content-Type": "application/json"}
+                    ) as response:
+                        content = bytearray()
+                        async for chunk in response.aiter_bytes(chunk_size=4096):
+                            content.extend(chunk)
+                            require(len(content) <= 65536,
+                                    f"HTTP response exceeded acceptance bound for ({label}).")
+                        return response.status_code, json.loads(content)
+                except VerificationError:
+                    raise
+                except (httpx.HTTPError, TimeoutError) as exc:
+                    raise VerificationError(
+                        f"HTTPS acceptance ({label}) failed at the transport stage; "
+                        "no cloud success recorded.") from exc
+                except (ValueError, UnicodeError) as exc:
+                    raise VerificationError(
+                        f"HTTPS acceptance ({label}) failed at receiving/JSON parsing; "
+                        "no cloud success recorded.") from exc
 
-            require(await call("/health/live") == (
+            def validated(label: str, model, body: object) -> object:
+                try:
+                    return model.model_validate(body)
+                except ValueError as exc:
+                    raise VerificationError(
+                        f"HTTPS acceptance ({label}) failed schema validation; "
+                        "no cloud success recorded.") from exc
+
+            require(await call("cloud-liveness", "/health/live") == (
                         200, {"status": "alive", "mode": "deterministic"}),
                     "Cloud liveness failed; no acceptance recorded.")
-            require(await call("/health/ready") == (
+            require(await call("cloud-readiness", "/health/ready") == (
                         200, {"status": "ready", "mode": "deterministic"}),
                     "Cloud readiness failed; allow bounded cold-start recovery then rerun.")
-            for _ in range(2):
-                status, body = await call("/api/v1/inference",
+            for attempt in range(2):
+                label = f"deterministic-inference-{attempt + 1}"
+                status, body = await call(label, "/api/v1/inference",
                                           b'{"text":"Beta alpha beta gamma","keyword_limit":3}')
-                result = InferenceOutput.model_validate(body)
+                result = validated(label, InferenceOutput, body)
                 require(status == 200 and result.word_count == 4
                         and result.keywords == ["beta", "alpha", "gamma"]
                         and result.evidence == "deterministic" and result.request_id == request_id,
                         "Cloud deterministic inference differed.")
-            status, body = await call("/api/v1/inference", b'{"text":"","keyword_limit":true}')
-            result = ErrorOutput.model_validate(body)
+            status, body = await call("bounded-validation-rejection", "/api/v1/inference",
+                                      b'{"text":"","keyword_limit":true}')
+            result = validated("bounded-validation-rejection", ErrorOutput, body)
             require(status == 422 and result.code == "invalid_request"
                     and result.message == "Request does not satisfy the input contract."
                     and result.request_id == request_id,

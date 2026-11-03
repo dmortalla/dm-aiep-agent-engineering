@@ -627,6 +627,126 @@ def test_https_failures(bad: str, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "sensitive" not in str(error.value)
 
 
+def test_https_acceptance_operations_are_five_and_finite() -> None:
+    """The accepted five logical HTTPS requests have distinct application-owned identities."""
+    assert deployment.HTTPS_OPERATIONS == ("cloud-liveness", "cloud-readiness",
+                                           "deterministic-inference-1",
+                                           "deterministic-inference-2",
+                                           "bounded-validation-rejection")
+    assert len(set(deployment.HTTPS_OPERATIONS)) == 5
+    for label in deployment.HTTPS_OPERATIONS:
+        deployment._https_identity(label)
+    for label in ("", "evil;rm", "cloud-liveness ", "hostile-token-bearing",
+                  "deterministic-inference-0"):
+        with pytest.raises(VerificationError, match="approved acceptance identity"):
+            deployment._https_identity(label)
+
+
+HOSTILE_CONTENT = ("Bearer ciphertext-token; path E:/hostile; dns evil.example; "
+                   "subscription 12345678-90ab-cdef-1234-567890abcdef; rm -rf "
+                   "\u202eencoded\r\nnewline;")
+
+
+def https_respond(target: str, kind: str, request_id: str) -> httpx.Response:
+    """Serve a deterministic positive flow with one damaged acceptance operation."""
+    served = {"inference": 0}
+    label_by_path = {"/health/live": "cloud-liveness", "/health/ready": "cloud-readiness"}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path in label_by_path:
+            label = label_by_path[request.url.path]
+        else:
+            served["inference"] += 1
+            label = ("bounded-validation-rejection" if json.loads(request.content)["text"] == ""
+                     else f"deterministic-inference-{served['inference']}")
+        if label == target:
+            if kind == "transport":
+                raise httpx.ConnectError(HOSTILE_CONTENT)
+            if kind == "malformed-json":
+                return httpx.Response(200, content=b'{"body-token": trailing,')
+            if kind == "schema-invalid":
+                return httpx.Response(200, json={
+                    "word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                    "evidence": "deterministic", "request_id": request_id,
+                    "extra": HOSTILE_CONTENT})
+            return httpx.Response(200, content=("hostile" + HOSTILE_CONTENT).encode() * 2000)
+        if request.url.path == "/health/live":
+            return httpx.Response(200, json={"status": "alive", "mode": "deterministic"})
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={"code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+    return respond
+
+
+@pytest.mark.parametrize(("target", "kind", "label", "stage"), [
+    ("cloud-liveness", "transport", "cloud-liveness", "at the transport stage"),
+    ("cloud-readiness", "transport", "cloud-readiness", "at the transport stage"),
+    ("deterministic-inference-1", "transport", "deterministic-inference-1",
+     "at the transport stage"),
+    ("deterministic-inference-2", "transport", "deterministic-inference-2",
+     "at the transport stage"),
+    ("bounded-validation-rejection", "transport", "bounded-validation-rejection",
+     "at the transport stage"),
+    ("deterministic-inference-1", "malformed-json", "deterministic-inference-1",
+     "at receiving/JSON parsing"),
+    ("deterministic-inference-1", "schema-invalid", "deterministic-inference-1",
+     "schema validation"),
+    ("cloud-liveness", "oversized", "cloud-liveness", None),
+])
+def test_https_failure_names_exactly_one_operation(target: str, kind: str, label: str,
+                                                  stage: str | None,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each damaged acceptance operation yields exactly its fixed finite identity text."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(
+                            https_respond(target, kind, request_id))))
+    with pytest.raises(VerificationError) as error:
+        deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+    message = str(error.value)
+    if stage:
+        assert message == (f"HTTPS acceptance ({label}) failed {stage}; "
+                           "no cloud success recorded.")
+    else:
+        assert message == f"HTTP response exceeded acceptance bound for ({label})."
+    for leak in (HOSTILE_CONTENT, "Bearer", "hostile", "E:/hostile", "evil.example",
+                 "12345678-90ab-cdef-1234-567890abcdef", "rm -rf", "\r\n", "\u202e",
+                 "synthetic.azurecontainerapps.io", request_id, SUBSCRIPTION):
+        assert leak not in message
+
+
+def test_https_hostile_failure_stays_sanitized_through_cli(monkeypatch: pytest.MonkeyPatch,
+                                                          tmp_path: Path,
+                                                          capsys: pytest.CaptureFixture) -> None:
+    """The CLI boundary prints only the fixed labelled diagnostic, never chained causes."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+    output = tmp_path / "no-acceptance.json"
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), []))
+    monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
+    monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(
+                            https_respond("cloud-liveness", "transport", request_id))))
+    monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
+                        "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
+                        "--verify-cloud", "--output", str(output)])
+    with pytest.raises(SystemExit) as error:
+        deployment.main()
+    assert error.value.code == 1 and not output.exists()
+    captured = capsys.readouterr()
+    transcript = captured.out + captured.err
+    assert "HTTPS acceptance (cloud-liveness) failed at the transport stage" in transcript
+    for leak in (HOSTILE_CONTENT, "Bearer", "E:/hostile", "\r\n", "\u202e", SUBSCRIPTION,
+                 "ConnectError", "verification should skip"):
+        assert leak not in transcript
+
+
 def test_render_is_offline_and_no_cloud_claim(monkeypatch: pytest.MonkeyPatch,
                                             tmp_path: Path) -> None:
     """Rendering has no Azure/Docker/HTTP calls and never emits deployed status."""
