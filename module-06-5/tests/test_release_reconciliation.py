@@ -255,16 +255,33 @@ def test_status_documents_match_acceptance_chronology() -> None:
     for document, required, absent in (
         (
             REPO / "docs" / "PROJECT_STATUS.md",
-            ("1666e99", "d4d2fd0", "ENG-008", "dual-mode",
-             "deployment verification separate"),
-            ("closeout performed, pending independent review",
-             "deployment not started"),
+            (
+                "1666e99",
+                "d4d2fd0",
+                "ENG-008",
+                "dual-mode",
+                "hosted deployment verification",
+                "eedb143",
+                "2,063 tests",
+                "final root-documentation reconciliation",
+                "Module 6.5 is not yet complete",
+            ),
+            (
+                "deployment verification separate",
+                "deployment not started",
+                "deployment evidence pending",
+                "deployment verification remains a separate gate",
+                "provider-level production readiness claimed",
+            ),
         ),
         (
             DOCS / "RELEASE_READINESS.md",
             ("1666e99", "69 of 69", "ENG-008", "human-authorized"),
-            ("deployment complete", "production-ready now",
-             "provider-level production readiness claimed"),
+            (
+                "deployment complete",
+                "production-ready now",
+                "provider-level production readiness claimed",
+            ),
         ),
     ):
         text = document.read_text(encoding="utf-8")
