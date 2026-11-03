@@ -263,14 +263,18 @@ def test_status_documents_match_acceptance_chronology() -> None:
                 "hosted deployment verification",
                 "eedb143",
                 "2,063 tests",
-                "final root-documentation reconciliation",
-                "Module 6.5 is not yet complete",
+                "✅ COMPLETE",
+                "Module 6.5 is complete",
+                "b8fc1e0",
+                "LinkedIn",
             ),
             (
                 "deployment verification separate",
                 "deployment not started",
                 "deployment evidence pending",
                 "deployment verification remains a separate gate",
+                "Module 6.5 is not yet complete",
+                "final closeout remain",
                 "provider-level production readiness claimed",
             ),
         ),
@@ -303,7 +307,7 @@ def test_root_readme_carries_substantive_module_section() -> None:
     roadmap_row = next(
         line for line in readme.splitlines() if line.startswith("| 6.5 |")
     )
-    assert "✅ Complete" not in roadmap_row
+    assert "✅ Complete" in roadmap_row
 
 
 def _tampered_requirements(mutation: str) -> str:

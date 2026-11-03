@@ -133,7 +133,7 @@ def test_external_artifact_stays_external_and_documents_pin_it() -> None:
         assert HASH in (MODULE / "docs" / document).read_text(encoding="utf-8-sig")
 
 
-def test_documents_record_hosted_deployment_and_keep_module_incomplete() -> None:
+def test_documents_record_hosted_deployment_and_preserve_final_boundaries() -> None:
     readiness = (MODULE / "docs" / "RELEASE_READINESS.md").read_text(encoding="utf-8-sig")
     traceability = (MODULE / "docs" / "TRACEABILITY.md").read_text(encoding="utf-8-sig")
     assert "`deployment`: none." not in readiness
@@ -150,7 +150,7 @@ def test_documents_record_hosted_deployment_and_keep_module_incomplete() -> None
     assert "Final module closeout" in readiness
     readme = (REPO / "README.md").read_text(encoding="utf-8-sig")
     roadmap = next(line for line in readme.splitlines() if line.startswith("| 6.5 |"))
-    assert "✅ Complete" not in roadmap
+    assert "✅ Complete" in roadmap
 
 
 SECRET_LIKE = (

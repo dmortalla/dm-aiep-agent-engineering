@@ -39,7 +39,7 @@ AI coding agents are used as engineering tools within this controlled process. G
 
 | Module | Topic | Status |
 | --- | --- | --- |
-| 6.5 | Harness Engineering | In Progress (engineering, live-provider evidence, secure BYOK, hosted deployment verification, and final integration accepted; final closeout pending) |
+| 6.5 | Harness Engineering | ✅ Complete |
 | 7 | Reliability, Safety and Observability | In Progress |
 | 8 | MCP and Modern AI Infrastructure | ✅ Complete |
 | 9 | Multimodal and Voice AI Systems | ✅ Complete |
@@ -51,7 +51,7 @@ Module development can proceed independently and out of numerical order. Consult
 
 Module 6.5 implements a harness-engineered agent runtime: an application that keeps end-to-end operational control and governance over an agent workflow from task decomposition through safe execution, state recovery, human oversight and cost governance. Model output is always treated as untrusted data; application-owned, typed policy retains every authority decision.
 
-**Reviewer app (local):** run `streamlit run streamlit_app.py` from `module-06-5`. The default deterministic mode requests no API key and requires no paid inference; live provider mode is an explicit opt-in that accepts a temporary, session-only BYOK key.
+**Reviewer app:** https://dm-aiep-agent-engineering-module-06-5.streamlit.app/ — deterministic/no-key mode is the default; live-provider mode is explicit opt-in BYOK. Run locally with `streamlit run streamlit_app.py` from `module-06-5`.
 
 ### Architecture and control plane
 
@@ -81,7 +81,7 @@ A compiled LangGraph state graph owns the finite lifecycle (schedule → execute
 - Fixture monetary values are not provider prices; local latency cohorts are not production certification.
 - No genuine production identity/authentication claim; approval identities are simulated fixtures.
 - No provider-level production-readiness claim: provider adapters are verified only at their accepted boundaries. One bounded live exercise per provider (`gpt-6-luna`, `claude-haiku-5-5`; one attempt, no retries) was independently accepted on 2026-10-27 as `live_provider` evidence under ENG-008 (ADR 002). Separately, hosted deployment verification was recorded on 2026-10-30: the public Streamlit deployment started successfully and one bounded explicit OpenAI BYOK call completed through the governed path. That hosted call remains `adapter`-class evidence within the separate `deployment` record; it is not new `live_provider` evidence. Anthropic was not exercised through the hosted app. No SLA, billing certification, scale readiness, universal provider validation, or provider-level production-readiness claim is made.
-- State: Stories 1-13 are implemented and independently accepted; Story 12 Slice 1 was accepted at `1666e99`, Story 12 Slice 2 release reconciliation at `d4d2fd0`, and reviewer-UI reconciliation at `7ce1bd8`. Story 13 ENG-008 live-provider evidence and secure explicit opt-in BYOK/live mode are accepted. Deployment verification was recorded on 2026-10-30 for the hosted Streamlit app, with one bounded explicit OpenAI BYOK call remaining `adapter`-class evidence rather than new `live_provider` evidence; Anthropic was not exercised through the hosted app. The exact accepted Module 6.5 filesystem state was integrated onto the current main-derived closeout branch at `eedb143`. Final root-documentation reconciliation and final module closeout remain; Module 6.5 is not yet complete.
+- State: ✅ Complete. Stories 1-13 are implemented and independently accepted; Story 12 Slice 1 was accepted at `1666e99`, Story 12 Slice 2 release reconciliation at `d4d2fd0`, reviewer-UI reconciliation at `7ce1bd8`, and the accepted Module 6.5 filesystem state was integrated at `eedb143`. ENG-008 live-provider evidence, secure explicit opt-in BYOK/live mode, Deployment verification of the hosted Streamlit app, final root-documentation reconciliation, controlled publication to `main`, and the recruiter-facing LinkedIn closeout are complete. Evidence-class boundaries and provider-level production-readiness non-claims remain unchanged.
 
 See [Module 6.5](module-06-5/docs/RELEASE_READINESS.md) and [Traceability](module-06-5/docs/TRACEABILITY.md) for exact requirement-to-implementation evidence and the full release non-claims record.
 
