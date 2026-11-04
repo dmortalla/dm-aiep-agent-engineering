@@ -647,6 +647,16 @@ HOSTILE_CONTENT = ("Bearer ciphertext-token; path E:/hostile; dns evil.example; 
                    "\u202eencoded\r\nnewline;")
 
 
+DAMAGE_CLASSES = {
+    "connect": httpx.ConnectError, "connect-timeout": httpx.ConnectTimeout,
+    "read": httpx.ReadError, "read-timeout": httpx.ReadTimeout,
+    "write": httpx.WriteError, "write-timeout": httpx.WriteTimeout,
+    "pool": httpx.PoolTimeout, "protocol": httpx.ProtocolError,
+    "proxy": httpx.ProxyError, "wall-clock": TimeoutError,
+    "unclassified": httpx.TooManyRedirects,
+}
+
+
 def https_respond(target: str, kind: str, request_id: str) -> httpx.Response:
     """Serve a deterministic positive flow with one damaged acceptance operation."""
     served = {"inference": 0}
@@ -659,16 +669,18 @@ def https_respond(target: str, kind: str, request_id: str) -> httpx.Response:
             served["inference"] += 1
             label = ("bounded-validation-rejection" if json.loads(request.content)["text"] == ""
                      else f"deterministic-inference-{served['inference']}")
-        if label == target:
-            if kind == "transport":
-                raise httpx.ConnectError(HOSTILE_CONTENT)
-            if kind == "malformed-json":
-                return httpx.Response(200, content=b'{"body-token": trailing,')
-            if kind == "schema-invalid":
-                return httpx.Response(200, json={
-                    "word_count": 4, "keywords": ["beta", "alpha", "gamma"],
-                    "evidence": "deterministic", "request_id": request_id,
-                    "extra": HOSTILE_CONTENT})
+        if label != target:
+            pass
+        elif kind in DAMAGE_CLASSES and kind not in ("oversized", "schema-invalid"):
+            raise DAMAGE_CLASSES[kind](HOSTILE_CONTENT)
+        elif kind == "malformed-json":
+            return httpx.Response(200, content=b'{"body-token": trailing,')
+        elif kind == "schema-invalid":
+            return httpx.Response(200, json={
+                "word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                "evidence": "deterministic", "request_id": request_id,
+                "extra": HOSTILE_CONTENT})
+        elif kind == "oversized":
             return httpx.Response(200, content=("hostile" + HOSTILE_CONTENT).encode() * 2000)
         if request.url.path == "/health/live":
             return httpx.Response(200, json={"status": "alive", "mode": "deterministic"})
@@ -683,20 +695,31 @@ def https_respond(target: str, kind: str, request_id: str) -> httpx.Response:
 
 
 @pytest.mark.parametrize(("target", "kind", "label", "stage"), [
-    ("cloud-liveness", "transport", "cloud-liveness", "at the transport stage"),
-    ("cloud-readiness", "transport", "cloud-readiness", "at the transport stage"),
-    ("deterministic-inference-1", "transport", "deterministic-inference-1",
-     "at the transport stage"),
-    ("deterministic-inference-2", "transport", "deterministic-inference-2",
-     "at the transport stage"),
-    ("bounded-validation-rejection", "transport", "bounded-validation-rejection",
-     "at the transport stage"),
+    ("cloud-liveness", "connect", "cloud-liveness", "at the transport stage (connect)"),
+    ("cloud-readiness", "connect-timeout", "cloud-readiness",
+     "at the transport stage (connect-timeout)"),
+    ("deterministic-inference-1", "read", "deterministic-inference-1",
+     "at the transport stage (read)"),
+    ("deterministic-inference-2", "read-timeout", "deterministic-inference-2",
+     "at the transport stage (read-timeout)"),
+    ("bounded-validation-rejection", "write", "bounded-validation-rejection",
+     "at the transport stage (write)"),
+    ("cloud-readiness", "write-timeout", "cloud-readiness",
+     "at the transport stage (write-timeout)"),
+    ("cloud-liveness", "pool", "cloud-liveness", "at the transport stage (pool-timeout)"),
+    ("cloud-liveness", "protocol", "cloud-liveness", "at the transport stage (protocol)"),
+    ("cloud-liveness", "proxy", "cloud-liveness", "at the transport stage (proxy)"),
+    ("cloud-liveness", "wall-clock", "cloud-liveness",
+     "at the transport stage (wall-clock-timeout)"),
+    ("cloud-liveness", "unclassified", "cloud-liveness",
+     "at the transport stage (unclassified)"),
     ("deterministic-inference-1", "malformed-json", "deterministic-inference-1",
      "at receiving/JSON parsing"),
     ("deterministic-inference-1", "schema-invalid", "deterministic-inference-1",
      "schema validation"),
     ("cloud-liveness", "oversized", "cloud-liveness", None),
 ])
+
 def test_https_failure_names_exactly_one_operation(target: str, kind: str, label: str,
                                                   stage: str | None,
                                                   monkeypatch: pytest.MonkeyPatch) -> None:
@@ -720,6 +743,44 @@ def test_https_failure_names_exactly_one_operation(target: str, kind: str, label
         assert leak not in message
 
 
+def test_https_transport_subtype_classifier_is_finite_and_textfree() -> None:
+    """Every proven transport class maps to exactly one finite token; text never reflects."""
+    for cls, subtype in ((httpx.ConnectError, "connect"), (httpx.ConnectTimeout,
+                         "connect-timeout"), (httpx.ReadError, "read"),
+                         (httpx.ReadTimeout, "read-timeout"), (httpx.WriteError, "write"),
+                         (httpx.WriteTimeout, "write-timeout"), (httpx.PoolTimeout,
+                         "pool-timeout"), (httpx.ProtocolError, "protocol"),
+                         (httpx.ProxyError, "proxy"), (httpx.UnsupportedProtocol, "protocol"),
+                         (TimeoutError, "wall-clock-timeout")):
+        hostile = cls(HOSTILE_CONTENT)
+        assert deployment._https_transport_subtype(hostile) == subtype
+    assert deployment._https_transport_subtype(httpx.TooManyRedirects(HOSTILE_CONTENT)) == \
+        "unclassified"
+    assert deployment._https_transport_subtype(httpx.DecodingError(HOSTILE_CONTENT)) == \
+        "unclassified"
+
+    class CompanionSubtype(httpx.TransportError):
+        """A fabricated transport subclass outside the proven vocabulary."""
+
+    assert deployment._https_transport_subtype(CompanionSubtype(HOSTILE_CONTENT)) == \
+        "unclassified"
+    assert deployment._https_transport_subtype(ValueError(HOSTILE_CONTENT)) == "unclassified"
+    tokens = set()
+    for token in (deployment._https_transport_subtype(cls(HOSTILE_CONTENT))
+                  for cls in (httpx.HTTPError,) * 1):
+        tokens.add(token)
+    assert tokens == {"unclassified"}
+
+
+def test_https_transport_subtype_vocabulary_is_finite() -> None:
+    """The subtype vocabulary is five-supported-three-fallback finite and distinct."""
+    assert deployment.HTTPS_TRANSPORT_SUBTYPES == ("connect", "connect-timeout", "read",
+                                                  "read-timeout", "write", "write-timeout",
+                                                  "pool-timeout", "protocol", "proxy",
+                                                  "wall-clock-timeout", "unclassified")
+    assert len(set(deployment.HTTPS_TRANSPORT_SUBTYPES)) == 11
+
+
 def test_https_hostile_failure_stays_sanitized_through_cli(monkeypatch: pytest.MonkeyPatch,
                                                           tmp_path: Path,
                                                           capsys: pytest.CaptureFixture) -> None:
@@ -732,7 +793,7 @@ def test_https_hostile_failure_stays_sanitized_through_cli(monkeypatch: pytest.M
     monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
                         original(**kw, transport=httpx.MockTransport(
-                            https_respond("cloud-liveness", "transport", request_id))))
+                            https_respond("cloud-liveness", "connect", request_id))))
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
                         "--verify-cloud", "--output", str(output)])
@@ -741,7 +802,8 @@ def test_https_hostile_failure_stays_sanitized_through_cli(monkeypatch: pytest.M
     assert error.value.code == 1 and not output.exists()
     captured = capsys.readouterr()
     transcript = captured.out + captured.err
-    assert "HTTPS acceptance (cloud-liveness) failed at the transport stage" in transcript
+    assert ("HTTPS acceptance (cloud-liveness) failed at the transport stage (connect)"
+            in transcript)
     for leak in (HOSTILE_CONTENT, "Bearer", "E:/hostile", "\r\n", "\u202e", SUBSCRIPTION,
                  "ConnectError", "verification should skip"):
         assert leak not in transcript

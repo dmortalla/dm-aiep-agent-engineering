@@ -42,11 +42,49 @@ READ_LABELS = ("group-observation", "resource-inventory", "registry-resource",
 READ_PHASES = ("", "initial-collection", "monitor-receipt", "final-drift-check")
 HTTPS_OPERATIONS = ("cloud-liveness", "cloud-readiness", "deterministic-inference-1",
                     "deterministic-inference-2", "bounded-validation-rejection")
+HTTPS_TRANSPORT_SUBTYPES = ("connect", "connect-timeout", "read", "read-timeout", "write",
+                            "write-timeout", "pool-timeout", "protocol", "proxy",
+                            "wall-clock-timeout", "unclassified")
 
 
 def _https_identity(label: str) -> None:
     """Validate the finite HTTPS acceptance identity before any network activity."""
     require(label in HTTPS_OPERATIONS, "HTTPS label is not an approved acceptance identity.")
+
+
+def _https_transport_subtype(exc: BaseException) -> str:
+    """Map a transport-stage exception onto the finite application-owned subtype vocabulary.
+
+    Args:
+        exc: The exception that ended a trusted HTTPS request; its text is never reflected.
+
+    Returns:
+        One fixed subtype token: the library's stable public transport category
+        where provable, the built-in wall-clock deadline token for the asyncio
+        timeout, and the unclassified token for anything the hierarchy cannot
+        prove, keeping unknown failures closed at accepted granularity.
+    """
+    if isinstance(exc, TimeoutError):
+        return "wall-clock-timeout"
+    if isinstance(exc, httpx.ConnectTimeout):
+        return "connect-timeout"
+    if isinstance(exc, httpx.ConnectError):
+        return "connect"
+    if isinstance(exc, httpx.ReadTimeout):
+        return "read-timeout"
+    if isinstance(exc, httpx.ReadError):
+        return "read"
+    if isinstance(exc, httpx.WriteTimeout):
+        return "write-timeout"
+    if isinstance(exc, httpx.WriteError):
+        return "write"
+    if isinstance(exc, httpx.PoolTimeout):
+        return "pool-timeout"
+    if isinstance(exc, httpx.ProxyError):
+        return "proxy"
+    if isinstance(exc, (httpx.ProtocolError, httpx.UnsupportedProtocol)):
+        return "protocol"
+    return "unclassified"
 
 
 def _git_lines(cwd: Path, *args: str) -> list[str]:
@@ -363,9 +401,10 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
                 except VerificationError:
                     raise
                 except (httpx.HTTPError, TimeoutError) as exc:
+                    subtype = _https_transport_subtype(exc)
                     raise VerificationError(
-                        f"HTTPS acceptance ({label}) failed at the transport stage; "
-                        "no cloud success recorded.") from exc
+                        f"HTTPS acceptance ({label}) failed at the transport stage "
+                        f"({subtype}); no cloud success recorded.") from exc
                 except (ValueError, UnicodeError) as exc:
                     raise VerificationError(
                         f"HTTPS acceptance ({label}) failed at receiving/JSON parsing; "
