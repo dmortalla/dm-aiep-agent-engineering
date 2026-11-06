@@ -1,170 +1,206 @@
 # Module 8 — MCP & Modern AI Infrastructure
 
-A standalone enterprise capability plane: an MCP server exposes SQLite customer
-lookup, a local HTTP account API, and an internal policy service. Genuine OpenAI
-Agents SDK and Google ADK MCP consumers share those capabilities in a validated
-three-stage workflow. Enterprise capabilities belong to the protocol boundary,
-independent of the AI vendor.
+![Python 3.12](https://img.shields.io/badge/Python-3.12-blue)
+![pytest](https://img.shields.io/badge/tests-pytest-brightgreen)
+![Ruff](https://img.shields.io/badge/code%20quality-Ruff-brightgreen)
+![MCP SDK](https://img.shields.io/badge/protocol-MCP-6C5CE7)
+![OpenAI SDK](https://img.shields.io/badge/SDK-OpenAI-412991)
+![Google ADK](https://img.shields.io/badge/agents-Google%20ADK-4285F4)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
 
-## Run the reviewer console
+A production-grade, standalone enterprise AI integration system demonstrating genuine MCP client/server interoperability, shared enterprise capabilities, independent application-owned authorization, and OpenAI SDK / Google ADK consumers.
 
-Install Python 3.12 and uv. From this directory:
+## Executive Summary
+
+**What.** Module 8 builds a vendor-neutral MCP enterprise capability plane exposing SQLite customer lookup, a local HTTP account API, and an internal policy service to heterogeneous AI SDK consumers.
+
+**How.** An official MCP SDK server and Streamable HTTP clients connect OpenAI Agents SDK and Google ADK to the same capabilities. Typed context exchange, capability policy, strict validation, and bounded workflow execution remain application-owned. Streamlit displays real execution results without becoming the authority boundary.
+
+**Why.** Enterprise interoperability should not depend on one model vendor or allow capability discovery, tool metadata, or agent output to grant privileges. MCP provides a reusable protocol boundary while application policy controls execution.
+
+**Proof.** All **33 of 33 approved requirements** are traced: 23 source-derived and 10 additive engineering requirements. The accepted implementation demonstrates three enterprise integrations, three workflow stages, two deterministic reviewer scenarios, genuine Streamable HTTP transport, a verified Streamlit Cloud deployment, and a controlled OpenAI / Google ADK-Gemini live-provider exercise. The final recorded Story 11 repair gate passed **202 tests** with Ruff and compileall; recruiter-facing LinkedIn closeout is complete.
+
+---
+
+## Start Here / Reviewer Path
+
+### Public reviewer path
+
+Begin with the [User Guide](docs/USER_GUIDE.md) for scenario selection, expected outcomes, live-mode consent, evidence interpretation, and troubleshooting.
+
+Then open the deployed [MCP Enterprise Infrastructure Console](https://dm-aiep-module-08.streamlit.app/).
+
+Recommended review order:
+
+1. **Orientation** — identify the MCP server, OpenAI SDK, Google ADK, enterprise capabilities, application policy, and evidence classes.
+2. **Manager review** — inspect three discovered tools, the viewer capability denial, the authorized enterprise workflow, and the final internal-service allow business decision.
+3. **Support review** — inspect the same viewer capability denial and the separate internal-service deny business decision. Support is authorized to invoke the policy tool; its business denial is not a CapabilityPolicy invocation denial.
+4. **Transport and interoperability** — inspect Streamable HTTP, MCP discovery, schema/context exchange, SQLite results, local HTTP API results, and the internal policy service.
+5. **Direct versus MCP** — compare direct repository lookup with the discoverable protocol-mediated capability; do not treat this as a performance benchmark.
+6. **Provider modes** — inspect the deterministic default, separately consented live path, bounded accepted live evidence, and deployment limitations.
+
+### Reviewer posture
+
+The deterministic reviewer demonstration requires no API keys and makes zero provider-model calls. Manager and Support are fixed demonstration identities, **not real authentication**. Opt-in live/BYOK execution is a separate bounded path; credentials provide connectivity, never authorization.
+
+---
+
+## Key Capabilities
+
+| Capability | Working reviewer evidence |
+| --- | --- |
+| MCP server and discovery | Official MCP SDK server, three registered enterprise tools, real client discovery, and typed schemas |
+| Genuine transport | Streamable HTTP client/server sessions with negotiated protocol and transport evidence |
+| Database connectivity | Parameterized SQLite customer lookup returning actual seeded local records |
+| API orchestration | Bounded local HTTP account API with sanitized request and response evidence |
+| Internal enterprise service | Callable policy evaluation returning a decision and rule without changing an account |
+| SDK interoperability | OpenAI Agents SDK and Google ADK consume the same MCP enterprise capability plane |
+| Application authority | Capability discovery separated from independent allowlist policy, exact arguments, validation, and denial |
+| End-to-end workflow | OpenAI SDK → Google ADK → OpenAI SDK, with three validated stages and bounded context exchange |
+| MCP versus direct calling | Runnable customer-lookup comparison explaining implementation coupling and protocol discovery |
+| Deterministic reviewer scenarios | Manager allowed decision, Support denied decision, zero model calls in default mode |
+| Opt-in live models | OpenAI and Gemini provider stages use application-authorized MCP tools under bounded consent |
+| Reviewer deployment | Verified Streamlit Cloud console exposing actual backend execution and evidence classification |
+
+### Evidence classes
+
+Module 8 distinguishes deterministic, mocked, adapter, local-integration, live-provider, and deployment evidence. Genuine local MCP/HTTP execution is not automatically external provider execution; a configured SDK or injected model double does not establish live-provider evidence.
+
+---
+
+## Architecture
+
+![Module 8 architecture](assets/architecture.png)
+
+The **application-owned controller and CapabilityPolicy** retain authorization. MCP exposes capabilities and transport, while OpenAI SDK and Google ADK consume the same shared enterprise integration boundary. Streamlit is a reviewer presentation surface, not a security authority.
+
+**Reviewer UI → Application Controller → application-owned capability authorization → OpenAI SDK / Google ADK consumers → their SDK-managed Streamable HTTP MCP connections → Enterprise MCP Server → SQLite / HTTP API / Internal Service → validated outputs and internal business-policy decision → Reviewer UI.**
+
+Execution follows **discovery → schema validation → policy evaluation → authorization or denial → bounded invocation → output validation → evidence recording**. A model or tool cannot independently change the trusted role, bound capability, arguments, or final enterprise policy decision.
+
+The architecture diagram is portfolio-facing; the [frozen architecture record](docs/ARCHITECTURE.md) remains the technical source for detailed boundaries and historical decisions.
+
+---
+
+## Technology Stack
+
+| Area | Technology |
+| --- | --- |
+| Language and environment | Python 3.12, uv, locked module dependencies |
+| Enterprise interoperability | Official MCP SDK; Streamable HTTP |
+| First AI SDK consumer | OpenAI Agents SDK / OpenAI SDK |
+| Second AI SDK consumer | Google ADK with McpToolset |
+| Local data integration | SQLite |
+| Local service integration | HTTP API and internal policy service |
+| Reviewer UI | Streamlit |
+| Quality gates | Ruff, pytest, compileall |
+
+MCP is implemented and exercised. AI operating-system concepts and A2A are explained as complementary standards context; **this module does not implement an AI operating system or A2A transport**.
+
+---
+
+## Production-Grade Engineering
+
+### Trust, policy, and authorization
+
+The application independently authorizes capability use. Discovery cannot grant permission; untrusted model, MCP, API, and tool output cannot self-authorize. Provider-driven stages expose only the allowed capability and enforce exact application-bound tool arguments before dispatch.
+
+### Bounded execution
+
+Deterministic workflow and reviewer paths impose fixed execution deadlines and concurrency admission limits. Live mode separately bounds model calls, tool calls, tokens, retries, stage duration, run duration, and process admission. These controls are **not** billing or service-level guarantees.
+
+### Credentials and live consent
+
+Live mode requires explicit selection, provider enablement, masked per-run credentials, acknowledgement of external calls and potential charges, and deliberate execution. Environment and ambient Google credentials do not authorize model execution. The backend enforces provider policy independently of Streamlit controls.
+
+### Application-owned outcome
+
+The final internal policy stage remains deterministic and application-owned even when preceding OpenAI and Gemini stages use real models. Provider narratives are untrusted and cannot decide enterprise authorization.
+
+---
+
+## Security and Trust Boundaries
+
+- Authorized consumer paths enforce application-owned CapabilityPolicy; raw MCP primitives are not a public authenticated authorization perimeter.
+- Unknown roles, unauthorized capabilities, changed arguments, malformed context, and forged identity fields fail closed.
+- Inputs and outputs are validated across MCP, SDK, database, API, and workflow boundaries.
+- Provider keys are handled through a masked, bounded per-run path with redaction and consent controls; Python memory erasure is not guaranteed.
+- Model text is display-only untrusted narrative, not an authority or identity source.
+- Local reviewer services use loopback and must not be exposed to untrusted networks.
+- Fixed Manager and Support scenarios are not production login identities.
+- No general claim is made for network authentication, TLS, multi-host service security, formal compliance, provider SLA, production load, or guaranteed billing accuracy.
+
+---
+
+## Testing and Verification
+
+The accepted requirements and local integration audit covered **23/23 source requirements and 10/10 engineering requirements**. The Story 10 fail-fast gate recorded **121 passing tests**; the Story 11 implementation gate recorded **196 passing tests**; the subsequent independent-review repair gate recorded **202 passing tests**, Ruff PASS, and compileall PASS. These are historical gate-specific counts, not a claim that a fresh full-suite run was performed during documentation normalization.
+
+Real local verification covered MCP SDK discovery and Streamable HTTP, both AI SDK consumers, SQLite and HTTP services, application-policy denial, workflow validation, two Streamlit AppTest scenarios, failure paths, and credential-safe offline tests.
+
+### Accepted live-provider exercise
+
+The final deployed acceptance record reports **4 of 4 bounded model calls** completed across an authorized OpenAI stage and a Google ADK/Gemini stage. OpenAI exercised customer lookup; Gemini exercised account-status lookup through the shared MCP plane. Both provider-driven stages were classified as live-provider; the final enterprise policy stage remained local-integration with zero model calls.
+
+The final README acceptance record does not establish a general provider/model support matrix, exact billing, continuous availability, or production provider readiness.
+
+### Verified deployment
+
+The [Streamlit Cloud deployment](https://dm-aiep-module-08.streamlit.app/) was rebooted and verified with genuine local enterprise execution, three discovered MCP capabilities, three workflow stages, and zero provider-model calls in the deterministic Manager demonstration. The deterministic Support demonstration was also accepted. The cloud environment used the module lockfile.
+
+The deployment configuration uses GOOGLE_API_USE_CLIENT_CERTIFICATE=false to avoid an unnecessary Google mTLS credential probe during local MCP discovery. This does not disable application authorization or establish hosted enterprise-network readiness.
+
+Historical Story 10/11 records retain earlier no-live/no-deployment statements reflecting their original review dates; the later final acceptance establishes the current completed state.
+
+---
+
+## Run Locally
+
+Install Python 3.12 and uv, then run from the module-08 directory:
 
 ```powershell
 uv sync --locked --extra dev
 uv run streamlit run src/mcp_enterprise_integration/console.py
 ```
 
-Open the local address printed by Streamlit. No virtual-environment activation,
-API key, OpenAI model call, Gemini model call, or paid provider call is required.
-Dependency installation may require network access; demonstrations use loopback.
-The module configuration binds the console to `127.0.0.1` and disables usage telemetry.
+Choose Manager review or Support review and run the enterprise demonstration. The default path uses deterministic local integration, synthetic records, loopback services, and no paid model calls. Dependency installation may require network access.
 
-Choose **Manager review** or **Support review**, then **Run enterprise demonstration**.
-Expect three discovered capabilities, an allowed customer read, a discovered
-policy capability denied to the viewer before invocation, and three MCP workflow
-stages: OpenAI SDK → Google ADK → OpenAI SDK. Inspect the SQLite customer, HTTP
-account, validated cross-stage policy request, final policy decision, negotiated
-protocol, transport and evidence tables. Manager review permits the proposal;
-Support review denies it. Neither scenario changes an account.
+For native verification, run Ruff, pytest, and compileall in that fail-fast order using the documented module environment.
 
-Both identities are fixed demonstration scenarios, not real authentication.
-Execution creates and cleans up isolated temporary services and a seeded database.
-At most two demonstrations run concurrently per process. Failures clear stale
-success and show a safe error; retry or ask a maintainer to inspect the cause.
+---
 
-## Reviewer modes
+## Documentation / Deep Dives
 
-The console opens in **Deterministic Demo**, the accepted default described above:
-no key, zero model or provider calls, deterministic local-integration evidence.
+- [User Guide](docs/USER_GUIDE.md) — reviewer walkthrough, scenarios, evidence classes, live-mode boundaries, and troubleshooting
+- [Authoritative Source](docs/AUTHORITATIVE_SOURCE.md) — course objective, topics, labs, tools, and deliverables
+- [Requirements](docs/REQUIREMENTS.md) — 33 frozen requirements
+- [Architecture](docs/ARCHITECTURE.md) — approved topology, trust boundaries, and additive live-mode design
+- [Traceability](docs/TRACEABILITY.md) — requirement-to-implementation and verification mapping
+- [Story 10](docs/stories/STORY-10-integrated-verification-release-evidence.md) — local audit, fail-fast gates, and deployment closeout
+- [Story 11](docs/stories/STORY-11-opt-in-live-provider-byok.md) — provider integration, consent, bounded execution, evidence, and independent repair
+- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) — accepted implementation sequence
+- [Portfolio README](../README.md) — Repo 2 progression
+- Source: [MCP integration package](src/mcp_enterprise_integration/) and [reviewer console](src/mcp_enterprise_integration/console.py)
 
-**Live Provider Demo (opt-in)** is an optional, additive mode for reviewers who want
-to see genuine external models use the same MCP capability plane with their own keys
-(BYOK). It never runs because a key exists in the environment, and it never starts
-until the reviewer selects the mode, enables at least one provider, pastes that
-provider's key into a masked field, ticks both acknowledgements (external provider
-calls; possible charges to their own provider account) and clicks **Run live provider
-demonstration**.
+---
 
-- Stage 1 (optional live): an OpenAI model, run by the OpenAI Agents SDK, sees only
-  the application-authorized `get_customer` MCP tool and must call it once with the
-  application-bound customer.
-- Stage 2 (optional live): a Gemini model, run by Google ADK through `McpToolset`,
-  sees only `get_account_status` under the same rules.
-- Stage 3 (never a model): the internal policy decision runs through the accepted
-  OpenAI SDK MCP path with application-built context.
-- An unselected provider's stage uses the accepted deterministic SDK path.
+## Evidence and Limitations
 
-Bounds per run: at most 2 OpenAI and 2 Gemini model calls, 600 output tokens per
-call, one MCP tool call per stage, no SDK/HTTP retries, 50s per stage, 120s per run,
-one live run per process. These are call, token and time bounds, not a billing
-guarantee; providers bill by their own pricing. The synthetic record `CUST-001` is
-sent to each selected provider.
+| Area | Established | Not established |
+| --- | --- | --- |
+| MCP | Genuine server/client, discovery, Streamable HTTP, schemas and bounded invocation | Authenticated public production MCP service |
+| Enterprise systems | Real local SQLite, HTTP API and internal policy integration | External customer production traffic or enterprise network deployment |
+| SDK interoperability | Shared MCP tools consumed through OpenAI SDK and Google ADK | A2A implementation or a general AI operating system |
+| Authorization | Application-owned capability policy and fail-closed execution boundaries | Production user authentication or arbitrary remote-caller security |
+| Deterministic UI | Verified Manager and Support paths with zero model calls | Live inference from the default reviewer scenario |
+| Live providers | Accepted controlled OpenAI and Gemini provider-driven MCP stages | General model availability, provider SLA, universal correctness or billing certification |
+| Streamlit Cloud | Verified reviewer-facing hosted application and working local enterprise integrations | Multi-host cloud-managed MCP infrastructure, load certification or production SLA |
+| Quality | Recorded Ruff, pytest, compileall and adversarial offline verification | Formal security certification or guaranteed memory erasure |
 
-Keys are session-only capability material: never read from `OPENAI_API_KEY`,
-`GOOGLE_API_KEY`, `GEMINI_API_KEY` or ADC for model calls; passed directly to a
-per-run provider client; erased from the form widgets as soon as the run ends;
-never stored, printed, placed in evidence or shown in errors; and scrubbed from
-every log record created during the run. A key never grants authority, and model
-output can never change the role, identity, capabilities or policy decision.
+The reviewer-facing system is **complete and published** under the accepted Module 8 closeout. Deployment verification and recruiter-facing LinkedIn publication are complete. The architecture and evidence boundaries remain narrower than an authenticated, production-operated enterprise service.
 
-Evidence is `live-provider` only when the genuine provider client completed within
-bounds and the authorized MCP result passed application validation. Injected test
-doubles produce `mocked`; failures produce no success evidence. Live mode proves a
-provider model can choose and call an application-authorized MCP capability through
-its SDK. It does not prove model accuracy, provider availability, billing amounts,
-authentication, multi-host deployment or that a model holds any authority. No paid or
-live provider call was made while implementing or testing this mode; see
-[Story 11](docs/stories/STORY-11-opt-in-live-provider-byok.md).
+For the broader progression from harness engineering through reliability, MCP infrastructure, multimodal systems, and production deployment, see the [Repo 2 portfolio README](../README.md).
 
-## What the demonstration establishes
+---
 
-The MCP SDK implements the server and Streamable HTTP client. OpenAI Agents SDK
-executes its MCP discovery/tool integration; Google ADK executes its `McpToolset`
-and tool integration. Agent objects are configured, but neither model runner runs.
-The workflow carries validated, bounded, identity-correlated context between SDKs.
-Application-owned `CapabilityPolicy` independently authorizes every SDK invocation.
-Discovery, requester fields and returned decisions cannot grant privileges.
-
-The direct-versus-MCP comparison executes the same customer lookup using the
-Python repository and the protocol workflow. Direct calling couples the caller
-to that implementation; MCP exposes discoverable typed capabilities through a
-transport boundary. This is not a model tool-calling or performance benchmark.
-
-Capability registration, context, orchestration and authority boundaries illustrate
-building blocks relevant to AI operating systems. This module is not an operating
-system. Independently addressed loopback services illustrate a small distributed
-ecosystem. MCP provides application/agent-to-tools, context and system
-interoperability here. A2A complements it for agent-to-agent interoperability;
-A2A is not implemented.
-
-## Verification and limits
-
-```powershell
-uv run ruff check .
-uv run pytest
-uv run python -m compileall -q src tests
-```
-
-Run in that fail-fast order. Tests include actual Streamlit AppTest execution of
-both scenarios with model runners and external connections forbidden. No browser
-automation is necessary for the accepted reviewer behavior.
-
-Evidence distinguishes deterministic contract/policy tests, mocked failure
-injection, adapter construction, and genuine **local-integration** execution over
-loopback. SDK construction alone is not live-provider evidence. **No live-provider
-evidence exists in this repository**: automated tests replace only the external model
-boundary and are classified `mocked`; only a reviewer's own opt-in live run can
-produce `live-provider` evidence. **Deployment evidence is absent from this local
-verification.** The console does not establish multi-host,
-cloud, authentication, availability or production deployment readiness. The raw
-MCP server and low-level clients are integration primitives; application-owned
-authorization is enforced by the authorized consumer paths, not an authenticated
-server perimeter. Do not expose these reviewer services to untrusted networks.
-
-Pinned ADK internals emit experimental/deprecation warnings; they remain visible.
-Secondary caption contrast depends on the active Streamlit/browser theme and is
-a non-blocking presentation observation; no custom CSS or contrast compliance
-claim is introduced. See the [Story 10 audit](docs/stories/STORY-10-integrated-verification-release-evidence.md)
-for exact verification, limitations and the Definition of Done assessment, and
-the [traceability matrix](docs/TRACEABILITY.md) for all 33 requirements.
-
-## Verified Streamlit Cloud Deployment
-
-The reviewer-facing MCP Enterprise Infrastructure Console is deployed at https://dm-aiep-module-08.streamlit.app.
-
-A fresh Streamlit Cloud reboot and Manager review verified the production demonstration path:
-
-- 3 MCP capabilities discovered through the deployed integration path.
-- 3 interoperable workflow stages completed: OpenAI SDK -> Google ADK -> OpenAI SDK.
-- 0 model calls in the deterministic reviewer demonstration.
-- The allowed customer read completed through the MCP capability boundary.
-- The policy capability remained denied before unauthorized remote execution.
-- Streamable HTTP, validated context exchange, and the final enterprise decision were demonstrated.
-- Streamlit Cloud installed the Module 8 environment from module-08/uv.lock using uv-sync.
-
-### Deployment operational lesson
-
-Google ADK 2.10.0 can perform a Google mTLS/client-certificate credential probe during MCP discovery. In this credential-free loopback MCP deployment, that unnecessary probe could fall through to Google metadata credential discovery and consume the bounded discovery window before the intended MCP connection.
-
-The accepted deployment configuration sets GOOGLE_API_USE_CLIENT_CERTIFICATE=false. This disables the unnecessary client-certificate probe, removes the ambient-credential dependency, and allows the intended bounded MCP discovery path to complete. This value is deployment configuration, not secret credential material. Increasing the discovery timeout is not the accepted repair.
-
-The deployed Streamlit console remains a reviewer-facing presentation and execution layer over the production architecture; it does not fabricate success or replace the authoritative application, MCP, authorization, or workflow logic.
-
-## Final acceptance
-
-Module 8 completed final deployed acceptance on 2026-10-17.
-
-- The Streamlit reviewer console was deployed and human-verified for readability, Techademy attribution, and reviewer guidance.
-- The deterministic Manager review completed with an allowed account-change policy decision and zero model calls.
-- The deterministic Support review completed with a denied account-change policy decision and zero model calls.
-- The opt-in BYOK interface was verified to require explicit external-provider and possible-charge consent before execution.
-- A controlled live Manager-review run exercised both OpenAI and Google ADK / Gemini through the shared MCP workflow.
-- The live run completed 4/4 bounded model calls: OpenAI exercised get_customer, and Google ADK / Gemini exercised get_account_status.
-- Both provider-driven stages were classified as live-provider; the final evaluate_enterprise_policy stage remained application-owned local-integration with zero model calls.
-- The final Manager policy decision remained llow, and provider narratives remained untrusted and non-authoritative.
-- No API credential was visible in the reviewer-facing acceptance evidence.
-- The deployed reviewer experience is available at https://dm-aiep-module-08.streamlit.app/.
-- The project accomplishment was published to LinkedIn as the final presentation closeout.
-
-These results demonstrate deployed MCP interoperability across OpenAI and Google ADK / Gemini while preserving application-owned authorization, validated enterprise context, and deterministic final policy authority.
+Developed from Techademy AI Engineering Program requirements with independent architecture, application-owned security controls, genuine MCP integration, adversarial testing, explicit evidence classification, and verified reviewer-facing deployment.
