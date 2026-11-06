@@ -79,16 +79,7 @@ Every runtime record carries an evidence class enforced in code (`contracts/evid
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    UI["Streamlit reviewer UI<br/>(presentation only)"] --> FAC["Reviewer facade"]
-    FAC --> SVC["Application services<br/>understanding · speech · cross-modal · voice"]
-    WS["WebSocket gateway<br/>(Starlette / Uvicorn, loopback)"] --> COORD["Streaming voice coordinator"]
-    COORD --> SVC
-    SVC --> PORTS["Typed provider ports<br/>vision · document · STT · TTS · reasoning"]
-    PORTS --> DET["Deterministic / local / rule-based adapters<br/>(default, no key)"]
-    PORTS --> LIVE["OpenAI adapters<br/>(explicit opt-in, ephemeral key)"]
-```
+![Module 9 architecture](assets/architecture.png)
 
 The application core owns validation, provenance, bounds, state commits, and evidence classification. Providers sit behind ports and return **untrusted** output: model descriptions become statements labeled as model-derived, never measured facts. Uploaded content, transcripts, and model output are data and can never change execution mode, budgets, providers, or credentials.
 
