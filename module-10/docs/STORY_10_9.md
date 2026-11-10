@@ -477,3 +477,33 @@ success would establish only that the controlled prescribed input shape avoids
 the prior unidentified condition — not retroactively prove the prior failure's
 exact bytes — and a repeated generic UUID rejection would prove the remaining
 cause lies elsewhere in the supplied stream/value path.
+
+## R0 recovery-grants architecture baseline — documentation only
+
+A separate Step 95 human decision approved the documentation-first R0 stage
+for the Story 10.9 recovery-authorization plan using the existing protected
+recovery trust infrastructure. R0 changed documentation only; it did not alter
+any implementation, key, grant, schedule, ACL, approval artifact, or Azure
+resource, and it did not select any of the open human policy decisions.
+
+The accepted offline structural validator
+(`src/module10_ai/recovery_authorization.py`, committed at HEAD
+`e321c5f60a7963281654660a60af2328da649ca7`) remains the only implemented
+recovery component. Its exact limit is architectural: structural validation is
+not cryptographic authentication, not human approval, not replay protection,
+and not recovery authorization. The full conceptual stage separation
+(structural validation, cryptographic verification, approval/policy
+validation, durable replay prevention, recovery planning, authorized
+execution, independent outcome verification, audit/presentation), the
+fail-closed authority chain, the protected non-exportable RSA-3072 issuer
+identity and separate least-privilege recovery identity, and the planned R1-R6
+stages are documented in `docs/RECOVERY_GRANTS.md`.
+
+Planned (not implemented) and explicitly unresolved human decisions carried
+forward: approval-store location/semantics, approval digest and version
+binding, durable atomic replay-ledger implementation and concurrent/crash
+behavior, issuer-identity eligibility and separation of duties, trust-anchor
+rotation and revocation, the final maximum-execution-attempts bound, and the
+recovery mutation authority/rollback policy. Requirements and traceability
+were updated with accurately classified planned rows only; no source
+requirement was manufactured and no planned capability was marked complete.

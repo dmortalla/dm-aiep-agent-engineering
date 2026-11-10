@@ -148,3 +148,21 @@ GitHub execution are deferred. Azure deployment and full C-026/C-027 remain defe
 See [Story 10.9](STORY_10_9.md) for gates and actual evidence. Templates, fixture
 responses, synthetic revisions, capability metadata and successful local Docker
 acceptance cannot establish genuine cloud deployment or final C-026/C-027 acceptance.
+
+## Planned Story 10.9 recovery-authorization evidence (R0 planning, not complete)
+
+| Requirement | Planned evidence |
+|---|---|
+| RE-001 | `src/module10_ai/recovery_authorization.py` + `tests/test_recovery_authorization.py` (64 focused tests; committed) — structural scope only |
+| RE-002 | Planned R1: trust-anchor loader + signature-verification tests; independent review gate |
+| RE-003 | Planned R2: approval artifact loading + digest/version binding tests; independent review gate |
+| RE-004 | Planned R3: durable replay ledger tests incl. concurrent/crash behavior; independent review gate |
+| RE-005 | Planned R4: recovery planner with negative-plan failure tests; independent review gate |
+| RE-006 | Planned R5: recovery executor with fixed mutation family, operator confirmation and telemetry tests; fresh live authorization required |
+| RE-007 | Planned R5/R6: outcome verification reusing `validate_state`/HTTPS/Monitor contracts + exclusive-create audit; reviewer close-out |
+| RE-008 | Documented protected Windows trust boundary; no repository or module-side key access permitted |
+
+Planned evidence is never represented as completed on these rows until the
+corresponding implementation, gates, and independent review have occurred.
+No Azure, signing, grant-issuance, or deployment evidence exists on any of
+these rows today.

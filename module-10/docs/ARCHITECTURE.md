@@ -65,3 +65,37 @@ A reviewer must be able to exercise real system capabilities through Streamlit, 
 ## Production Evidence
 
 The module is not complete merely because its architecture exists. The production-ready deployment and scalable backend deliverables require executable and observable evidence.
+
+## Recovery Authorization Architecture (planned R0)
+
+Story 10.9 adds a planned recovery-authorization pipeline subject to the same
+freeze principle: its stages are documented as a design plan and are not
+implemented beyond the accepted offline structural validator.
+
+- `src/module10_ai/recovery_authorization.py` performs offline structural
+  validation of the Step 73 signed recovery grant (23 signed payload fields,
+  `taie.module10.recovery-grant.v1`, action
+  `restore_azure_container_app_scale`, issuer key id
+  `TAIE-M10-Recovery-Grant-Issuer-v1`, `rsa-pss-sha256` envelope schema,
+  RSA-3072 signature byte shape, canonical byte-preserving transport).
+- Structural validation is not cryptographic authentication, human approval,
+  replay prevention or recovery authorization; the authority chain remains
+  fail-closed:
+  structurally valid ≠ authenticated ≠ approved ≠ executable ≠ verified.
+- The recovery trust boundary (non-exportable RSA-3072 issuer identity in
+  protected Windows key storage, protected public trust-anchor location,
+  distinct recovery identity, least-privilege recovery account) belongs to the
+  operator's Windows environment and is out of reach for Module 10 code;
+  implementation stages may only consume narrow explicitly authorized
+  service surfaces (public-key verification; a separate mutation call family
+  under fresh human authorization).
+- Planned stages R1-R6 (trust-anchor loader/verifier, approval store,
+  durable replay prevention, recovery planner, bounded executor, reviewer
+  close-out) are recorded in `docs/RECOVERY_GRANTS.md`; the explicitly
+  unresolved policy decisions remain standing human decisions documented in
+  the Story 10.9 record (`docs/STORY_10_9.md`, "R0 recovery-grants
+  architecture baseline" section). None is implemented, and operational
+  activation remains conditional on separate human authorization.
+- This plan does not modify the approved AI deployment architecture, the
+  Azure read-only verifier boundary, the reviewer evidence model, or any
+  module-isolation rule.
