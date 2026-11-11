@@ -230,6 +230,9 @@ Invoke-WebRequest -Uri "https://$fqdn/health/ready" -TimeoutSec 30 -MaximumRetry
 Use this PowerShell 7 procedure from the Module 10 directory. Enter the intended
 subscription from the independently human-reviewed account record, never from
 Azure output, resource IDs, model output, saved input files or an unchecked CLI default.
+The verifier consumes each acceptance response as raw, undecoded bytes: a
+`Content-Encoding`-compressed response is not automatically decompressed and
+will fail closed during JSON validation rather than being expanded in memory.
 The parent creates the private child pipe and closes it after one UUID line.
 Replace UNIQUE with a new evidence filename before execution.
 

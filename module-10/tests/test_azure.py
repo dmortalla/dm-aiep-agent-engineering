@@ -2148,3 +2148,171 @@ def test_evidence_rejects_foreign_repository_common(
     with pytest.raises(ValueError, match="Cannot establish the trusted project evidence"):
         deployment.trusted_evidence(checkout, module)
     assert not (foreign / "EVIDENCE").exists()
+
+
+class _SyntheticFloodStream(httpx.AsyncByteStream):
+    """Deterministic multi-chunk async byte stream for bounded-read coverage."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+def test_https_never_uses_the_implicated_stream_context_manager(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The corrected mechanism must not re-enter the reproduced-hanging CM path."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.scheme == "https" and request.headers["X-Request-ID"] == request_id
+        if request.url.path == "/health/live":
+            return httpx.Response(200, json={"status": "alive", "mode": "deterministic"})
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    calls = []
+
+    def client(**kwargs: object) -> httpx.AsyncClient:
+        assert kwargs["follow_redirects"] is False and kwargs["trust_env"] is False
+        assert kwargs["timeout"] == 30
+        built = original(**kwargs, transport=httpx.MockTransport(respond))
+        real_send = built.send
+
+        async def send(request: httpx.Request, **send_kwargs: object) -> httpx.Response:
+            assert send_kwargs.get("stream") is True
+            calls.append(request)
+            return await real_send(request, **send_kwargs)
+
+        monkeypatch.setattr(built, "send", send)
+        monkeypatch.setattr(built, "stream",
+                            lambda *a, **kw: pytest.fail(
+                                "The reproduced-hanging stream context manager was re-entered."))
+        return built
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", client)
+    deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+    assert len(calls) == 5
+
+
+def test_https_raw_flood_is_capped_before_buffering(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hostile multi-chunk stream cannot exceed the 64 KiB consumption bound."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+    flood = [b"x" * 4096] * 20
+    assert 4096 * 20 > 65536
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(200, stream=_SyntheticFloodStream(flood),
+                                  headers={"Content-Length": str(4096 * 20)})
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(respond)))
+    with pytest.raises(VerificationError) as error:
+        deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+    assert str(error.value) == ("HTTP response exceeded acceptance bound "
+                                "for (cloud-liveness).")
+    for leak in ("hostile", SUBSCRIPTION, "E:/", request_id):
+        assert leak not in str(error.value)
+
+
+def test_https_exact_cap_stream_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stream at exactly the accepted bound completes without rejection."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+    live_body = json.dumps({"status": "alive", "mode": "deterministic"}).encode("ascii")
+    padding = b" " * (65536 - len(live_body))
+    chunks = [live_body, padding]
+    assert len(live_body) + len(padding) == 65536
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(200, stream=_SyntheticFloodStream(chunks),
+                                  headers={"Content-Length": str(65536)})
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(respond)))
+    deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+
+
+def test_https_encoded_response_is_not_decompressed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declared encodings are never decoded: raw bytes fail JSON parsing fail-closed."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+    import gzip as gzip_module
+    compressed = gzip_module.compress(
+        json.dumps({"status": "alive", "mode": "deterministic"}).encode("ascii"))
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(200, stream=_SyntheticFloodStream([compressed]),
+                                  headers={"Content-Encoding": "gzip",
+                                           "Content-Length": str(len(compressed))})
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(respond)))
+    with pytest.raises(VerificationError, match="receiving/JSON parsing"):
+        deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+
+
+def test_https_none_cached_content_follows_streaming_path(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A response with a None _content attribute streams instead of raising TypeError."""
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            response = httpx.Response(
+                200, stream=_SyntheticFloodStream(
+                    [json.dumps({"status": "alive",
+                                 "mode": "deterministic"}).encode("ascii")]),
+                headers={"Content-Length": "40"})
+            response._content = None
+            return response
+        if request.url.path == "/health/ready":
+            return httpx.Response(200, json={"status": "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
+                        original(**kw, transport=httpx.MockTransport(respond)))
+    deployment.https_checks("synthetic.azurecontainerapps.io", request_id)

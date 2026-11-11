@@ -388,27 +388,65 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
             async def call(label: str, path: str, payload: bytes | None = None) -> tuple:
                 _https_identity(label)
                 method = "GET" if payload is None else "POST"
+                request = client.build_request(
+                    method, path, content=payload,
+                    headers={"Content-Type": "application/json"})
+                response = None
                 try:
-                    async with asyncio.timeout(30), client.stream(
-                        method, path, content=payload, headers={"Content-Type": "application/json"}
-                    ) as response:
-                        content = bytearray()
-                        async for chunk in response.aiter_bytes(chunk_size=4096):
-                            content.extend(chunk)
-                            require(len(content) <= 65536,
-                                    f"HTTP response exceeded acceptance bound for ({label}).")
-                        return response.status_code, json.loads(content)
-                except VerificationError:
-                    raise
-                except (httpx.HTTPError, TimeoutError) as exc:
-                    subtype = _https_transport_subtype(exc)
-                    raise VerificationError(
-                        f"HTTPS acceptance ({label}) failed at the transport stage "
-                        f"({subtype}); no cloud success recorded.") from exc
-                except (ValueError, UnicodeError) as exc:
-                    raise VerificationError(
-                        f"HTTPS acceptance ({label}) failed at receiving/JSON parsing; "
-                        "no cloud success recorded.") from exc
+                    try:
+                        async with asyncio.timeout(30):
+                            # Step 148-155 reproduced streaming-path timeouts in
+                            # this environment (plain non-streaming GET succeeded
+                            # while verifier-style client.stream timed out even
+                            # header-free). The observations implicate this
+                            # streaming execution path only; the underlying
+                            # httpx/transport or network cause is NOT established.
+                            # This executes the same bounded acceptance request
+                            # through a direct streaming send and consumes the
+                            # body with raw (undecoded) incremental reads under
+                            # the identical 30-second wall-clock deadline and
+                            # 64 KiB cap, moving off the implicated mechanism
+                            # without asserting any root cause.
+                            response = await client.send(request, stream=True)
+                            content = bytearray()
+                            cached = getattr(response, "_content", None)
+                            if cached is not None:
+                                # Offline doubles/pre-buffered transports carry a
+                                # cached body; bound it before any further use.
+                                require(len(cached) <= 65536,
+                                        f"HTTP response exceeded acceptance bound "
+                                        f"for ({label}).")
+                                content.extend(cached)
+                            else:
+                                async for chunk in response.aiter_raw(chunk_size=4096):
+                                    content.extend(chunk)
+                                    require(len(content) <= 65536,
+                                            f"HTTP response exceeded acceptance "
+                                            f"bound for ({label}).")
+                            status_code = response.status_code
+                            parsed = json.loads(content)
+                            await response.aclose()
+                            response = None
+                            return status_code, parsed
+                    except VerificationError:
+                        raise
+                    except (httpx.HTTPError, TimeoutError) as exc:
+                        subtype = _https_transport_subtype(exc)
+                        raise VerificationError(
+                            f"HTTPS acceptance ({label}) failed at the transport stage "
+                            f"({subtype}); no cloud success recorded.") from exc
+                    except (ValueError, UnicodeError) as exc:
+                        raise VerificationError(
+                            f"HTTPS acceptance ({label}) failed at receiving/JSON "
+                            "parsing; no cloud success recorded.") from exc
+                finally:
+                    if response is not None:
+                        try:
+                            # Best-effort release; a close failure must never mask
+                            # the primary acceptance diagnostic.
+                            await response.aclose()
+                        except (httpx.HTTPError, OSError):
+                            pass
 
             def validated(label: str, model, body: object) -> object:
                 try:
