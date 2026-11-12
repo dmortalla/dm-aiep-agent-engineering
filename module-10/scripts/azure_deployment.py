@@ -382,7 +382,7 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
     """Enforce a wall-clock deadline across headers and the entire response stream."""
     try:
         async with httpx.AsyncClient(
-            base_url="https://" + fqdn, timeout=30, follow_redirects=False,
+            base_url="https://" + fqdn, timeout=60, follow_redirects=False,
             trust_env=False, headers={"X-Request-ID": request_id}
         ) as client:
             async def call(label: str, path: str, payload: bytes | None = None) -> tuple:
@@ -394,7 +394,7 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
                 response = None
                 try:
                     try:
-                        async with asyncio.timeout(30):
+                        async with asyncio.timeout(60):
                             # Step 148-155 reproduced streaming-path timeouts in
                             # this environment (plain non-streaming GET succeeded
                             # while verifier-style client.stream timed out even
@@ -404,7 +404,7 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
                             # This executes the same bounded acceptance request
                             # through a direct streaming send and consumes the
                             # body with raw (undecoded) incremental reads under
-                            # the identical 30-second wall-clock deadline and
+                            # the identical 60-second wall-clock deadline and
                             # 64 KiB cap, moving off the implicated mechanism
                             # without asserting any root cause.
                             response = await client.send(request, stream=True)

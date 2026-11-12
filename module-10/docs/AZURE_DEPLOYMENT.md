@@ -218,6 +218,9 @@ gate accepts Healthy/Running and Healthy/ScaledToZero: a scaled-to-zero idle
 state is a legitimate result of the approved minReplicas == 0 deployment
 contract and is validated as such, so no warm-up is required for the verifier
 itself; warm-up guidance applies only to the interactive health request below.
+The operator's interactive warm-up probe is a separate human-run mechanism: its
+30-second `TimeoutSec` is independent of the verifier's 60-second per-request
+complete-call deadline and does not bound the verifier.
 A bounded human warm-up, if needed:
 
 ```powershell
@@ -350,9 +353,18 @@ no raw response output. It accepts no snapshot/fixture/approval file. It verifie
 owned group/resources/tags/region, Basic ACR and digest, narrow pull RBAC, workspace
 retention/cap, Consumption environment/log connection, accepted app configuration,
 one provisioned healthy active revision and restricted Azure hostname. Each of
-five HTTPS requests has a 30-second timeout and 64 KiB response ceiling: liveness,
-readiness, two deterministic inferences and one sanitized 422 rejection. TLS is
-verified; proxies, redirects and retries are disabled. No paid model call occurs.
+five HTTPS requests has a 60-second timeout (approved after a human-supplied
+Step 170 diagnostic result — HTTP 200 in 33.26 seconds with a 41-byte body —
+showed a legitimate successful response exceeding the original 30-second
+bound; this diagnostic was not independently archived as an evidence artifact
+and does not establish the root cause of earlier streaming timeouts) and a
+64 KiB response ceiling: liveness,
+readiness, two deterministic inferences and one sanitized 422 rejection. Five
+sequential requests can therefore consume up to approximately 300 seconds in
+aggregate at the new per-request bound; this HTTPS-phase maximum is separate
+from the Azure CLI per-command deadline, Monitor ingestion waits and all other
+verification stages, and no aggregate timeout is imposed. TLS is verified;
+proxies, redirects and retries are disabled. No paid model call occurs.
 
 The existing bounded JSON application telemetry goes to stdout/stderr, collected
 by Container Apps into `ContainerAppConsoleLogs_CL`. A fresh random request ID is

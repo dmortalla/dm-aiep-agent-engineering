@@ -52,8 +52,13 @@ acceptance calls and query fresh correlated telemetry aggregates (six attempts
 maximum). A final fresh configuration/revision check precedes minimized metadata.
 CLI calls are allowlisted, bounded to 90 seconds, log/telemetry/auto-install disabled;
 Windows calls use Azure's MSI Python directly, avoiding batch shell parsing.
-HTTP uses verified TLS, no proxies/redirects, a 30-second complete-call deadline
-and a 64 KiB response ceiling. Failure does not produce success evidence.
+HTTP uses verified TLS, no proxies/redirects, a 60-second complete-call deadline
+(raised from 30 seconds after a human-supplied Step 170 diagnostic result —
+HTTP 200 in 33.26 seconds, 41-byte body — showed a legitimate successful
+response exceeding the original bound; the diagnostic was not independently
+archived as evidence and does not establish the root cause of earlier HTTPX
+streaming timeouts) and a 64 KiB response ceiling. Failure does not produce
+success evidence.
 
 ## Verification record
 

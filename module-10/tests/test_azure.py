@@ -898,7 +898,7 @@ def test_https_success_is_five_bounded_calls(monkeypatch: pytest.MonkeyPatch) ->
 
     def client(**kwargs: object) -> httpx.AsyncClient:
         assert kwargs["follow_redirects"] is False and kwargs["trust_env"] is False
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 60
         return original(**kwargs, transport=httpx.MockTransport(respond))
 
     monkeypatch.setattr(deployment.httpx, "AsyncClient", client)
@@ -2184,7 +2184,7 @@ def test_https_never_uses_the_implicated_stream_context_manager(
 
     def client(**kwargs: object) -> httpx.AsyncClient:
         assert kwargs["follow_redirects"] is False and kwargs["trust_env"] is False
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 60
         built = original(**kwargs, transport=httpx.MockTransport(respond))
         real_send = built.send
 
@@ -2316,3 +2316,43 @@ def test_https_none_cached_content_follows_streaming_path(
     monkeypatch.setattr(deployment.httpx, "AsyncClient", lambda **kw:
                         original(**kw, transport=httpx.MockTransport(respond)))
     deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+
+
+def test_https_wall_clock_deadline_is_sixty_seconds_per_request(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """All five HTTPS requests run under exactly the approved 60-second deadline.
+
+    Records every asyncio.timeout instantiation during the acceptance flow:
+    a regression to 30 seconds, any other bound, or deadline removal fails.
+    """
+    real_timeout = deployment.asyncio.timeout
+    recorded = []
+
+    def recording_timeout(seconds: object) -> object:
+        recorded.append(seconds)
+        return real_timeout(seconds)
+
+    monkeypatch.setattr(deployment.asyncio, "timeout", recording_timeout)
+    original = httpx.AsyncClient
+    request_id = "b" * 32
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.scheme == "https" and request.headers["X-Request-ID"] == request_id
+        if request.url.path.startswith("/health/"):
+            return httpx.Response(200, json={"status": "alive" if
+                request.url.path.endswith("live") else "ready", "mode": "deterministic"})
+        if json.loads(request.content)["text"] == "":
+            return httpx.Response(422, json={
+                "code": "invalid_request", "request_id": request_id,
+                "message": "Request does not satisfy the input contract."})
+        return httpx.Response(200, json={"word_count": 4, "keywords": ["beta", "alpha", "gamma"],
+                                         "evidence": "deterministic", "request_id": request_id})
+
+    def client(**kwargs: object) -> httpx.AsyncClient:
+        assert kwargs["follow_redirects"] is False and kwargs["trust_env"] is False
+        assert kwargs["timeout"] == 60
+        return original(**kwargs, transport=httpx.MockTransport(respond))
+
+    monkeypatch.setattr(deployment.httpx, "AsyncClient", client)
+    deployment.https_checks("synthetic.azurecontainerapps.io", request_id)
+    assert recorded == [60, 60, 60, 60, 60]
