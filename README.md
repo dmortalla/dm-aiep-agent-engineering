@@ -85,6 +85,45 @@ See [Module 6.5](module-06-5/docs/RELEASE_READINESS.md) and [Traceability](modul
 
 ---
 
+## Module 7 - Reliability, Safety and Observability
+
+Module 7 implements an application-controlled reliability, safety, observability and evaluation system. The architecture separates workflow authority, bounded recovery, safety validation, telemetry, evaluation and provider integration from its Streamlit reviewer interface. Model and external-provider outputs do not independently authorize privileged actions.
+
+**Reviewer app (local, deterministic):** from `module-07`, run `uv run streamlit run streamlit_app.py`.
+
+The intended default reviewer path requires no vendor credentials and does not activate live-provider transport. The launch command is derived from the existing Streamlit entry point and repository conventions; successful interactive launch and hosted deployment require separate verification.
+
+### Implemented capabilities
+
+- Application-owned workflow authorization and safety boundaries, including local Guardrails AI validation and rejection of forged authority.
+- Bounded reliability controls covering retries, timeouts, fallback, execution budgets and idempotency within the accepted in-process controller boundaries.
+- Normalized, minimized telemetry with correlation identifiers and bounded observability projections.
+- Deterministic evaluation, benchmarking, regression and advisory improvement-comparison workflows.
+- A fixed S01-S20 simulated failure-recovery laboratory using existing application boundaries.
+- Langfuse, LangSmith and Helicone adapter contracts with evidence classes distinguishing local/mock results from live-provider verification.
+- A guided Streamlit reviewer console presenting workflow, observability, evaluation, simulated failure and provider-evidence surfaces.
+- Immutable local evidence-record mechanisms and integrated release-readiness reconciliation.
+
+### Testing and evidence posture
+
+Story 10's eight candidate-bound artifacts received independent review and human acceptance. The accepted evidence records 19 verified and 77 open traceability rows. A separately verified formal Ruff, pytest and compileall gate exists for the accepted candidate; these results do not establish completion of every release obligation.
+
+Evidence classes distinguish deterministic fixtures, simulated failures and mocked provider contracts from the live-vendor class, which this module has not exercised. Headless Streamlit testing is not equivalent to deployed-browser acceptance.
+
+### Boundaries and exact status
+
+- **Module status: In Progress.** Story 10 artifact acceptance is not final module release or production acceptance.
+- Intermittent Story 8 S19/S20 lifecycle behavior remains unresolved; passing reruns do not erase this qualification.
+- Langfuse, LangSmith and Helicone live-provider evidence lanes remain OPEN. No successful live integration or hosted provider behavior is claimed.
+- Comprehensive current dependency vulnerability review and final release reconciliation remain outstanding.
+- Local evidence storage does not certify an environment-backed production adapter, crash durability or deployed operations.
+- Hosted Streamlit deployment, deployed reviewer verification, Git publication and LinkedIn closeout are not established by Story 10 acceptance.
+- Deterministic local outcomes are not production availability, latency, security or cost certification.
+
+See [Module 7 requirements](module-07/docs/REQUIREMENTS.md), [traceability](module-07/docs/TRACEABILITY.md), [architecture](module-07/docs/ARCHITECTURE.md), and [Story 10 release contract](module-07/docs/stories/STORY-10-integrated-verification-release-readiness.md) for source obligations and evidence boundaries.
+
+---
+
 ## Module 9 - Multimodal & Voice AI Systems
 
 Module 9 implements a production-grade reviewer-facing multimodal and voice AI platform spanning vision, documents, audio, cross-modal reasoning, voice orchestration, and genuine WebSocket streaming. Authoritative application logic remains outside the Streamlit presentation layer.
