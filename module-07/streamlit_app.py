@@ -6,6 +6,17 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 from streamlit.runtime.state import SafeSessionState, SessionState
 
+from reliability_safety_observability.byok_evaluation import (
+    ALLOWED_BYOK_MODELS,
+    BYOK_CASES,
+    MAX_OUTPUT_TOKENS,
+    MIN_OUTPUT_TOKENS,
+    PROVIDER_NAME,
+    LiveRunRequest,
+    OpenAITransport,
+    SessionRunGuard,
+    execute_live_run,
+)
 from reliability_safety_observability.config import RuntimeSettings
 from reliability_safety_observability.console_presenter import (
     BenchmarkEvidence,
@@ -93,6 +104,9 @@ def _state() -> None:
         st.session_state.setdefault(name, None)
     st.session_state.setdefault("_live_confirmation", None)
     st.session_state.setdefault("_live_attempt_status", None)
+    st.session_state.setdefault("_byok_guard", SessionRunGuard())
+    st.session_state.setdefault("_byok_result", None)
+    st.session_state.setdefault("_byok_notice", None)
 
 
 def _refresh_live_confirmation(console: ConsoleBoundary) -> None:
@@ -375,6 +389,314 @@ def failure_lab(console: ConsoleBoundary) -> None:
         )
 
 
+def _byok_request() -> LiveRunRequest | None:
+    """Build the run request from the current widgets, or None when invalid.
+
+    Returns:
+        The caller-confirmed run request, or None when the current
+        widget state cannot form a valid request (the caller must fail
+        closed without any invocation).
+    """
+    try:
+        return LiveRunRequest(
+            model=st.session_state.byok_model,
+            case_ids=tuple(st.session_state.byok_cases),
+            max_requests=min(len(st.session_state.byok_cases), 5),
+            max_output_tokens=int(st.session_state.byok_tokens),
+        )
+    except Exception:
+        return None
+
+
+def _byok_current() -> LiveRunRequest | None:
+    """Build the current-widget request for invalidation comparisons."""
+    try:
+        return LiveRunRequest(
+            model=st.session_state.byok_model,
+            case_ids=tuple(st.session_state.byok_cases),
+            max_requests=min(len(st.session_state.byok_cases), 5),
+            max_output_tokens=int(st.session_state.byok_tokens),
+        )
+    except Exception:
+        return None
+
+
+def _invalidate_byok_pending() -> None:
+    """Drop the pending authorization when run inputs changed."""
+    guard: SessionRunGuard = st.session_state._byok_guard
+    request = _byok_current()
+    if request is not None:
+        guard.invalidate(request)
+    else:
+        guard.invalidate(
+            LiveRunRequest(
+                model="",
+                case_ids=(),
+                max_requests=1,
+                max_output_tokens=MIN_OUTPUT_TOKENS,
+            )
+        )
+
+
+def _prepare_byok_authorization() -> None:
+    """Prepare a fresh per-run authorization when the confirmation is set."""
+    guard: SessionRunGuard = st.session_state._byok_guard
+    request = _byok_request()
+    if request is None:
+        return
+    pending = guard.pending
+    if pending is None or pending.binding_digest != request.binding_digest:
+        guard.prepare(request)
+
+
+def _invalidate_byok_confirmation() -> None:
+    """Reset the one-shot grant when the confirmation changes.
+
+    A fresh confirmation binds a fresh authorization to the configuration
+    that is current at the moment of confirmation.  The authorization is not
+    re-prepared on later reruns, so any subsequent input change really does
+    invalidate it and a new confirmation is required.
+    """
+    st.session_state._byok_guard = SessionRunGuard()
+    if st.session_state.get("byok_confirm"):
+        _prepare_byok_authorization()
+
+
+def byok_model_check(console: ConsoleBoundary) -> None:
+    """Render the bounded BYOK live-model evaluation tab.
+
+    Deterministic mode is the default: no API key, no external calls,
+    and the existing local functionality stays authoritative.  BYOK
+    live mode requires an explicit per-run confirmation; a submitted
+    run is consumed once within this session, duplicate or overlapping
+    submissions are rejected, and any input change invalidates a
+    pending authorization.  Returned model text is treated as
+    untrusted data and is never executed.
+    """
+    st.header("BYOK model check")
+    if st.session_state.pop("_byok_wipe_credential", False):
+        # A completed live run already consumed the credential; remove it
+        # before the widget is recreated so it does not outlive the run.
+        st.session_state.pop("byok_api_key", None)
+    mode = st.radio(
+        "Execution mode",
+        options=("Deterministic mode (no API key)", "BYOK live mode"),
+        key="byok_mode",
+        horizontal=True,
+    )
+    if mode != "BYOK live mode":
+        st.write(
+            "**Deterministic mode.** No API key is required, no external "
+            "provider is called, and every result in the other tabs is "
+            "deterministic/local."
+        )
+        st.caption("Switch to BYOK live mode to configure a bounded live check.")
+        return
+    guard: SessionRunGuard = st.session_state._byok_guard
+    st.caption(
+        "BYOK live mode: your key is used transiently in memory for the "
+        "confirmed run only; it is never persisted to disk and is "
+        "dropped from the session after the run completes. An estimated "
+        "cost appears only when you supply documented unit prices; it "
+        "is an estimate, never a guaranteed spending limit."
+    )
+    st.selectbox(
+        "Provider",
+        options=(PROVIDER_NAME,),
+        key="byok_provider",
+        disabled=True,
+    )
+    st.selectbox(
+        "Model (allowlisted)",
+        options=ALLOWED_BYOK_MODELS,
+        key="byok_model",
+        on_change=_invalidate_byok_pending,
+    )
+    st.multiselect(
+        "Evaluation cases",
+        options=[case.case_id for case in BYOK_CASES],
+        default=[BYOK_CASES[0].case_id],
+        key="byok_cases",
+        max_selections=5,
+        on_change=_invalidate_byok_pending,
+        help="Each selected case is one real provider request.",
+    )
+    for case in BYOK_CASES:
+        st.caption(f"{case.case_id} ({case.category}): {case.criterion_description}")
+    st.number_input(
+        "Maximum output tokens per request",
+        min_value=MIN_OUTPUT_TOKENS,
+        max_value=MAX_OUTPUT_TOKENS,
+        value=200,
+        step=25,
+        key="byok_tokens",
+        on_change=_invalidate_byok_pending,
+    )
+    with_price = st.checkbox(
+        "Show estimated cost (I supply documented unit prices)",
+        key="byok_price_enabled",
+    )
+    pricing = None
+    if with_price:
+        left, right = st.columns(2)
+        with left:
+            input_price = st.number_input(
+                "Input USD per 1k tokens", min_value=0.0, value=0.0, key="byok_price_in"
+            )
+        with right:
+            output_price = st.number_input(
+                "Output USD per 1k tokens", min_value=0.0, value=0.0, key="byok_price_out"
+            )
+        pricing = {
+            st.session_state.byok_model: {
+                "input_per_1k": input_price,
+                "output_per_1k": output_price,
+            }
+        }
+    st.text_input(
+        "API key (BYOK, masked)",
+        type="password",
+        key="byok_api_key",
+        help="Transient in-memory use only; cleared after the run.",
+    )
+    st.checkbox(
+        "I authorize exactly one bounded live evaluation run with the "
+        "settings above.",
+        key="byok_confirm",
+        on_change=_invalidate_byok_confirmation,
+    )
+    request = _byok_current()
+    pending = guard.pending
+    stale = (
+        pending is not None
+        and request is not None
+        and pending.binding_digest != request.binding_digest
+    )
+    if stale:
+        st.warning(
+            "Run inputs changed; the pending authorization was "
+            "invalidated. Re-confirm to authorize the new configuration.",
+            title="Fresh authorization required",
+        )
+    if st.button(
+        "Run authorized live evaluation",
+        key="byok_submit",
+        width="content",
+    ):
+        if guard.running:
+            st.session_state._byok_notice = (
+                "A live run is already executing in this session; "
+                "overlapping or duplicate submissions are rejected."
+            )
+        elif not st.session_state.byok_confirm or pending is None:
+            st.session_state._byok_notice = (
+                "No pending authorization. Confirm the run first; a "
+                "fresh confirmation is required after any input change."
+            )
+        elif request is None or pending.binding_digest != request.binding_digest:
+            st.session_state._byok_notice = (
+                "The pending authorization does not match the current "
+                "inputs and was invalidated. Re-confirm to proceed."
+            )
+            _invalidate_byok_pending()
+        elif not guard.begin(pending):
+            st.session_state._byok_notice = (
+                "This authorization was already consumed in this "
+                "session. Confirm again for a new run."
+            )
+        else:
+            api_key = st.session_state.get("byok_api_key", "") or ""
+            try:
+                st.session_state._byok_result = execute_live_run(
+                    request,
+                    api_key=api_key,
+                    transport=OpenAITransport(),
+                    pricing=pricing,
+                )
+                guard.complete()
+                st.session_state._byok_notice = None
+            except Exception as exc:
+                guard.complete()
+                st.session_state._byok_notice = None
+                st.error(safe_error(exc), title="Live evaluation unavailable")
+            finally:
+                # The credential is wiped from the session as soon as the run
+                # completes: the next render deletes the widget value before
+                # the widget is recreated.  Deleting it in this run would
+                # desynchronize Streamlit's own widget state.
+                st.session_state["_byok_wipe_credential"] = True
+                api_key = ""
+            st.rerun()
+    notice = st.session_state._byok_notice
+    if notice:
+        st.warning(notice, title="Authorization boundary")
+    result = st.session_state._byok_result
+    if result is None:
+        st.caption("No live evaluation has been run in this session.")
+        return
+    if result.blocked_category is not None:
+        st.warning(
+            {
+                "missing_credentials": (
+                    "No API key was supplied; the run failed closed and "
+                    "no provider request was made."
+                )
+            }.get(
+                result.blocked_category.value,
+                "The run was blocked before any provider request.",
+            ),
+            title="Run blocked",
+        )
+        return
+    evaluated = [
+        row for row in result.case_results if row.outcome.value in {"pass", "fail"}
+    ]
+    st.json(
+        {
+            "provider": result.provider,
+            "model": result.model,
+            "run_id": str(result.run_id),
+            "invocations": result.invocations,
+            "failure_categories": [
+                category.value for category in result.failure_categories
+            ],
+            "evidence_class": "live_model",
+        }
+    )
+    st.dataframe(
+        [
+            {
+                "case": row.case_id,
+                "criterion": row.criterion,
+                "outcome": row.outcome.value,
+                "evidence_class": row.evidence_class.value if row.evidence_class else "none",
+                "latency_ms": row.elapsed_ms,
+                "usage": row.usage_source.value,
+                "prompt_tokens": row.prompt_tokens,
+                "completion_tokens": row.completion_tokens,
+                "estimated_cost_usd": row.estimated_cost_usd,
+                "failure_category": (
+                    row.failure_category.value if row.failure_category else "none"
+                ),
+            }
+            for row in result.case_results
+        ],
+        hide_index=True,
+        alt="Sanitized BYOK live evaluation outcomes",
+    )
+    if not evaluated:
+        st.warning(
+            "No case produced a grounded evaluation outcome; see the "
+            "per-case rows and failure categories above.",
+            title="No grounded evaluation",
+        )
+    st.caption(
+        "Returned model text is untrusted data: it is only displayed "
+        "safely and evaluated against explicit textual criteria. It is "
+        "never executed, and API success is not evaluation success."
+    )
+
+
 def providers(console: ConsoleBoundary) -> None:
     st.header("Provider evidence")
     guidance(
@@ -471,7 +793,14 @@ def main() -> None:
     console = boundary()
     st.title("Module 7 observability and evaluation console")
     pages = st.tabs(
-        ["Overview", "Workflow", "Evaluation", "Failure-recovery lab", "Provider evidence"]
+        [
+            "Overview",
+            "Workflow",
+            "Evaluation",
+            "Failure-recovery lab",
+            "Provider evidence",
+            "BYOK model check",
+        ]
     )
     with pages[0]:
         overview(console)
@@ -483,6 +812,8 @@ def main() -> None:
         failure_lab(console)
     with pages[4]:
         providers(console)
+    with pages[5]:
+        byok_model_check(console)
 
 
 if __name__ == "__main__":
