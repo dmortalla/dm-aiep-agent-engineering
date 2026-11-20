@@ -226,6 +226,50 @@ REQ-DOD-009 [GOVERNANCE]: Final traceability shall distinguish source requiremen
 
 REQ-DOD-010 [GOVERNANCE]: Module completion shall require the two source-required deliverables to collectively demonstrate the source objective, topics, labs, and meaningful use of the indicated tools.
 
+## Option 1 evidence requirements — human-approved architectural amendment
+
+These additive governance requirements encode ADR-007-013 and do not alter the
+course-source requirements. They supplement the existing DOD and QG rules.
+
+REQ-EVD-001 [GOVERNANCE]: Only authorized producer execution seams shall create
+eligible evidence. Raw constructible models, caller mappings, LLM/tool/retrieval/
+provider output and labels shall not establish accepted evidence authority.
+
+REQ-EVD-002 [GOVERNANCE]: Evidence shall be minimized/redacted before immutable
+recording and artifact construction. Secrets/free text shall be excluded or
+replaced by safe references; optional post-hoc checking is insufficient.
+
+REQ-EVD-003 [GOVERNANCE]: Immutable records shall bind producer/schema/source,
+provenance, evidence class and applicable candidate/contract identities through
+versioned lossless serialization and a content/integrity-bound trusted reference.
+Records and references shall not be overwritten or rebound. Identical recording
+shall be idempotent; different-content collisions shall fail closed.
+
+REQ-EVD-004 [GOVERNANCE]: Read-only loaders shall validate integrity, producer
+origin and schema. Unknown, corrupt, malformed, stale, mismatched or provenance-
+invalid records shall fail closed. Story 10 shall reload and rederive source,
+class, projection, JCS bytes and digest rather than trust stored claims.
+
+REQ-EVD-005 [GOVERNANCE]: Evidence class shall derive from trusted producer
+provenance using exactly the existing five classes. Caller promotion to live
+classes shall fail. Configuration/credentials/storage capability shall not
+establish live evidence; missing qualifying live evidence shall remain open.
+Reference possession shall grant retrieval only and no authorization.
+
+REQ-EVD-006 [GOVERNANCE]: Actual gate evidence shall bind the frozen candidate,
+approved contract, executed commands, ordered results, timing, output integrity
+and failure/repair/rerun history. Existing Ruff -> pytest -> compileall and
+failed-gate/full-rerun rules apply. Unresolved failure shall prevent success.
+Candidate/contract changes shall invalidate readiness. Final gate recording
+shall occur after completion outside candidate content to avoid circularity.
+
+REQ-EVD-007 [GOVERNANCE]: Reviewer evidence persistence shall use a configurable,
+ignored runtime-local location excluded from candidate identity, without machine
+absolute paths or external TECHADEMY/EVIDENCE dependence. Persistence shall be
+durable, atomic, no-overwrite, safely contained, bounded and concurrency-safe,
+with explicit retention/cleanup ownership. Production adapters shall enforce the
+same immutable/read-only contract; deployment or live claims require actual evidence.
+
 ## Architecture Boundary
 
 This strengthened requirements baseline intentionally does not select:

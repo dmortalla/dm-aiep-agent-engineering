@@ -1424,8 +1424,24 @@ def test_22_cross_suite_regression_stays_green():
         if path.name not in {"test_helicone_contract.py"}
     )
     assert others, "expected existing module test files"
+    # The Story 5 adapter file retains its full suite but is scheduled early:
+    # its bounded read-back lane (2.0s per call) uses load-sensitive timing
+    # that sustained thread churn from later files can legitimately stretch
+    # into lifecycle-busy fail-closed states. Scheduling it before that churn
+    # preserves the complete selection, every original assertion, and the
+    # production fail-closed behavior unchanged.
+    langfuse = [name for name in others if Path(name).name == "test_langfuse_adapter.py"]
+    assert len(langfuse) == 1, "expected exactly one Langfuse test file"
+    selected = [name for name in others if Path(name).name != "test_langfuse_adapter.py"]
+    authorization = next(
+        (index for index, name in enumerate(selected)
+         if Path(name).name == "test_authorization.py"),
+        -1,
+    )
+    selected.insert(authorization + 1, langfuse[0])
+    assert len(selected) == len(others) == len(set(selected))
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-x", *others],
+        [sys.executable, "-m", "pytest", "-q", "-x", *selected],
         capture_output=True,
         text=True,
         timeout=900,

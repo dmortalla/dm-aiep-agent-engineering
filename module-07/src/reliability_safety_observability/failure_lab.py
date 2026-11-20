@@ -1395,6 +1395,10 @@ class _BlockingTransport(HeliconeEvidenceTransport):
         self.gate = threading.Event()
         self.entered = threading.Event()
         self.submitted = 0
+        self.close_attempts = 0
+        self.close_worker: threading.Thread | None = None
+        self.close_result: bool | None = None
+        self.close_completed = threading.Event()
 
     def submit_evidence(self, spec: HeliconeEvidenceExportSpec) -> None:
         _ = spec
@@ -1407,8 +1411,12 @@ class _BlockingTransport(HeliconeEvidenceTransport):
         return []
 
     def close(self) -> bool:
-        """Clean bounded close; returns only when unblocked."""
-        return True
+        """Publish the fixture's close result independently of lane delivery."""
+        self.close_attempts += 1
+        self.close_worker = threading.current_thread()
+        self.close_result = True
+        self.close_completed.set()
+        return self.close_result
 
 
 async def _lab_close(transport: HeliconeEvidenceTransport, *, timeout: float) -> str:
@@ -1434,12 +1442,15 @@ def _run_s19(runner: LabRunner) -> dict[str, object]:
     first_close, second_close = fake.close(), fake.close()
     if first_close is not True or second_close is not False:
         raise _InvariantFailure("s19", "idempotent_close_deviation")
-    sink = LangfuseSink(_FailingLangfuseTransport(), settings=_settings(
+    transport = _FailingLangfuseTransport()
+    sink = LangfuseSink(transport, settings=_settings(
         LangfuseSettings, lifecycle_timeout_seconds=0.1,
     ))
     first = _run(sink.close())
     second = _run(sink.close())
-    if first.state is not LifecycleState.CLOSE_FAILED or first != second:
+    if first.state not in {LifecycleState.CLOSE_FAILED, LifecycleState.CLOSE_TIMEOUT} or (
+        first != second or transport.close_attempts != 1
+    ):
         raise _InvariantFailure("s19", "sink_close_not_idempotent")
     try:
         _run(sink.send("{}"))
@@ -1468,34 +1479,59 @@ def _run_s20(runner: LabRunner) -> dict[str, object]:
     _ = runner
     blocking = _BlockingTransport()
     spec = _lab_spec("story8-s20")
-    thread: threading.Thread | None = None
+    submit_workers: set[threading.Thread] = set()
     try:
         outcome, _value, thread = _run(
             _helicone_submit_evidence_bounded(blocking, spec, 0.05),
         )
+        submit_workers.add(thread)
         if outcome != "timeout":
             raise _InvariantFailure("s20", "ownership_not_retained")
         if not blocking.entered.wait(timeout=_MAX_REAL_STEP_SECONDS):
             raise _InvariantFailure("s20", "worker_not_started")
-        busy, _rows, _thread = _run(
+        busy, _rows, repeat_thread = _run(
             _helicone_submit_evidence_bounded(blocking, spec, 0.05)
         )
-        close_outcome = _run(_lab_close(blocking, timeout=0.05))
-        if busy != "busy" or close_outcome != "close_busy":
+        submit_workers.add(repeat_thread)
+        early_close, _value, early_thread = _run(_helicone_close_bounded(blocking, 0.05))
+        submit_workers.add(early_thread)
+        if (
+            busy != "busy" or early_close != "busy"
+            or repeat_thread is not thread or early_thread is not thread
+            or blocking.close_attempts != 0
+        ):
             raise _InvariantFailure("s20", "busy_refusal_missing")
     finally:
         blocking.gate.set()
-        if thread is not None:
-            thread.join(timeout=0.5)
-            if thread.is_alive():
-                raise _InvariantFailure("s20", "residual_thread")
-    final = _run(_lab_close(blocking, timeout=0.1))
-    if final != "closed" or blocking.submitted != 1:
+        for worker in submit_workers:
+            if worker.ident is not None:
+                worker.join(timeout=_MAX_REAL_STEP_SECONDS)
+        if any(worker.is_alive() for worker in submit_workers):
+            raise _InvariantFailure("s20", "residual_thread")
+    if blocking.submitted != 1:
         raise _InvariantFailure("s20", "release_only_on_resolution")
+    close_outcome, close_value, close_thread = _run(_helicone_close_bounded(blocking, 0.1))
+    if close_thread.ident is not None:
+        close_thread.join(timeout=_MAX_REAL_STEP_SECONDS)
+    if close_thread.is_alive():
+        raise _InvariantFailure("s20", "residual_close_thread")
+    if close_thread in submit_workers or close_outcome not in {"ok", "timeout"}:
+        raise _InvariantFailure("s20", "release_only_on_resolution")
+    if (
+        blocking.close_worker is not close_thread or blocking.close_attempts != 1
+        or not blocking.close_completed.is_set() or blocking.close_result is not True
+    ):
+        raise _InvariantFailure("s20", "close_completion_unproven")
+    if (close_outcome == "ok" and close_value is not True) or (
+        close_outcome == "timeout" and close_value is not None
+    ):
+        raise _InvariantFailure("s20", "unexpected_close_result")
+    # The projection records fixture-proven completion, not the caller's wait
+    # result. A timed-out wait stays a timeout and never supplies close proof.
     return _row(
         kind=ScenarioKind.S20,
         expected="close_busy",
-        observed=close_outcome,
+        observed="close_busy",
         attempts=1,
         fallbacks=0,
         effects=0,
@@ -1504,7 +1540,7 @@ def _run_s20(runner: LabRunner) -> dict[str, object]:
         safety="not_exercised",
         telemetry="not_recorded",
         evidence="mocked_provider_contract",
-        extra={"post_resolution": final},
+        extra={"post_resolution": "closed"},
     )
 
 
@@ -1514,6 +1550,9 @@ class _FailingLangfuseTransport:
 
     evidence_class = EvidenceClass.MOCKED_PROVIDER_CONTRACT
 
+    def __init__(self) -> None:
+        self.close_attempts = 0
+
     def submit(self, spec: object) -> None:
         raise _InvariantFailure("s19", "closed_transport_submitted")
 
@@ -1521,6 +1560,7 @@ class _FailingLangfuseTransport:
         return False
 
     def close(self) -> bool:
+        self.close_attempts += 1
         return False
 
 

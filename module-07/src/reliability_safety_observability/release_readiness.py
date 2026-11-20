@@ -21,6 +21,7 @@ from typing import Final
 
 from .domain import EvidenceClass
 from .evidence_records import _RECORDING_AUTHORITY, EvidenceError, EvidenceStore, digest, encoded
+from .logging import _is_sensitive_key, _sanitize_string
 
 type JsonScalar = str | bool | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
@@ -28,6 +29,27 @@ type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
 _INTEGER_KEY: Final = "$integer"
 _INTEGER_PATTERN: Final = re.compile(r"^(?:0|[1-9][0-9]*)$")
 _EVIDENCE_CLASSES: Final = frozenset(item.value for item in EvidenceClass)
+_GATE_DIAGNOSTIC_PATTERN: Final = re.compile(r"^(?:FAILED|ERROR) (tests/[!-~]+)", re.MULTILINE)
+_GATE_DIAGNOSTIC_LIMIT: Final = 20
+_GATE_DIAGNOSTIC_LENGTH: Final = 300
+# REQ-ENG-002: bounded timeout appropriate to the formal gate's failure
+# boundary; sized from the measured offline suite duration (Step 266.1,
+# 1423.41 s) with headroom, and finite to preserve bounded resources.
+_GATE_TIMEOUT_SECONDS: Final = 1800
+_CREDENTIAL_SHAPES: Final = re.compile(
+    "(?i)\\b(?:"
+    "sk-ant-[A-Za-z0-9_-]{8,}"
+    "|sk-[A-Za-z0-9_-]{8,}"
+    "|ghp_[A-Za-z0-9]{10,}"
+    "|AKIA[0-9A-Z]{12,16}"
+    "|xox[a-z]-[A-Za-z0-9-]{10,}"
+    ")"
+)
+_BEARER_ADJACENT: Final = re.compile("(?i)\\bbearer[-_:][^\\s\\]]{6,}")
+_PARAM_SEGMENT: Final = re.compile("\\[([^\\]]*)\\]")
+_KEY_VALUE_PAIR: Final = re.compile(
+    "(?i)\\b([A-Za-z][A-Za-z0-9_.-]*?)([:=])([^\\s\\]]+)"
+)
 
 
 _RECONCILIATION_STATES: Final = frozenset({"open", "qualified_historical", "verified", "rejected"})
@@ -408,6 +430,72 @@ def derive_projection(source: Mapping[str, object]) -> dict[str, JsonValue]:
 
 def _is_sha256(value: str) -> bool:
     return bool(re.fullmatch(r"[0-9a-fA-F]{64}", value))
+
+
+def _redact_sensitive_pair(match: re.Match[str]) -> str:
+    """Redact a bracketed assignment pair when its key is canonically sensitive.
+
+    Args:
+        match: One bounded ``key=value``/``key:value`` match inside a pytest
+            parameter segment.
+
+    Returns:
+        The key and separator with ``[REDACTED]`` replacing the value when
+        ``logging._is_sensitive_key`` classifies the key as sensitive;
+        otherwise the untouched pair.
+    """
+    key, separator = match[1], match[2]
+    if not _is_sensitive_key(key):
+        return match[0]
+    return key + separator + "[REDACTED]"
+
+
+def _redact_credential_text(value: str) -> str:
+    """Redact recognized credential material embedded in whitespace-free text.
+
+    Space-free bearer values and known token shapes are redacted directly.
+    Bounded assignment pairs inside pytest parameter brackets are redacted
+    only when the canonical ``logging._is_sensitive_key`` classifies the key
+    as sensitive, which covers compound and prefixed keys such as
+    ``AWS_SECRET_ACCESS_KEY`` and ``x_api_key``.  The surrounding test-path
+    and test-name structure is preserved.
+
+    Args:
+        value: Untrusted text such as a captured pytest node identifier.
+
+    Returns:
+        Text with recognized credential material replaced by ``[REDACTED]``
+        placeholders.  Arbitrary unknown credential formats are not
+        guaranteed to be detected.
+    """
+    redacted = _BEARER_ADJACENT.sub("[REDACTED]", value)
+    redacted = _CREDENTIAL_SHAPES.sub("[REDACTED]", redacted)
+    return _PARAM_SEGMENT.sub(
+        lambda segment: "[" + _KEY_VALUE_PAIR.sub(_redact_sensitive_pair, segment[1]) + "]",
+        redacted,
+    )
+
+
+def _gate_diagnostics(text: str) -> list[str]:
+    """Extract bounded, sanitized failed-test identifiers from untrusted output.
+
+    Args:
+        text: Captured subprocess output text; never trusted.
+
+    Returns:
+        At most ``_GATE_DIAGNOSTIC_LIMIT`` unique ``FAILED``/``ERROR`` test
+        node identifiers, each credential-redacted before truncation and
+        length-bounded.  Error detail text after each identifier is never
+        retained.
+    """
+    seen: list[str] = []
+    for node in _GATE_DIAGNOSTIC_PATTERN.findall(text):
+        identifier = _redact_credential_text(_sanitize_string(node))[:_GATE_DIAGNOSTIC_LENGTH]
+        if identifier not in seen:
+            seen.append(identifier)
+        if len(seen) == _GATE_DIAGNOSTIC_LIMIT:
+            break
+    return seen
 
 
 class ReadinessVerifier:
@@ -2070,7 +2158,7 @@ class GateExecutor:
                     cwd=self.verifier.root,
                     env=environment,
                     capture_output=True,
-                    timeout=1200,
+                    timeout=_GATE_TIMEOUT_SECONDS,
                     check=False,
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
@@ -2092,6 +2180,15 @@ class GateExecutor:
                 "retry": self._failed_gate is not None and position == 0,
                 "failure_kind": failure_kind,
             }
+            # Failed gates retain only bounded sanitized test identifiers from
+            # the untrusted output.  Recognized credential material is
+            # redacted before retention.  Raw traceback and failure-message
+            # content are not retained.  Arbitrary unknown credential formats
+            # are not guaranteed to be detected.  No extra execution occurs.
+            if completed.returncode and failure_kind is None:
+                diagnostics = _gate_diagnostics(output.decode(errors="replace"))
+                if diagnostics:
+                    entry["diagnostics"] = diagnostics
             entries.append(entry)
             # Subprocess diagnostics are untrusted and can contain test canaries.
             # Keep only bounded counts plus integrity, never arbitrary raw text.

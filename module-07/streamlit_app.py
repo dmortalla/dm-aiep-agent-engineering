@@ -92,6 +92,7 @@ def _state() -> None:
     ):
         st.session_state.setdefault(name, None)
     st.session_state.setdefault("_live_confirmation", None)
+    st.session_state.setdefault("_live_attempt_status", None)
 
 
 def _refresh_live_confirmation(console: ConsoleBoundary) -> None:
@@ -385,7 +386,7 @@ def providers(console: ConsoleBoundary) -> None:
         "Credentials never grant authority and deterministic results are never upgraded.",
     )
     status = "configuration-gated" if console.live_available else "live evidence unavailable"
-    st.info("No provider verifier has been run by this page.", title=status)
+    attempt_notice = st.empty()
     selected = st.selectbox(
         "Existing verifier",
         options=("Langfuse", "LangSmith", "Helicone"),
@@ -419,16 +420,41 @@ def providers(console: ConsoleBoundary) -> None:
         grant = console.consume_live_confirmation(confirmation, selected)
         st.session_state._live_confirmation = None
         if grant is not None:
+            st.session_state._live_attempt_status = "attempted"
             try:
                 st.session_state.live_result = run_live_verifier(grant)
+                st.session_state._live_attempt_status = (
+                    "confirmed"
+                    if st.session_state.live_result.get("outcome") == "confirmed"
+                    else "unsuccessful"
+                )
             except Exception as exc:
+                st.session_state._live_attempt_status = "unavailable"
                 st.error(safe_error(exc), title="Live evidence unavailable")
         else:
             st.warning(
                 "A fresh confirmation is required before generating live evidence.",
                 title="Confirmation unavailable",
             )
+    attempt_notice.info(
+        {
+            None: "No provider verifier has been run by this page.",
+            "attempted": "Verification was attempted; no completed result is available.",
+            "confirmed": (
+                "Verification returned a confirmed result. Its evidence scope is shown below."
+            ),
+            "unsuccessful": (
+                "Verification did not confirm a result. See the returned outcome below."
+            ),
+            "unavailable": (
+                "Verification failed or was unavailable. No successful result is claimed."
+            ),
+        }.get(st.session_state._live_attempt_status, "Verification status is unavailable."),
+        title=status,
+    )
     if st.session_state.live_result is not None:
+        if st.session_state._live_attempt_status == "unavailable":
+            st.caption("Previous returned result; the latest attempt did not return a result.")
         st.json(st.session_state.live_result)
     st.caption(
         "The action is a one-time delegation to an existing public verifier after its "

@@ -6,6 +6,107 @@ APPROVED / FROZEN - Human-approved architecture, 2026-10-11.
 
 This architecture and its ADRs are human-approved and frozen. Implementation shall conform to this contract unless an explicitly approved architecture change supersedes it.
 
+## Human-approved Option 1 amendment — immutable evidence
+
+This amendment implements the human-approved Option 1 decision; its detailed
+record is [ADR-007-013](adr/ADR-007-013-immutable-evidence-records.md).
+Implementation and independent implementation acceptance remain pending.
+
+EvaluationEngine.run owns RunArtifact/RunIdentity/ScenarioEvaluation semantics;
+load_committed_baseline owns committed-baseline validation. Story 8 owns its
+LabSummary and scenario results, including those exposed through ConsoleBoundary.
+Existing security/guardrail, reliability/budget, telemetry, and Story 9 session
+boundaries retain their existing semantic authority. These results currently
+exist in memory; the new boundary preserves them across process boundaries.
+Provider wrappers alone establish no durable live ledger or qualifying live run.
+
+The application-owned immutable evidence boundary MUST accept only results at
+authorized producer execution seams, never arbitrary constructible models or
+caller mappings. Narrow adapters execute/observe the existing accepted producer
+and preserve its typed output; they cannot redefine its outcome. Evaluation
+recording includes the committed loader's baseline provenance. Failure recording
+includes actual scenario results and the derived LabSummary. Policy/security/
+observability records preserve validated fixed-vocabulary outcomes and source
+links. Story 10 only reloads, rederives, reconciles, and aggregates these records.
+
+```mermaid
+flowchart TD
+ P[Authoritative producer execution] --> M[Validated and minimized typed evidence]
+ M --> I[Immutable evidence recording boundary]
+ I --> R[Integrity and provenance bound reference]
+ R --> L[Read-only verified reload]
+ L --> S[Story 10 source and classification rederivation]
+ S --> C[Canonical projection and RFC 8785 JCS UTF-8 bytes]
+ C --> V[SHA-256 and candidate / contract / provenance verification]
+ U[Caller mappings and labels] --> X[Rejected as authority]
+```
+
+### Record, reference, and persistence contract
+
+An envelope MUST bind schema version, authorized producer identity/type, source
+run identity and minimized payload, derived captured-result class, provenance,
+and applicable candidate/contract digests. References contain a versioned
+SHA-256 digest of the complete deterministic envelope serialization, never raw
+identifiers or secrets. Envelope encoding MUST be versioned, unambiguous and
+lossless for accepted source integers; raw numeric telemetry is kept outside the
+release projection and MUST NOT be coerced into its integer-tag schema. Story
+10 projection bytes retain their separately specified RFC 8785 contract.
+Loaders recompute the complete envelope digest, validate schema and producer
+provenance, and check applicable candidate/contract bindings before returning a
+defensive immutable representation. Hash integrity alone cannot establish that
+an authorized producer created a record: writes are private to producer seams,
+and runtime storage permissions protect that origin across process boundaries.
+
+Records, provenance, class, producer identity, and reference bindings MUST NOT
+be overwritten. Identical content is idempotent; changed content creates a new
+reference. Same-reference/different-content collisions fail closed. Filesystem
+recording MUST use exclusive atomic publication after complete validation,
+flush durable content before success, and prevent partial records from becoming
+visible. Concurrent writers may converge only on identical verified bytes;
+otherwise they fail. Reads never modify records. Missing, malformed, corrupt,
+stale, mismatched, or provenance-invalid records fail closed without raw payload
+diagnostics. Paths MUST be contained beneath the configured root, reject traversal
+and unsafe link substitution, and use bounded record sizes and operation limits.
+
+Reviewer mode uses a configurable runtime-local directory explicitly ignored by
+Git and excluded from candidate identity; no developer absolute path or parent
+TECHADEMY/EVIDENCE dependency is permitted. Candidate identity covers tracked
+and intended untracked source/config/test/authority files, path names and bytes,
+plus baseline commit, excluding only declared runtime outputs/caches. Exclusion
+must not conceal candidate source. The store has finite configurable capacity;
+full stores refuse new writes rather than silently evict required evidence.
+Explicit operator cleanup removes whole unreferenced records under a bounded
+retention policy and never rewrites retained records. Production uses an
+environment-backed durable adapter enforcing this same contract and access
+controls; no cloud deployment is required by this amendment.
+
+### Security and gate lifecycle
+
+Minimization/redaction MUST occur before persistence and artifact construction.
+Retain required typed correlation identities in protected source records; expose
+opaque references/hashes for arbitrary identifiers, exclude prompts, provider
+payloads and free-text secrets, and reuse accepted telemetry minimization.
+Post-hoc optional canary checking cannot substitute for this boundary.
+LLM, retrieved, tool, and provider output remains untrusted until its accepted
+producer validates it. Prompt injection cannot change provenance or class.
+References grant retrieval only; credentials grant connectivity only.
+Classification derives from trusted producer provenance using exactly the five
+existing classes. deterministic_fixture -> live_vendor and mocked_provider_contract
+-> live_model promotion MUST fail. Storage capability and configuration imply
+no actual live evidence; absent qualifying authorized S5/S6/S7 evidence stays open.
+
+The gate executor owns actual command execution evidence, including normalized
+approved commands, start/end ordering, exit results, output digests, candidate
+and contract digests, and repair history. Caller command/result dictionaries
+cannot establish gate success. Freeze and derive candidate identity, run Ruff
+-> pytest -> compileall, then publish an immutable gate record outside candidate
+content. Reload it and independently recheck identity, provenance, order, results,
+and freshness. A failure stops the attempt. Preserve its diagnostic and bounded
+repair classification; after repair rerun the failed gate and the full formal
+sequence against the newly frozen candidate before publishing success. Unresolved
+failures forbid success. Candidate or contract mutation invalidates readiness.
+Synthetic Tests 17–18 cannot certify their own actual pytest execution.
+
 ## Architectural Goal
 
 Deliver a standalone reliability, safety, observability, and evaluation system in which application-owned controls preserve correctness and authority while course-indicated technologies provide meaningful specialist capabilities and verifiable evidence.
@@ -249,7 +350,10 @@ The minimum workflow state contains:
 - evidence classification
 
 The initial architecture uses bounded in-process state and an application-owned idempotency abstraction.
-Persistent distributed state is not required by the source and shall not be introduced unless implementation evidence establishes a need.
+Persistent distributed workflow state is not required by the source and shall not
+be introduced unless implementation evidence establishes a need. The human-approved
+ADR-007-013 immutable evidence persistence is a separate bounded record/load
+authority and does not change this workflow-state decision.
 
 ## Trust Boundaries
 

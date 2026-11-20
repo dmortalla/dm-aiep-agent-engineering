@@ -122,4 +122,32 @@ At approval:
 
 This approval freezes the requirements baseline.
 
+## Option 1 amendment reconciliation
+
+The human-approved [ADR-007-013](adr/ADR-007-013-immutable-evidence-records.md)
+and [architecture amendment](ARCHITECTURE.md#human-approved-option-1-amendment--immutable-evidence)
+establish the following authority. All rows have lifecycle state: architecture
+authority established; implementation repair pending; independent implementation
+acceptance pending. Evidence below is REQUIRED FUTURE evidence, not accepted
+evidence from the rejected candidate. Tests refer to the exact 20 conceptual
+tests in the [Story 10 Revision 6 contract](stories/STORY-10-integrated-verification-release-readiness.md).
+
+| Requirement | Applicable ADRs | Story | Conceptual tests | Required evidence |
+| --- | --- | --- | --- | --- |
+| REQ-EVD-001 | ADR-007-007, ADR-007-009, ADR-007-013 | 10 | 1, 7, 8, 10 | Producer-seam and fabricated-source rejection records |
+| REQ-EVD-002 | ADR-007-006, ADR-007-013 | 10 | 1, 14 | Pre-recording minimization and all-output canary results |
+| REQ-EVD-003 | ADR-007-009, ADR-007-013 | 10 | 1, 17 | Immutable envelope, trusted references, collision/rebinding probes |
+| REQ-EVD-004 | ADR-007-007, ADR-007-009, ADR-007-013 | 10 | 1, 7, 17 | Reload/rederivation and corruption/staleness rejection results |
+| REQ-EVD-005 | ADR-007-008, ADR-007-013 | 10 | 11, 12, 20 | Three-lane ledger and anti-promotion/open-live results |
+| REQ-EVD-006 | ADR-007-008, ADR-007-013 | 10 | 17, 18 | Actual post-sequence gate record and synthetic repair attacks |
+| REQ-EVD-007 | ADR-007-009, ADR-007-011, ADR-007-013 | 10 | 1, 13, 17, 18 | Atomicity/path/concurrency/retention and zero-network results |
+
+These rows supplement REQ-OBJ-001, REQ-CLOSE-001..005, REQ-DOD-001..010
+and REQ-QG-001..006 routing to Story 10. ADR-007-013 applies to their evidence
+record/load and gate obligations alongside their existing applicable ADRs.
+The reconciler MUST read frozen requirements, ADRs, story ownership and actual
+test/evidence references independently; arbitrary rows cannot define truth.
+Tests 2–3 require fabricated relationship/lab support rejection. Test 10 requires
+policy outcome evidence from the accepted producer, including refusal paths.
+
 It does not freeze architecture. Architecture remains subject to research, design, ADRs, validation, and subsequent human approval.

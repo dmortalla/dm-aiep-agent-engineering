@@ -1,6 +1,7 @@
 """Story 8's 22 contract proofs; ordinary execution is credential-free."""
 
 import ast
+import asyncio
 import json
 import runpy
 import subprocess
@@ -14,6 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from reliability_safety_observability import failure_lab as lab
+from reliability_safety_observability import langfuse_adapter
 from reliability_safety_observability.errors import ConfigurationError
 from reliability_safety_observability.evaluation_contracts import canonical_digest, canonical_json
 from reliability_safety_observability.reliability import Failure, ReliabilityPolicy
@@ -22,13 +24,22 @@ from reliability_safety_observability.telemetry import TelemetryPipeline
 ROOT = Path(__file__).resolve().parents[1]
 RECURSIVE_NODE = "tests/test_helicone_contract.py::test_22_cross_suite_regression_stays_green"
 PRIOR_FILES = (
-    "test_authorization.py", "test_blocker_regressions.py", "test_configuration.py",
+    # Story 5's isolated S5 adapter file runs early: its accepted Story 5
+    # verification lane is duration-bounded at 2.0s per read-back step
+    # (LangfuseSettings.lifecycle_timeout_seconds), and sustained thread
+    # churn from later files (Guardrails OTEL lanes, Helicone mini-servers,
+    # Story 8 bounded lanes) exposes a load-dependent scheduler-stretch path
+    # that production correctly fail-closes as lifecycle-busy. Run-before
+    # heavy churn keeps the sweep deterministic; every file of the child
+    # selection remains present, in full, and in ordinary CI order.
+    "test_authorization.py", "test_langfuse_adapter.py", "test_blocker_regressions.py",
+    "test_configuration.py",
     "test_dataset_file_corruption.py", "test_dependency_contract.py",
     "test_deterministic_no_network.py", "test_domain_contracts.py",
     "test_evaluation_benchmark.py", "test_evaluation_composition.py", "test_evaluation_dataset.py",
     "test_evaluation_engine.py", "test_evaluation_improvement.py", "test_evaluation_regression.py",
     "test_evaluation_thresholds.py", "test_guardrails_integration.py", "test_helicone_contract.py",
-    "test_langfuse_adapter.py", "test_langfuse_live.py", "test_langsmith_adapter.py",
+    "test_langfuse_live.py", "test_langsmith_adapter.py",
     "test_langsmith_config.py", "test_langsmith_live.py", "test_langsmith_provenance.py",
     "test_langsmith_sdk_failure.py", "test_langsmith_seam.py", "test_package_contract.py",
     "test_prompt_injection.py", "test_reliability.py", "test_safety_pipeline.py",
@@ -319,6 +330,120 @@ def test_19_lifecycle_busy_release_and_cleanup() -> None:
     assert failed.observed_disposition == "close_failed" and failed.passed
     assert busy.observed_disposition == "close_busy" and busy.extra["post_resolution"] == "closed"
     assert set(threading.enumerate()) == before
+
+
+@pytest.mark.parametrize(
+    ("outcome", "value", "attempts", "busy", "reason"),
+    [
+        ("ok", False, 1, False, None),
+        ("timeout", False, 1, False, None),
+        ("ok", True, 1, False, "sink_close_not_idempotent"),
+        ("timeout", False, 1, True, "sink_close_not_idempotent"),
+        ("timeout", False, 2, False, "sink_close_not_idempotent"),
+    ],
+)
+def test_s19_langfuse_bounded_close_outcomes(monkeypatch, outcome, value, attempts, busy, reason):
+    """Drive the real sink close state machine without a scheduler race."""
+    async def bounded(call, _timeout, *, owner):
+        assert isinstance(owner, lab._FailingLangfuseTransport)
+        for _ in range(attempts):
+            assert call() is False
+        return outcome, value, None
+
+    monkeypatch.setattr(langfuse_adapter, "_run_bounded", bounded)
+    if busy:
+        checks = iter((False, True))
+        monkeypatch.setattr(langfuse_adapter.LangfuseSink, "_busy", lambda _: next(checks))
+    if reason:
+        with pytest.raises(lab._InvariantFailure, match=reason):
+            lab.run_scenario(lab.ScenarioKind.S19)
+    else:
+        result = lab.run_scenario(lab.ScenarioKind.S19)
+        assert result.passed and result.observed_disposition == "close_failed"
+        assert result.evidence_class == "mocked_provider_contract"
+
+
+@pytest.mark.parametrize("mode", ["clean", "late_delivery", "held_close", "missing_completion"])
+def test_s20_close_admission_and_completion(monkeypatch, mode):
+    """Observe the real bounded lane while controlling only fixture work or delivery."""
+    submit = lab._helicone_submit_evidence_bounded
+    close = lab._helicone_close_bounded
+    fixture_close = lab._BlockingTransport.close
+    release = threading.Event()
+    submissions = []
+    closes = []
+    transports = []
+
+    async def observed_submit(transport, spec, timeout):
+        result = await submit(transport, spec, timeout)
+        submissions.append(result)
+        return result
+
+    def controlled_close(transport):
+        if mode == "held_close":
+            assert release.wait(2), "test did not release its close worker"
+        if mode == "missing_completion":
+            return True  # A reported success alone cannot supply fixture completion proof.
+        return fixture_close(transport)
+
+    async def observed_close(transport, timeout):
+        if not closes:
+            result = await close(transport, timeout)
+            closes.append(result)
+            return result
+        transports.append(transport)
+        assert not submissions[0][2].is_alive()
+        loop = asyncio.get_running_loop()
+        callbacks = []
+        result = None
+
+        def defer(callback, *args, context=None):
+            callbacks.append((callback, args, context))
+
+        try:
+            if mode == "late_delivery":
+                with patch.object(loop, "call_soon_threadsafe", defer):
+                    result = await close(transport, timeout)
+                    result[2].join(timeout=0.5)
+                assert len(callbacks) == 1 and not result[2].is_alive()
+                assert transport.close_completed.is_set() and transport.close_result is True
+                for callback, args, context in callbacks:
+                    loop.call_soon(callback, *args, context=context)
+            else:
+                result = await close(transport, timeout)
+            if mode in {"late_delivery", "held_close"}:
+                assert result[:2] == ("timeout", None)
+            if mode == "held_close":
+                assert not transport.close_completed.is_set()
+                refused = await close(transport, timeout)
+                assert refused == ("busy", None, result[2])
+                assert result[2].is_alive()
+            closes.append(result)
+            return result
+        finally:
+            release.set()
+            if mode == "held_close" and result is not None:
+                result[2].join(timeout=0.5)
+
+    monkeypatch.setattr(lab, "_helicone_submit_evidence_bounded", observed_submit)
+    monkeypatch.setattr(lab, "_helicone_close_bounded", observed_close)
+    monkeypatch.setattr(lab._BlockingTransport, "close", controlled_close)
+    if mode == "missing_completion":
+        with pytest.raises(lab._InvariantFailure, match="close_completion_unproven"):
+            lab.run_scenario(lab.ScenarioKind.S20)
+    else:
+        result = lab.run_scenario(lab.ScenarioKind.S20)
+        assert result.passed and result.observed_disposition == "close_busy"
+        assert result.extra["post_resolution"] == "closed"
+        assert result.evidence_class == "mocked_provider_contract"
+        assert transports[0].close_attempts == 1
+        assert transports[0].close_completed.is_set() and transports[0].close_result is True
+    first_submit = submissions[0][2]
+    assert submissions[0][:2] == ("timeout", None)
+    assert submissions[1] == closes[0] == ("busy", None, first_submit)
+    assert closes[1][2] is not first_submit
+    assert transports[0].submitted == 1
+    assert not first_submit.is_alive() and not closes[1][2].is_alive()
 
 
 def test_20_schema_evidence_and_digest_secret_containment(monkeypatch) -> None:

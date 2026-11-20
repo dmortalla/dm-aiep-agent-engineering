@@ -580,8 +580,11 @@ def test_22_confirmed_live_result_is_not_repeated_on_ordinary_rerun(
     assert not at.button(key="run_live_verifier").disabled
     at.button(key="run_live_verifier").click().run()
     assert calls == ["Langfuse"]
+    assert "confirmed result" in at.info[-1].value
+    assert "No provider verifier has been run" not in at.info[-1].value
     at.run()
     assert calls == ["Langfuse"] and at.button(key="run_live_verifier").disabled
+    assert "confirmed result" in at.info[-1].value
     refused_by_boundary()
     assert calls == ["Langfuse"]
     # F/G/H/R: restored, copied, and forged presentation state stays unauthorized.
@@ -619,13 +622,73 @@ def test_22_confirmed_live_result_is_not_repeated_on_ordinary_rerun(
     at.button(key="run_live_verifier").click().run()
     assert calls == ["Langfuse", "Langfuse", "Langfuse"]
     assert at.error and at.session_state["live_result"] == {"outcome": "confirmed"}
+    assert "failed or was unavailable" in at.info[-1].value
+    assert any("Previous returned result" in item.value for item in at.caption)
     assert fake.live_receipt_state(attempted) is LiveReceiptState.CONSUMED
     replay(attempted, ["Langfuse", "Langfuse", "Langfuse"])
+    assert "failed or was unavailable" in at.info[-1].value
     # O after failure: a fresh confirmation permits exactly one more invocation.
     confirm()
     at.button(key="run_live_verifier").click().run()
     at.run()
     assert calls == ["Langfuse"] * 4 and at.button(key="run_live_verifier").disabled
+
+
+@pytest.mark.parametrize(
+    ("outcome", "evidence_class", "expected"),
+    [
+        ("confirmed", "mocked_provider_contract", "confirmed result"),
+        ("confirmed", "deterministic_fixture", "confirmed result"),
+        ("export_failed", None, "did not confirm a result"),
+        ("readback_not_confirmed", None, "did not confirm a result"),
+        ("timeout_unresolved", None, "did not confirm a result"),
+        (None, None, "failed or was unavailable"),
+    ],
+)
+def test_25_verifier_attempt_status_survives_rerender(
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str | None,
+    evidence_class: str | None,
+    expected: str,
+) -> None:
+    """Render observed attempt outcomes without promoting a mock to live evidence."""
+    monkeypatch.syspath_prepend(str(ROOT))
+    import streamlit_app
+
+    console = ConsoleBoundary(live_runtime(), live_config_resolver=live_config().__getitem__)
+    calls = []
+    returned = {"outcome": outcome, "evidence_class": evidence_class}
+
+    def verifier(grant: object) -> dict[str, object]:
+        calls.append(grant)
+        if outcome is None:
+            raise RuntimeError("controlled-failure-do-not-display")
+        return returned
+
+    monkeypatch.setattr(streamlit_app, "boundary", lambda: console)
+    monkeypatch.setattr(streamlit_app, "run_live_verifier", verifier)
+    at = AppTest.from_string("import streamlit_app\nstreamlit_app.main()", default_timeout=30).run(
+        timeout=30
+    )
+    assert not at.exception and not calls
+    assert "No provider verifier has been run" in at.info[-1].value
+    at.checkbox(key="live_confirmation").check().run(timeout=30)
+    at.button(key="run_live_verifier").click().run(timeout=30)
+    assert not at.exception and len(calls) == 1
+    assert expected in at.info[-1].value
+    assert "No provider verifier has been run" not in at.info[-1].value
+    assert "live_vendor" not in at.info[-1].value
+    assert "live_model" not in at.info[-1].value
+    if outcome is not None:
+        assert at.session_state["live_result"] == returned
+        assert any(outcome in item.value for item in at.json)
+    else:
+        assert at.session_state["live_result"] is None and at.error
+        assert "controlled-failure" not in at.error[-1].value
+    at.run(timeout=30)
+    assert not at.exception and len(calls) == 1
+    assert expected in at.info[-1].value
+    assert at.button(key="run_live_verifier").disabled
 
 
 def test_23_accessible_labels_and_textual_statuses_are_present() -> None:

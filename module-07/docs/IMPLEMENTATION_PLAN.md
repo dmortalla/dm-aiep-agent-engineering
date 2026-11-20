@@ -251,9 +251,28 @@ Safe deterministic repair is permitted only under the frozen bounded self-healin
 
 **Requirements:** REQ-OBJ-001, REQ-CLOSE-001, REQ-CLOSE-002, REQ-CLOSE-003, REQ-CLOSE-004, REQ-CLOSE-005, REQ-DOD-001, REQ-DOD-002, REQ-DOD-003, REQ-DOD-004, REQ-DOD-005, REQ-DOD-006, REQ-DOD-007, REQ-DOD-008, REQ-DOD-009, REQ-DOD-010, REQ-QG-001, REQ-QG-002, REQ-QG-003, REQ-QG-004, REQ-QG-005, REQ-QG-006
 
-**ADRs:** ADR-007-001 through ADR-007-012
+**ADRs:** ADR-007-001 through ADR-007-013
 
-**Evidence:** all applicable evidence classes, with live claims requiring matching live evidence
+**Evidence:** all applicable evidence classes, with live claims requiring matching live evidence. Story 10 records only producer-validated, minimized evidence through ADR-007-013's immutable read-only boundary; caller-supplied mappings and labels are never authority.
+
+### Option 1 implementation repair scope
+
+Implement [ADR-007-013](adr/ADR-007-013-immutable-evidence-records.md) and
+REQ-EVD-001..007 through the Story 10 Revision 6 contract. Work includes the
+immutable envelope/schema, authorized evaluation/RunArtifact and failure/
+LabSummary recording seams, and required policy/security/observability adapters.
+Preserve existing semantic ownership. Implement trusted reference derivation,
+pre-recording minimization, atomic/idempotent no-overwrite persistence,
+collision rejection, read-only loading, corruption checks, source/provenance
+rederivation and class anti-promotion. Include configurable ignored runtime-local
+storage and a production adapter boundary under the same contract.
+
+Implement the candidate-bound executor/recorder with the architecture's
+non-circular final-gate and bounded repair/rerun lifecycle. Derive all eight
+readiness artifacts from reloaded accepted evidence, preserve missing evidence
+as open, strengthen exactly 20 conceptual tests and obtain adversarial independent
+re-review. Architecture reconciliation does not close any rejected implementation
+finding. No implementation resumes before independent architecture acceptance.
 
 ## Ordered Delivery Sequence
 

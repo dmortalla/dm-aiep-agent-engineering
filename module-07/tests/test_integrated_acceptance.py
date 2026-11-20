@@ -10,6 +10,7 @@ import pytest
 from reliability_safety_observability.domain import EvidenceClass
 from reliability_safety_observability.evidence_records import EvidenceError, EvidenceStore
 from reliability_safety_observability.release_readiness import (
+    _GATE_TIMEOUT_SECONDS,
     GateExecutor,
     ReadinessValidationError,
     ReadinessVerifier,
@@ -1452,6 +1453,10 @@ def test_18_gate_wrong_producer_rejected(evidence, monkeypatch):
         assert not set(hostile).intersection(environment)
         assert environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
         assert Path(environment["TEMP"]).is_relative_to(verifier.store.root)
+        # REQ-ENG-002 regression: the gate timeout stays bounded and pinned
+        # to the declared policy constant; it is never None or unbounded.
+        assert type(kwargs["timeout"]) is int
+        assert 0 < kwargs["timeout"] == _GATE_TIMEOUT_SECONDS
         if command[2] == "pytest":
             assert command[3:] == ("-m", "not live_vendor")
             assert all(os.environ[name] == "1" for name in hostile)
