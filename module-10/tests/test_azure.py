@@ -581,6 +581,35 @@ def test_verifier_no_success_on_required_failure(failure: str,
         deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
 
 
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ([{"successes": 2, "failures": 1}], True),
+        ([{"successes": "2", "failures": "1"}], True),
+        ([{"successes": "0002", "failures": "01"}], True),
+        ([{"successes": "1", "failures": "1"}], False),
+        ([{"successes": "2", "failures": "0"}], False),
+        ([{"successes": True, "failures": 1}], False),
+        ([{"successes": 2.0, "failures": 1}], False),
+        ([{"successes": "-2", "failures": "1"}], False),
+        ([{"successes": "+2", "failures": "1"}], False),
+        ([{"successes": " 2", "failures": "1"}], False),
+        ([{"successes": "2.0", "failures": "1"}], False),
+        ([{"successes": "\u00b2", "failures": "1"}], False),
+        ([{"successes": "2", "failures": None}], False),
+        ([{"successes": "2"}], False),
+        ([], False),
+        ([{"successes": "2", "failures": "1"}] * 2, False),
+        ({"successes": "2", "failures": "1"}, False),
+    ],
+)
+def test_monitor_receipt_accepts_only_valid_counts(
+    rows: object, expected: bool
+) -> None:
+    """Accept Azure decimal count strings without weakening receipt validation."""
+    assert deployment._monitor_receipt_satisfied(rows) is expected
+
+
 def test_monitor_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bound ingestion lag to six queries and five sleeps without repeating HTTP traffic."""
     queries, sleeps, http_calls = [], [], []

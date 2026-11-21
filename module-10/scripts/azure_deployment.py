@@ -503,6 +503,24 @@ def monitor_query(app: str, revision: str, request_id: str) -> str:
     )
 
 
+def _monitor_receipt_satisfied(rows: object) -> bool:
+    """Accept only a single valid aggregate meeting both telemetry thresholds."""
+    if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+        return False
+
+    def count(value: object) -> int | None:
+        """Normalize bounded ASCII decimal counts without coercing invalid types."""
+        if type(value) is int:
+            return value if value >= 0 else None
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{1,20}", value):
+            return int(value)
+        return None
+
+    successes = count(rows[0].get("successes"))
+    failures = count(rows[0].get("failures"))
+    return successes is not None and successes >= 2 and failures is not None and failures >= 1
+
+
 def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict:
     """Verify configuration, five HTTP calls and at most six telemetry queries before success.
 
@@ -530,9 +548,7 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
                        "--analytics-query", query, "--timespan", "PT10M",
                        subscription=subscription, label="monitor-log-analytics",
                        phase="monitor-receipt")
-        if (isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)
-                and type(rows[0].get("successes")) is int and rows[0]["successes"] >= 2
-                and type(rows[0].get("failures")) is int and rows[0]["failures"] >= 1):
+        if _monitor_receipt_satisfied(rows):
             break
         if attempt == 5:
             raise VerificationError("Azure Monitor receipt missing; wait for ingestion then rerun.")

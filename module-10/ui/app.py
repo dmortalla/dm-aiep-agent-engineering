@@ -4,14 +4,15 @@ import asyncio
 
 import streamlit as st
 
-from module10_ai.reviewer import exercise
+from module10_ai.reviewer import cloud_evidence_report, exercise
 
 st.set_page_config(page_title="Module 10 · System console", page_icon=":material/monitoring:",
                    layout="wide")
 st.title("Production-system console")
 st.caption("MODULE 10  /  LOCAL DETERMINISTIC REVIEW  /  NO KEYS OR CLOUD COST")
-st.info("Exercise bounded AI execution, caching and telemetry. Cloud deployment and live AI "
-        "providers remain deferred.")
+st.info("Exercise bounded AI execution, caching and telemetry. Live AI providers remain "
+        "deferred; Azure cloud acceptance appears only from explicitly supplied, "
+        "independently verified evidence.")
 
 with st.expander("System path & review guide", expanded=True):
     st.write("Reviewer → application service → bounded async queue → TTL cache → "
@@ -91,9 +92,55 @@ with evidence:
                  "correlated minimized telemetry; graceful shutdown exit 0; container cleanup.")
         st.caption("Historical acceptance supplied by the reviewer. No live container status "
                    "is queried or claimed. Docker is not required for this console.")
+    st.subheader("Azure cloud acceptance — operator-supplied evidence")
+    st.caption("Independent human verification writes one minimized JSON artifact (see "
+               "docs/AZURE_DEPLOYMENT.md). Paste that file's exact path; the console reads "
+               "only that one file read-only and never runs Azure CLI, network calls or "
+               "deployments. An existing file is not acceptance until it validates.")
+    st.session_state.setdefault("cloud_evidence", None)
+    evidence_path = st.text_input(
+        "Exact acceptance artifact path",
+        help="Full path to the verifier-written module10-azure-acceptance JSON file. "
+             "Single exact file only; no directory browsing.")
+    if st.button("Load acceptance evidence"):
+        st.session_state.cloud_evidence = cloud_evidence_report(evidence_path)
+    cloud = st.session_state.cloud_evidence
+    if cloud and cloud["status"] == "verified":
+        st.success("Independently verified Azure Container Apps acceptance — point in "
+                   "time, no SLA or load-test claim.")
+        with st.container(border=True):
+            st.text(f"Verified at: {cloud['verified_at']}")
+            st.text(f"Region: {cloud['region']}")
+            st.text(f"Image (registry manifest identity): {cloud['image']}")
+            st.text(f"Revision: {cloud['revision']}")
+            st.text("Verifier gates passed: " + ", ".join(cloud["checks"]))
+            st.text(f"Replica bounds (configuration): minimum "
+                    f"{cloud['replicas']['minimum']} / maximum {cloud['replicas']['maximum']}")
+            st.caption("Classification: AZURE CLOUD / DETERMINISTIC INFERENCE · "
+                       "deployment_authorized=false: evidence grants no mutation authority.")
+            st.caption("Evidence limitations (from the artifact):")
+            for limitation in cloud["limits"]:
+                st.text("· " + limitation)
+            st.caption("Teardown: " + cloud["teardown"])
+        if cloud["stale"]:
+            st.warning("Point-in-time acceptance is more than 30 days old; treat it as "
+                       "stale and do not claim a currently verified cloud state.")
+    elif cloud:
+        st.error(cloud["error"])
+        st.caption("Evidence status: " + cloud["status"] + " · nothing was accepted for "
+                   "display; supply a valid verifier-written artifact.")
+    else:
+        st.info("No cloud acceptance evidence loaded. The deterministic demonstration above "
+                "is reproducible with the form in 'Run an exercise'; no Azure artifact is "
+                "involved in it.")
     st.subheader("Deferred / not yet verified")
-    st.warning("Azure Container Apps is the planned orchestration target; it is not deployed. "
-               "Azure Monitor is the planned telemetry target; it is not connected.")
+    if cloud and cloud["status"] == "verified":
+        st.caption("Cloud acceptance above is operator-supplied point-in-time evidence; "
+                   "this console still runs the local deterministic path by default.")
+    else:
+        st.warning("Azure Container Apps is the planned orchestration target; it is not "
+                   "deployed. Azure Monitor is the planned telemetry target; it is not "
+                   "connected.")
     st.write("CI/CD · production load balancing · distributed queue/cache · production traffic · "
              "SLA attainment · live provider integration · final production deployment acceptance")
     st.caption("No API-key workflow exists. E-006 dual-mode completion and C-026/C-027 final "
