@@ -1,12 +1,25 @@
 """Module 7's explicit Streamlit reviewer-console entry point."""
 
-import asyncio
+import sys
+from pathlib import Path
 
-import streamlit as st
-from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.state import SafeSessionState, SessionState
+# Deployment bootstrap (Step 284.2, F4): when this file is executed
+# directly from a checkout (for example by Streamlit Community Cloud
+# with main file module-07/streamlit_app.py), the src-layout package is
+# not installed, so its source directory is added to sys.path before
+# any package import.  The guard keeps installed/venv environments
+# unchanged and never duplicates an existing entry.
+_SRC = Path(__file__).resolve().parent / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-from reliability_safety_observability.byok_evaluation import (
+import asyncio  # noqa: E402  (imported after the sys.path bootstrap)
+
+import streamlit as st  # noqa: E402
+from streamlit.runtime.scriptrunner import get_script_run_ctx  # noqa: E402
+from streamlit.runtime.state import SafeSessionState, SessionState  # noqa: E402
+
+from reliability_safety_observability.byok_evaluation import (  # noqa: E402
     ALLOWED_BYOK_MODELS,
     BYOK_CASES,
     MAX_OUTPUT_TOKENS,
@@ -17,8 +30,8 @@ from reliability_safety_observability.byok_evaluation import (
     SessionRunGuard,
     execute_live_run,
 )
-from reliability_safety_observability.config import RuntimeSettings
-from reliability_safety_observability.console_presenter import (
+from reliability_safety_observability.config import RuntimeSettings  # noqa: E402
+from reliability_safety_observability.console_presenter import (  # noqa: E402
     BenchmarkEvidence,
     BenchmarkReceipt,
     ConsoleBoundary,
