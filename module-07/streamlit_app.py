@@ -42,6 +42,38 @@ from reliability_safety_observability.console_presenter import (  # noqa: E402
     recovery_projection,
     safe_error,
 )
+from reliability_safety_observability.failure_lab import (  # noqa: E402
+    _SLUGS,
+    ScenarioKind,
+)
+
+_APPLICATION_TITLE = "Module 7 Observation and Evaluation Console"
+_ATTRIBUTION = (
+    "Developed from Techademy AI Engineering program requirements. "
+    "Independent implementation, engineering enhancements, and deployment."
+)
+
+
+def attribution_footer() -> None:
+    """Render the required attribution once, at a tab's bottom."""
+    st.caption(_ATTRIBUTION)
+
+
+def scenario_label(scenario_id: str) -> str:
+    """Return the human-facing label for one underlying scenario id.
+
+    Args:
+        scenario_id: The lowercase execution identifier (``s01``..``s20``).
+
+    Returns:
+        ``SNN - Description`` derived word-for-word from the
+        authoritative Story 8 taxonomy; the underlying identifier and
+        execution behavior are unchanged.
+    """
+    kind = ScenarioKind(scenario_id)
+    number = int(kind.value[1:])
+    description = " ".join(word.capitalize() for word in _SLUGS[kind].split("-"))
+    return f"S{number:02d} - {description}"
 
 
 def guidance(demonstrates: str, action: str, expected: str, proves: str) -> None:
@@ -368,7 +400,10 @@ def failure_lab(console: ConsoleBoundary) -> None:
         "Failure recovery is deterministic, bounded, and does not grant authority.",
     )
     selected = st.selectbox(
-        "Scenario", options=tuple(f"s{number:02}" for number in range(1, 21)), key="scenario"
+        "Scenario",
+        options=tuple(f"s{number:02}" for number in range(1, 21)),
+        key="scenario",
+        format_func=scenario_label,
     )
     left, right = st.columns(2)
     with left:
@@ -438,17 +473,17 @@ def _invalidate_byok_pending() -> None:
     """Drop the pending authorization when run inputs changed."""
     guard: SessionRunGuard = st.session_state._byok_guard
     request = _byok_current()
-    if request is not None:
-        guard.invalidate(request)
-    else:
-        guard.invalidate(
-            LiveRunRequest(
-                model="",
-                case_ids=(),
-                max_requests=1,
-                max_output_tokens=MIN_OUTPUT_TOKENS,
-            )
-        )
+    # When the current widget state cannot form a valid run configuration
+    # (for example every evaluation case was cleared), cancellation is
+    # expressed by dropping the pending grant itself; a fabricated request
+    # would be rejected by its own validation before the guard could react,
+    # and could leave the grant armed.
+    dropped = guard.invalidate(request) if request is not None else guard.drop_pending()
+    if dropped:
+        # The operator's confirmation applied to the previous configuration.
+        # Clearing it keeps the displayed state truthful: a changed input
+        # needs a fresh, explicit confirmation before any run is authorized.
+        st.session_state["byok_confirm"] = False
 
 
 def _prepare_byok_authorization() -> None:
@@ -800,11 +835,11 @@ def providers(console: ConsoleBoundary) -> None:
 def main() -> None:
     """Render the explicit, no-key reviewer console."""
     st.set_page_config(
-        page_title="Module 7 reviewer console", page_icon=":material/monitoring:", layout="wide"
+        page_title=_APPLICATION_TITLE, page_icon=":material/monitoring:", layout="wide"
     )
     _state()
     console = boundary()
-    st.title("Module 7 observability and evaluation console")
+    st.title(_APPLICATION_TITLE)
     pages = st.tabs(
         [
             "Overview",
@@ -817,16 +852,22 @@ def main() -> None:
     )
     with pages[0]:
         overview(console)
+        attribution_footer()
     with pages[1]:
         workflow(console)
+        attribution_footer()
     with pages[2]:
         evaluation(console)
+        attribution_footer()
     with pages[3]:
         failure_lab(console)
+        attribution_footer()
     with pages[4]:
         providers(console)
+        attribution_footer()
     with pages[5]:
         byok_model_check(console)
+        attribution_footer()
 
 
 if __name__ == "__main__":

@@ -424,3 +424,122 @@ def test_p_input_change_invalidates_the_pending_authorization(monkeypatch):
     app.button(key="byok_submit").click().run()
     assert not app.exception
     assert OfflineTransport.calls_made == 0
+
+
+class _CountingTransport(FakeTransport):
+    """Offline transport counting every invocation attempt."""
+
+    calls_made = 0
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def complete(self, **kwargs):
+        _CountingTransport.calls_made += 1
+        return super().complete(**kwargs)
+
+
+def _live_app(monkeypatch):
+    """Return an AppTest in BYOK live mode with a counting transport."""
+    monkeypatch.setattr(
+        "reliability_safety_observability.byok_evaluation.OpenAITransport",
+        _CountingTransport,
+    )
+    _CountingTransport.calls_made = 0
+    app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
+    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.text_input(key="byok_api_key").set_value("sk-probe-canary-000111").run()
+    app.checkbox(key="byok_confirm").set_value(True).run()
+    return app
+
+
+def test_q_clearing_all_cases_drops_authorization_without_error(monkeypatch):
+    """Clearing every evaluation case cancels the run without raising."""
+    app = _live_app(monkeypatch)
+    assert app.session_state["_byok_guard"].pending is not None
+    app.multiselect(key="byok_cases").set_value([]).run()
+    assert not app.exception
+    assert app.session_state["_byok_guard"].pending is None
+    assert app.checkbox(key="byok_confirm").value is False
+    assert _CountingTransport.calls_made == 0
+    app.button(key="byok_submit").click().run()
+    assert not app.exception
+    assert _CountingTransport.calls_made == 0
+    app.run()
+    app.run()
+    assert not app.exception
+    assert app.session_state["_byok_guard"].pending is None
+
+
+def test_r_restoring_cases_allows_one_new_authorized_request(monkeypatch):
+    """A restored configuration needs a fresh confirmation and runs once."""
+    app = _live_app(monkeypatch)
+    app.multiselect(key="byok_cases").set_value([]).run()
+    app.multiselect(key="byok_cases").set_value(["INJ-BYOK-001"]).run()
+    assert app.session_state["_byok_guard"].pending is None
+    app.checkbox(key="byok_confirm").set_value(True).run()
+    assert app.session_state["_byok_guard"].pending is not None
+    app.button(key="byok_submit").click().run()
+    assert not app.exception
+    assert _CountingTransport.calls_made == 1
+    result = app.session_state["_byok_result"]
+    assert result.invocations == 1
+    assert result.case_results[0].outcome.value == "pass"
+
+
+def test_s_changed_inputs_invalidate_the_pending_authorization(monkeypatch):
+    """Model, case, and token changes each cancel a pending authorization."""
+    for change in ("model", "cases", "tokens"):
+        app = _live_app(monkeypatch)
+        assert app.session_state["_byok_guard"].pending is not None
+        if change == "model":
+            app.selectbox(key="byok_model").set_value("gpt-4o").run()
+        elif change == "cases":
+            app.multiselect(key="byok_cases").set_value(["SEC-BYOK-001"]).run()
+        else:
+            app.number_input(key="byok_tokens").set_value(300).run()
+        assert not app.exception
+        assert app.session_state["_byok_guard"].pending is None
+        assert app.checkbox(key="byok_confirm").value is False
+        app.button(key="byok_submit").click().run()
+        assert _CountingTransport.calls_made == 0
+
+
+def test_t_drop_pending_is_idempotent_and_preserves_terminal_states():
+    """Cancellation affects only a pending grant and is safe to repeat."""
+    guard = SessionRunGuard()
+    guard.prepare(_request())
+    assert guard.drop_pending() is True
+    assert guard.pending is None
+    assert guard.drop_pending() is False
+
+    running = SessionRunGuard()
+    token = running.prepare(_request())
+    assert running.begin(token) and running.running
+    assert running.drop_pending() is False
+    assert running.running
+    assert running.pending is not None
+    running.complete()
+    assert running.consumed
+
+    consumed = SessionRunGuard()
+    consumed_token = consumed.prepare(_request())
+    assert consumed.begin(consumed_token)
+    consumed.complete()
+    assert consumed.consumed
+    assert consumed.drop_pending() is False
+    assert consumed.consumed
+
+
+def test_u_invalid_model_requests_remain_rejected():
+    """Model validation is unchanged by the cancellation operation."""
+    with pytest.raises(ConfigurationError):
+        _request(model="gpt-5-ultra")
+    with pytest.raises(ConfigurationError):
+        LiveRunRequest(
+            provider="Anthropic",
+            model="gpt-4.1-mini",
+            case_ids=("INJ-BYOK-001",),
+            max_requests=1,
+            max_output_tokens=200,
+        )

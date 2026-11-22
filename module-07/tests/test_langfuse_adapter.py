@@ -1125,11 +1125,29 @@ def test_langfuse_and_opentelemetry_are_confined_to_the_adapter() -> None:
     forbidden = {"aiohttp", "requests", "urllib3", "langsmith", "helicone",
                  "guardrails", "openai", "anthropic"}
     assert importers["langfuse_adapter.py"].isdisjoint(forbidden)
+    # Human-approved Chunk 1B reconciliation: the separately authorized
+    # BYOK live slice owns an independent OpenAI transport, so
+    # byok_evaluation.py — and only byok_evaluation.py — may import httpx
+    # alongside the Langfuse adapter.  The two transport ownership
+    # boundaries remain independent, no other vendor root is affected,
+    # and this equality form still refuses any additional httpx importer.
     assert {name for name, roots in importers.items() if "httpx" in roots} == {
-        "langfuse_adapter.py"}
+        "langfuse_adapter.py", "byok_evaluation.py"}
     assert importers["langfuse_config.py"].isdisjoint(forbidden | {"langfuse", "httpx"})
     package_init = (SOURCE_ROOT / "__init__.py").read_text(encoding="utf-8")
     assert "langfuse" not in package_init
+
+
+def test_httpx_ownership_is_exactly_the_two_authorized_transports() -> None:
+    """Only the Langfuse adapter and the BYOK transport may import httpx."""
+    importers = {path.name: imported_roots(path) for path in SOURCE_ROOT.rglob("*.py")}
+    permitted = {"langfuse_adapter.py", "byok_evaluation.py"}
+    observed = {name for name, roots in importers.items() if "httpx" in roots}
+    assert observed == permitted
+    # Any further httpx importer exceeds the permitted set and is refused.
+    rogue = {**importers, "rogue_httpx_user.py": {"httpx"}}
+    assert {name for name, roots in rogue.items() if "httpx" in roots} - permitted == {
+        "rogue_httpx_user.py"}
 
 
 def test_story_one_exception_is_exactly_one_file_and_one_root() -> None:

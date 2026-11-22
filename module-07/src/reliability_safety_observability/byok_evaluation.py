@@ -489,6 +489,27 @@ class SessionRunGuard:
             return True
         return False
 
+    def drop_pending(self) -> bool:
+        """Drop a pending authorization without describing a run configuration.
+
+        Cancellation must never be expressed as a synthetic request: an
+        invalid configuration would be rejected by its own validation before
+        this guard could react, and a fabricated default could be mistaken
+        for an operator-selected one.  Only a PENDING grant is affected; a
+        RUNNING execution keeps its state and a CONSUMED one-shot grant
+        stays consumed, so neither can be revived by a later cancellation.
+
+        Returns:
+            True when a pending authorization was dropped, False when there
+            was nothing pending to drop.  Repeated calls are safe and
+            idempotent.
+        """
+        if self._state is GuardState.PENDING and self._pending is not None:
+            self._pending = None
+            self._state = None
+            return True
+        return False
+
     def begin(self, token: LiveAuthorization | None) -> bool:
         """Transition a pending authorization into a running execution.
 
