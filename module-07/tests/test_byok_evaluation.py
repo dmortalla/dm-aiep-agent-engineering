@@ -188,7 +188,7 @@ def test_f_no_unauthorized_live_call(monkeypatch):
         CountingTransport,
     )
     app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
-    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
     app.text_input(key="byok_api_key").set_value("sk-widget-value").run()
     app.button(key="byok_submit").click().run()
     assert not app.exception
@@ -220,7 +220,7 @@ def test_g_duplicate_and_overlapping_submissions_rejected(monkeypatch):
         OfflineTransport,
     )
     app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
-    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
     app.text_input(key="byok_api_key").set_value("sk-widget-value").run()
     app.checkbox(key="byok_confirm").set_value(True).run()
     app.button(key="byok_submit").click().run()
@@ -383,7 +383,7 @@ def test_o_confirmed_run_invokes_transport_once_and_clears_credential(monkeypatc
         RecordingTransport,
     )
     app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
-    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
     app.text_input(key="byok_api_key").set_value("sk-probe-canary-000111").run()
     app.checkbox(key="byok_confirm").set_value(True).run()
     app.button(key="byok_submit").click().run()
@@ -416,7 +416,7 @@ def test_p_input_change_invalidates_the_pending_authorization(monkeypatch):
         OfflineTransport,
     )
     app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
-    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
     app.checkbox(key="byok_confirm").set_value(True).run()
     assert app.session_state["_byok_guard"].pending is not None
     app.selectbox(key="byok_model").set_value("gpt-4o").run()
@@ -447,7 +447,7 @@ def _live_app(monkeypatch):
     )
     _CountingTransport.calls_made = 0
     app = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=60).run()
-    app.radio(key="byok_mode").set_value("BYOK live mode").run()
+    app.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
     app.text_input(key="byok_api_key").set_value("sk-probe-canary-000111").run()
     app.checkbox(key="byok_confirm").set_value(True).run()
     return app

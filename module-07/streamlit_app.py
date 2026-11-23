@@ -258,6 +258,20 @@ def run_live_verifier(grant: LiveGrant) -> dict[str, object]:
 
 def overview(console: ConsoleBoundary) -> None:
     st.header("Start here")
+    st.write(
+        "Choose an execution mode to explore Module 7. "
+        "Switching modes does not initiate a provider call."
+    )
+    mode = st.radio(
+        "Execution mode",
+        options=("Deterministic mode (no API key)", "Live mode (BYOK)"),
+        key="byok_mode",
+        horizontal=True,
+        on_change=_invalidate_byok_pending,
+    )
+    if mode == "Live mode (BYOK)":
+        byok_model_check(console)
+        return
     st.write("A credential-free, deterministic reviewer console for Module 7.")
     st.info(
         "Default mode is deterministic and network-free. "
@@ -526,20 +540,6 @@ def byok_model_check(console: ConsoleBoundary) -> None:
         # A completed live run already consumed the credential; remove it
         # before the widget is recreated so it does not outlive the run.
         st.session_state.pop("byok_api_key", None)
-    mode = st.radio(
-        "Execution mode",
-        options=("Deterministic mode (no API key)", "BYOK live mode"),
-        key="byok_mode",
-        horizontal=True,
-    )
-    if mode != "BYOK live mode":
-        st.write(
-            "**Deterministic mode.** No API key is required, no external "
-            "provider is called, and every result in the other tabs is "
-            "deterministic/local."
-        )
-        st.caption("Switch to BYOK live mode to configure a bounded live check.")
-        return
     guard: SessionRunGuard = st.session_state._byok_guard
     st.caption(
         "BYOK live mode: your key is used transiently in memory for the "
@@ -847,7 +847,6 @@ def main() -> None:
             "Evaluation",
             "Failure-recovery lab",
             "Provider evidence",
-            "BYOK model check",
         ]
     )
     with pages[0]:
@@ -865,9 +864,7 @@ def main() -> None:
     with pages[4]:
         providers(console)
         attribution_footer()
-    with pages[5]:
-        byok_model_check(console)
-        attribution_footer()
+
 
 
 if __name__ == "__main__":
