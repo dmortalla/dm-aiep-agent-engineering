@@ -512,3 +512,69 @@ rotation and revocation, the final maximum-execution-attempts bound, and the
 recovery mutation authority/rollback policy. Requirements and traceability
 were updated with accurately classified planned rows only; no source
 requirement was manufactured and no planned capability was marked complete.
+
+## M2 Azure cloud acceptance — published commit `63d194a`
+
+The five-file candidate (`scripts/azure_deployment.py`,
+`tests/test_azure.py`, `src/module10_ai/reviewer.py`,
+`tests/test_reviewer.py`, `ui/app.py`) was committed and pushed to the
+remote branch `origin/isolated/module-10` at
+`63d194a856520df4ce85a34d6d527b8c54cc30b7` after independent review and
+explicit human authorization, with 1155 tests passing on the accepted
+bytes.
+
+A separately authorized M2 live verification passed all eight cloud
+acceptance checks against the deployed South Central US revision:
+`inventory`, `configuration`, `registry_digest`, `revision_health`,
+`https_health`, `deterministic_inference`, `bounded_rejection` and
+`azure_monitor_receipt` (fresh correlated aggregate KQL receipt from the
+owned workspace). This is genuine point-in-time acceptance evidence only:
+no SLA, load-test, two-replica-distribution or current-state claim is made,
+and `deployment_authorized` remains `false` in the acceptance artifact.
+
+Explicitly unresolved and deferred at that acceptance:
+
+- **Tested-source-to-cloud-image provenance (UNRESOLVED)**: the binding
+  between the tested local Docker content ID, the clean source commit and
+  the published registry manifest digest accepted by the verifier was not
+  established. The M2 record therefore does not assert that the accepted
+  source was the deployed workload; establishing or rejecting that binding
+  is a precondition for any future provenance claim.
+- **C-026/C-027 final deliverable acceptance remains deferred** (Story
+  10.11 scope; not closable by M2 or M3 evidence).
+- **Teardown** of the validated dedicated resource group is a human-controlled
+  action; the acceptance artifact records it as an action rather than as
+  executed, and no module-local evidence records its execution.
+- Any further cloud operation (re-verification, re-publication, teardown)
+  requires fresh explicit human authorization; the M2 authorization was
+  consumed by that run.
+
+## M3 reviewer-console acceptance — Story 10.9 M3 loop
+
+The Story 10.7 Streamlit console was extended (without changing the
+accepted deterministic demonstration or the presentation/orchestration
+separation) with a framework-independent Azure acceptance-evidence
+validator, `module10_ai.reviewer.cloud_evidence_report`, and an
+operator-supplied evidence presentation section. The adapter validates the
+verifier's minimized schema_version-1 artifact fail-closed: exact 11-field
+top-level allowlist, exact classification/version/region/teardown
+constants, regex-bound registry-manifest image and revision identity,
+exact replica bounds, all eight verifier gates reading `passed`, bounded
+file/path/limit sizes, a tz-aware non-future timestamp rendered
+canonically, and a >30-day staleness warning. Missing, malformed,
+incomplete, failed, incompatible and stale evidence states are explicit;
+artifact content never selects any behavior; and no Azure CLI, network or
+deployment call exists in the console or the adapter. An existing artifact
+is never acceptance until it validates, and the console labels verified
+evidence as operator-supplied point-in-time data granting no mutation
+authority.
+
+Independent GCN/GROPE loop record: Builder candidate (GLM, Step 401B),
+independent reviewer/corrector pass (MiniMax, Step 401.1, verdict
+CORRECTED — bounded RecursionError handling at the JSON parse boundary
+and canonical timestamp rendering, each with an additive regression
+test), and Builder reciprocal verification (GLM, Step 401.2, verdict
+ACCEPT with 1155 tests passing and 12/12 independent adversarial probes).
+This documentation reconciliation records that accepted state; it makes
+no new acceptance claim. Live-provider, SLA, load, CI/CD and C-026/C-027
+completion remain deferred and are stated as deferred in the console.

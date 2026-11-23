@@ -12,10 +12,10 @@ The approved Module 10 architecture is frozen before feature implementation. Str
 
 ## System Flow
 
-`mermaid
+```mermaid
 flowchart TD
     U[User or Reviewer] --> S[Streamlit Presentation Layer]
-    S --> A[FastAPI Service]
+    S -->|reviewer adapter over the same local application interfaces| A[FastAPI Service]
     A --> V[Validation and Security Controls]
     V --> C[Cache Contract]
     C --> E[AI Execution Service]
@@ -26,13 +26,17 @@ flowchart TD
     A --> O[Observability]
     E --> O
     W --> O
-    O --> M[Azure Monitor]
+    O -. deployed container logs .-> M[Azure Monitor]
     P[CI/CD Pipeline] --> I[Docker Image]
     I --> ACA[Azure Container Apps]
     ACA --> A
-`",
-        ",
-        
+```
+
+The Streamlit console invokes the accepted application interfaces directly
+(Story 10.7/10.9 M3 reviewer adapter); it does not query a running HTTP
+container. Azure Monitor receives the application's bounded JSON telemetry
+only in the deployed Container Apps unit, verified point-in-time by the M2
+acceptance; local console evidence remains provider-neutral.
 
 1. Module 10 is standalone and must not depend on or modify another module.
 2. FastAPI is the production service boundary.

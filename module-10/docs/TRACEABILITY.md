@@ -138,16 +138,38 @@ GitHub execution are deferred. Azure deployment and full C-026/C-027 remain defe
 
 | Requirement | Implementation | Evidence boundary |
 |---|---|---|
-| C-003, C-004, C-008, C-024 | Native ARM app/environment, restricted managed HTTPS ingress, HTTP activation, min 0/max 2 | Offline contract/fixture tests; genuine orchestration, ingress and scaling execution deferred |
+| C-003, C-004, C-008, C-024 | Native ARM app/environment, restricted managed HTTPS ingress, HTTP activation, min 0/max 2 | Offline contract/fixture tests plus M2 point-in-time cloud acceptance of the deployed single-revision app (configuration/revision/health/HTTPS gates); scaling/load-distribution demonstration remains deferred |
 | C-010, C-021 | Accepted fail-fast pipeline retained; tested image ID to immutable registry manifest binding; human publication workflow | Local contract only; hosted Environment/OIDC deployment remains separately authorized |
-| C-011, C-025 | Managed environment Log Analytics connection, fixed correlated aggregate KQL and bounded receipt gate | Deterministic fixture transport/query tests; Azure Monitor receipt deferred |
+| C-011, C-025 | Managed environment Log Analytics connection, fixed correlated aggregate KQL and bounded receipt gate | Deterministic fixture transport/query tests plus M2 correlated Azure Monitor receipt gate passed (point-in-time); no continuous-monitoring/SLA claim |
 | C-012, E-010 | Basic registry, minimal Consumption compute, bounded replicas, retention/daily ingestion settings, explicit group teardown | Configuration tests and runbook; no dollar-cap, incurred-cost or completed-teardown claim |
 | C-013, C-014, E-008, E-012 | Accepted probes/graceful shutdown, /32 ingress, no registry password, approved pull-only identity, fail-closed observations, minimized errors | Adversarial/failure-path tests; human approved exactly one identity with registry-only AcrPull, no broader runtime roles/admin credentials |
 | E-001, E-003, E-005, E-007, E-009, E-011 | Standalone typed data contracts and read-only collector; accepted deterministic application unchanged | Offline/local gates; no live-provider, distributed cache/queue or final production acceptance |
 
 See [Story 10.9](STORY_10_9.md) for gates and actual evidence. Templates, fixture
-responses, synthetic revisions, capability metadata and successful local Docker
-acceptance cannot establish genuine cloud deployment or final C-026/C-027 acceptance.
+responses, synthetic revisions and successful local Docker acceptance cannot
+establish genuine cloud deployment. The separately authorized M2 live
+verification below is the accepted genuine point-in-time cloud evidence; its
+provenance limitation and the C-026/C-027 deferral remain explicit.
+
+## Story 10.9 M2/M3 verified and accepted evidence (published commit `63d194a`)
+
+The five-file candidate (`scripts/azure_deployment.py`, `tests/test_azure.py`,
+`src/module10_ai/reviewer.py`, `tests/test_reviewer.py`, `ui/app.py`) was
+committed and pushed to the remote branch `origin/isolated/module-10` at
+`63d194a856520df4ce85a34d6d527b8c54cc30b7` with 1155 tests passing on the
+accepted bytes. The following rows record verified live-cloud and accepted
+reviewer-console evidence without converting point-in-time results into
+completion claims.
+
+| Requirement | Verified/accepted evidence | Explicit boundary |
+|---|---|---|
+| C-004, C-008, C-024 (partial) | M2 cloud acceptance 8/8 checks on the deployed South Central US revision: inventory/configuration, registry digest, revision health, HTTPS health, deterministic inference, bounded rejection | Point-in-time only; no scaling/load-distribution demonstration; no SLA or current-state claim |
+| C-011, C-025 (receipt) | `azure_monitor_receipt` gate passed via fresh correlated aggregate KQL against the owned workspace | Point-in-time receipt only; no continuous-monitoring pipeline or SLA claim |
+| C-019 (deployed API) | HTTPS deterministic inference and bounded 422 rejection verified against the live deployed revision | Unauthenticated API restricted by reviewed /32 ingress; point-in-time |
+| E-002, E-003, E-004 (M3) | Streamlit console plus framework-independent `cloud_evidence_report` adapter; operator-supplied evidence pathway independently accepted (Builder/reviewer/reciprocal loop) | Presentation-only; reads one operator-typed file read-only; no Azure CLI/network/deployment operation; invalid evidence fails closed |
+| Provenance (C-026 precondition) | UNRESOLVED: binding of the tested local Docker content ID to the published registry manifest digest and accepted revision was not established at M2 acceptance | Open dependency; no provenance claim is made anywhere |
+| C-026, C-027 | Explicitly deferred in formal M2 acceptance | Story 10.11 deliverables; not closable by M2/M3 evidence |
+| C-012, E-010 (teardown) | Cost configuration verified; teardown runbook exists | Teardown of the validated dedicated resource group is a human-controlled action with no module-local execution record; requires fresh authorization |
 
 ## Planned Story 10.9 recovery-authorization evidence (R0 planning, not complete)
 

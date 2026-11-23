@@ -1,8 +1,9 @@
-# Module 10 deterministic inference service — Stories 10.2–10.6
+# Module 10 deterministic inference service — Stories 10.2–10.9
 
 This standalone Python 3.12 package supplies a framework-independent inference
 core and a FastAPI HTTP boundary. Deterministic inference performs no external
-network calls, credential loading, or privileged actions. Streamlit remains planned.
+network calls, credential loading, or privileged actions. Streamlit provides
+the accepted reviewer console (Stories 10.7 and 10.9 M3).
 
 From `module-10/`, install the module-local environment with `uv sync --locked
 --python 3.12`. The committed `uv.lock` fixes development dependency resolution;
@@ -335,6 +336,11 @@ Local deterministic UI evidence does not establish CI/CD, Azure Container Apps,
 Azure Monitor, production load balancing, distributed queue/cache, production
 traffic/SLA, live providers, or final C-026/C-027 completion. E-006 remains deferred.
 
+Story 10.9 M3 reconciliation: the Evidence & limits tab now also presents
+operator-supplied Azure acceptance evidence after fail-closed validation of the
+verifier's minimized artifact; see Story 10.9 below. Local deterministic results
+and verified cloud acceptance remain explicitly separated in the console.
+
 
 ## Story 10.8 implementation
 
@@ -345,15 +351,42 @@ C-010/C-021 have local CI/CD contract evidence only; C-003/C-013/C-014/C-015/C-0
 receive partial pipeline discipline evidence. Root workflow installation and actual
 GitHub execution are deferred. Azure deployment and full C-026/C-027 remain deferred.
 
-## Story 10.9 repository capability
+## Story 10.9 — Azure capability, M2 cloud acceptance and M3 console evidence
 
 Native ARM contract rendering and bounded read-only Azure verification are
-implemented for the approved South Central US Consumption architecture. See
+implemented for the approved South Central US Consumption architecture; see
 [operator workflow](docs/AZURE_DEPLOYMENT.md) and [Story 10.9](docs/STORY_10_9.md).
-No agent-controlled cloud mutation executor exists. Provisioning, exact tested
-image publication, server validation, cloud verification and teardown require
-the reviewed human-controlled PowerShell workflow. The supporting registry-pull
-identity footprint amendment was explicitly approved for repository implementation
-and local commit on 2026-10-16, with registry-only AcrPull and no runtime identity
-access or ACR admin credentials. Local tests/templates
-are not Azure deployment evidence; C-026/C-027 remain deferred.
+No agent-controlled cloud mutation executor exists; provisioning, exact tested
+image publication, server validation, cloud verification and teardown remain
+human-controlled PowerShell workflow actions. The supporting registry-pull
+identity amendment (2026-10-16) is registry-only AcrPull with no runtime
+identity access or ACR admin credentials.
+
+Published candidate `63d194a` (five source files; 1155 tests passing on the
+accepted bytes) carries the M2/M3 state. A separately authorized M2 live
+verification passed all eight cloud acceptance checks against the deployed
+revision: resource/configuration gates, registry digest, revision health,
+HTTPS health and deterministic inference, bounded 422 rejection, and a
+correlated Azure Monitor receipt. This is genuine point-in-time acceptance
+evidence only: no SLA, load-test, scaling-distribution or current-state claim
+is made.
+
+Explicitly unresolved at that acceptance: the tested-source-to-cloud-image
+provenance binding (tested local Docker content ID → published registry
+manifest digest → accepted deployed revision) was not established, so the M2
+record does not assert that the accepted source was the deployed workload.
+C-026/C-027 final deliverable acceptance remains deferred, and any further
+cloud operation (including teardown of the verified temporary footprint)
+requires fresh explicit human authorization.
+
+The reviewer console accepts an operator-supplied verifier artifact:
+`module10_ai.reviewer.cloud_evidence_report` validates the minimized
+schema_version-1 acceptance JSON fail-closed (exact 11-field allowlist, exact
+classification/identity/gate/replica/teardown constants, bounded sizes,
+canonical tz-aware timestamp, >30-day staleness warning) and the Evidence &
+limits tab displays verified acceptance, deployment identity, the eight
+passed gates, evidence limitations and teardown — or a fixed
+missing/malformed/incomplete/failed/incompatible status token. The console
+reads one operator-typed file read-only; it performs no Azure CLI, network
+or deployment operation, and an existing artifact is never acceptance until
+it validates.
