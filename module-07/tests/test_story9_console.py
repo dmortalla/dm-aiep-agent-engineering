@@ -729,3 +729,34 @@ print('ok')
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "ok"
+
+
+def test_26_normalized_telemetry_presentation() -> None:
+    """R1: the wide normalized telemetry is a native scrollable table."""
+    at = app()
+    at.button(key="run_workflow").click().run()
+    assert not at.exception
+    assert len(at.dataframe) >= 1
+    assert any(
+        "Redacted normalized workflow telemetry" in caption.value
+        for caption in at.caption
+    )
+
+
+def test_27_live_evidence_status_text_is_exact() -> None:
+    """R2: the unavailable status is exactly 'Live evidence unavailable.'"""
+    at = app()
+    assert not at.exception
+    titles = [info.proto.title for info in at.info]
+    assert "Live evidence unavailable." in titles
+    assert not any(title == "live evidence unavailable" for title in titles)
+
+
+def test_28_provider_evidence_gating_is_explained() -> None:
+    """R3/R4: the disabled live controls are explained, not just disabled."""
+    at = app()
+    assert not at.exception
+    explanations = [info.value for info in at.info]
+    assert any("MODULE7_MODE=live" in value for value in explanations)
+    assert any("configuration-gated" in value for value in explanations)
+    assert at.checkbox(key="live_confirmation").disabled

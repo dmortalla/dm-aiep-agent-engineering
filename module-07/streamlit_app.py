@@ -326,7 +326,8 @@ def workflow(console: ConsoleBoundary) -> None:
     _badge(view["evidence_class"])
     st.json(view)
     st.subheader("Normalized telemetry")
-    st.dataframe(result.records, hide_index=True, alt="Redacted normalized workflow telemetry")
+    st.caption("Redacted normalized workflow telemetry — scroll horizontally for all columns.")
+    st.dataframe(result.records, hide_index=True)
 
 
 def evaluation(console: ConsoleBoundary) -> None:
@@ -367,6 +368,7 @@ def evaluation(console: ConsoleBoundary) -> None:
                 "evidence_class": "deterministic_fixture",
             }
         )
+        st.caption("Authoritative benchmark evaluator outcomes.")
         st.dataframe(
             [
                 {
@@ -380,7 +382,6 @@ def evaluation(console: ConsoleBoundary) -> None:
                 for row in output.run.result.evaluations
             ],
             hide_index=True,
-            alt="Authoritative benchmark evaluator outcomes",
         )
     before: BenchmarkReceipt | None = st.session_state.before
     after: BenchmarkReceipt | None = st.session_state.after
@@ -444,10 +445,10 @@ def failure_lab(console: ConsoleBoundary) -> None:
                 "evidence_counts": dict(summary.evidence_counts),
             }
         )
+        st.caption("Complete failure lab results.")
         st.dataframe(
             [lab_projection(row) for row in rows],
             hide_index=True,
-            alt="Complete failure lab results",
         )
 
 
@@ -711,6 +712,7 @@ def byok_model_check(console: ConsoleBoundary) -> None:
             "evidence_class": "live_model",
         }
     )
+    st.caption("Sanitized BYOK live evaluation outcomes.")
     st.dataframe(
         [
             {
@@ -730,7 +732,6 @@ def byok_model_check(console: ConsoleBoundary) -> None:
             for row in result.case_results
         ],
         hide_index=True,
-        alt="Sanitized BYOK live evaluation outcomes",
     )
     if not evaluated:
         st.warning(
@@ -755,7 +756,20 @@ def providers(console: ConsoleBoundary) -> None:
         "Live evidence remains unavailable by default and no network request is made here.",
         "Credentials never grant authority and deterministic results are never upgraded.",
     )
-    status = "configuration-gated" if console.live_available else "live evidence unavailable"
+    status = "configuration-gated" if console.live_available else "Live evidence unavailable."
+    if not console.live_available:
+        st.info(
+            "Live evidence is intentionally configuration-gated. The console "
+            "enables an external verifier only when the runtime is explicitly "
+            "configured for live mode with provider credentials supplied outside "
+            "the application, through MODULE7_-prefixed environment settings "
+            "(MODULE7_MODE=live, MODULE7_LIVE_INTEGRATIONS_ENABLED=true, "
+            "MODULE7_PROVIDER_API_KEY=<credential>). While that configuration is "
+            "absent, the verification checkbox and button stay disabled and no "
+            "network request is made. Deterministic evidence remains fully "
+            "available in every other tab.",
+            title="Why live evidence is unavailable",
+        )
     attempt_notice = st.empty()
     selected = st.selectbox(
         "Existing verifier",
