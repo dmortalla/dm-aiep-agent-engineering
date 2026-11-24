@@ -302,13 +302,15 @@ def test_l_latency_usage_and_cost_classification():
         _request(),
         api_key="k",
         transport=transport,
-        pricing={"gpt-4.1-mini": {"input_per_1k": 0.4, "output_per_1k": 1.6}},
+        pricing={"gpt-4.1-mini": {"input_per_million": 0.4, "output_per_million": 1.6}},
     )
     row = priced.case_results[0]
     assert row.elapsed_ms >= 0
     assert row.usage_source.value == "provider_reported"
     assert (row.prompt_tokens, row.completion_tokens) == (10, 5)
-    assert row.estimated_cost_usd == round(10 / 1000 * 0.4 + 5 / 1000 * 1.6, 6)
+    assert row.estimated_cost_usd == round(
+        10 / 1_000_000 * 0.4 + 5 / 1_000_000 * 1.6, 8
+    )
     unpriced = execute_live_run(_request(), api_key="k", transport=FakeTransport())
     assert unpriced.case_results[0].estimated_cost_usd is None
     no_usage = FakeTransport(body={"choices": [{"message": {"content": "Fine."}}]})
@@ -316,6 +318,69 @@ def test_l_latency_usage_and_cost_classification():
     row = result.case_results[0]
     assert row.usage_source.value == "unavailable"
     assert FailureCategory.MISSING_USAGE in result.failure_categories
+
+
+def test_p2_small_cost_precision_and_unavailable_pricing():
+    """M4/M5: 8-decimal small costs; zero/missing rates stay unavailable."""
+    tiny = FakeTransport(
+        body={
+            "choices": [{"message": {"content": "Summary."}}],
+            "usage": {"prompt_tokens": 126, "completion_tokens": 135},
+        }
+    )
+    result = execute_live_run(
+        _request(model="gpt-4o-mini"),
+        api_key="k",
+        transport=tiny,
+        pricing={"gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.6}},
+    )
+    row = result.case_results[0]
+    assert row.estimated_cost_usd == round(
+        126 / 1_000_000 * 0.15 + 135 / 1_000_000 * 0.6, 8
+    )
+    assert row.estimated_cost_usd == 0.0000999
+    for prices in (
+        {"gpt-4o-mini": {"input_per_million": 0, "output_per_million": 0}},
+        {"gpt-4o-mini": {"input_per_million": -1, "output_per_million": 0.6}},
+        {"gpt-4o-mini": {"input_per_million": None, "output_per_million": 0.6}},
+        {"gpt-4o-mini": {"input_per_million": float("inf"), "output_per_million": 0.6}},
+        {"gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": float("inf")}},
+        {"gpt-4o-mini": {"input_per_million": float("nan"), "output_per_million": 0.6}},
+        {"gpt-4o-mini": {}},
+        None,
+    ):
+        unpriced = execute_live_run(
+            _request(model="gpt-4o-mini"), api_key="k", transport=FakeTransport(),
+            pricing=prices,
+        )
+        assert unpriced.case_results[0].estimated_cost_usd is None
+
+
+def test_q1b_legacy_per_thousand_rates_are_not_silently_applied():
+    """M3: legacy per-1k rates never satisfy the per-million contract."""
+    legacy = execute_live_run(
+        _request(model="gpt-4o-mini"),
+        api_key="k",
+        transport=FakeTransport(),
+        pricing={"gpt-4o-mini": {"input_per_1k": 0.15, "output_per_1k": 0.6}},
+    )
+    assert legacy.case_results[0].estimated_cost_usd is None
+    mixed = execute_live_run(
+        _request(model="gpt-4o-mini"),
+        api_key="k",
+        transport=FakeTransport(),
+        pricing={
+            "gpt-4o-mini": {"input_per_1k": 0.15, "output_per_million": 0.6}
+        },
+    )
+    assert mixed.case_results[0].estimated_cost_usd is None
+
+
+def test_q2_removed_retired_model_is_rejected():
+    """M1: gpt-4.1-nano (API shutdown 2026-10-23) is no longer allowed."""
+    assert "gpt-4.1-nano" not in ALLOWED_BYOK_MODELS
+    with pytest.raises(ConfigurationError):
+        _request(model="gpt-4.1-nano")
 
 
 def test_m_existing_module7_regression_behavior():

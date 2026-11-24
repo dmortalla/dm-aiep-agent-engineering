@@ -499,6 +499,11 @@ def _invalidate_byok_pending() -> None:
         # Clearing it keeps the displayed state truthful: a changed input
         # needs a fresh, explicit confirmation before any run is authorized.
         st.session_state["byok_confirm"] = False
+        # Pricing validity is configuration-scoped: rates supplied for a
+        # previous model or case set are reset so they can never be
+        # silently applied to a different configuration.
+        st.session_state.pop("byok_price_in", None)
+        st.session_state.pop("byok_price_out", None)
 
 
 def _prepare_byok_authorization() -> None:
@@ -541,6 +546,12 @@ def byok_model_check(console: ConsoleBoundary) -> None:
         # A completed live run already consumed the credential; remove it
         # before the widget is recreated so it does not outlive the run.
         st.session_state.pop("byok_api_key", None)
+    if st.session_state.pop("_byok_reset_confirmation", False):
+        # A completed or attempted run consumed the one-shot
+        # authorization receipt; clear the checkbox before it is
+        # recreated so the displayed state is truthful and a new run
+        # requires a fresh explicit confirmation.
+        st.session_state["byok_confirm"] = False
     guard: SessionRunGuard = st.session_state._byok_guard
     st.caption(
         "BYOK live mode: your key is used transiently in memory for the "
@@ -560,6 +571,13 @@ def byok_model_check(console: ConsoleBoundary) -> None:
         options=ALLOWED_BYOK_MODELS,
         key="byok_model",
         on_change=_invalidate_byok_pending,
+    )
+    st.caption(
+        "Model lifecycle verified 2026-11-23 against "
+        "platform.openai.com/docs/deprecations: gpt-4.1-nano was retired "
+        "from the API on 2026-10-23 and removed from this allowlist. "
+        "gpt-4o, gpt-4o-mini and gpt-4.1-mini are deprecated with an API "
+        "shutdown scheduled 2027-01-14 and remain available until then."
     )
     st.multiselect(
         "Evaluation cases",
@@ -587,21 +605,52 @@ def byok_model_check(console: ConsoleBoundary) -> None:
     )
     pricing = None
     if with_price:
+        st.caption(
+            "Official standard API rates verified 2026-11-23 "
+            "(platform.openai.com/docs/pricing, per 1M tokens): "
+            "gpt-4o-mini $0.15 input / $0.60 output; gpt-4.1-mini "
+            "$0.40 / $1.60; gpt-4o $2.50 / $10.00. Enter your own "
+            "documented rates below; they are used exactly as supplied."
+        )
         left, right = st.columns(2)
         with left:
             input_price = st.number_input(
-                "Input USD per 1k tokens", min_value=0.0, value=0.0, key="byok_price_in"
+                "Input USD per 1M tokens",
+                min_value=0.0,
+                value=0.0,
+                step=0.05,
+                format="%.8f",
+                key="byok_price_in",
+                help=(
+                    "Enter a documented rate for the selected model; "
+                    "zeros leave the estimate unavailable."
+                ),
             )
         with right:
             output_price = st.number_input(
-                "Output USD per 1k tokens", min_value=0.0, value=0.0, key="byok_price_out"
+                "Output USD per 1M tokens",
+                min_value=0.0,
+                value=0.0,
+                step=0.05,
+                format="%.8f",
+                key="byok_price_out",
+                help=(
+                    "Enter a documented rate for the selected model; "
+                    "zeros leave the estimate unavailable."
+                ),
             )
         pricing = {
             st.session_state.byok_model: {
-                "input_per_1k": input_price,
-                "output_per_1k": output_price,
+                "input_per_million": input_price,
+                "output_per_million": output_price,
             }
         }
+    case_count = len(st.session_state.get("byok_cases", []) or [])
+    st.caption(
+        f"This authorization covers exactly {case_count} provider request "
+        "attempt(s) - one per selected evaluation case, with no automatic "
+        "retries. API invocation success is not evaluation success."
+    )
     st.text_input(
         "API key (BYOK, masked)",
         type="password",
@@ -613,6 +662,12 @@ def byok_model_check(console: ConsoleBoundary) -> None:
         "settings above.",
         key="byok_confirm",
         on_change=_invalidate_byok_confirmation,
+    )
+    st.caption(
+        "Each authorization permits one bounded evaluation run. To run "
+        "another evaluation, review your settings, select the "
+        "authorization checkbox again, and click Run authorized live "
+        "evaluation."
     )
     request = _byok_current()
     pending = guard.pending
@@ -674,6 +729,10 @@ def byok_model_check(console: ConsoleBoundary) -> None:
                 # the widget is recreated.  Deleting it in this run would
                 # desynchronize Streamlit's own widget state.
                 st.session_state["_byok_wipe_credential"] = True
+                # The one-shot authorization receipt was consumed by this
+                # completed or attempted run; the checkbox is cleared on the
+                # next render so a new run requires a fresh confirmation.
+                st.session_state["_byok_reset_confirmation"] = True
                 api_key = ""
             st.rerun()
     notice = st.session_state._byok_notice
@@ -759,15 +818,40 @@ def providers(console: ConsoleBoundary) -> None:
     status = "configuration-gated" if console.live_available else "Live evidence unavailable."
     if not console.live_available:
         st.info(
-            "Live evidence is intentionally configuration-gated. The console "
-            "enables an external verifier only when the runtime is explicitly "
-            "configured for live mode with provider credentials supplied outside "
-            "the application, through MODULE7_-prefixed environment settings "
-            "(MODULE7_MODE=live, MODULE7_LIVE_INTEGRATIONS_ENABLED=true, "
-            "MODULE7_PROVIDER_API_KEY=<credential>). While that configuration is "
-            "absent, the verification checkbox and button stay disabled and no "
-            "network request is made. Deterministic evidence remains fully "
-            "available in every other tab.",
+            "**Live evidence is intentionally configuration-gated.**\n\n"
+            "Module-level prerequisites (all required before anything "
+            "enables): `MODULE7_MODE=live`, "
+            "`MODULE7_LIVE_INTEGRATIONS_ENABLED=true`, and a non-blank "
+            "`MODULE7_PROVIDER_API_KEY`, supplied outside the application "
+            "as MODULE7_-prefixed environment settings.\n\n"
+            "Each verifier additionally requires its own configuration:\n\n"
+            "- **Langfuse**: `MODULE7_LANGFUSE_ENABLED=true`, "
+            "`MODULE7_LANGFUSE_PUBLIC_KEY`, `MODULE7_LANGFUSE_SECRET_KEY`, "
+            "and `MODULE7_LANGFUSE_HOST` (validated HTTPS or loopback).\n"
+            "- **LangSmith**: `MODULE7_LANGSMITH_ENABLED=true`, "
+            "`MODULE7_LANGSMITH_API_KEY`, `MODULE7_LANGSMITH_API_URL` "
+            "(required once enabled), `MODULE7_LANGSMITH_RESERVATION_PER_"
+            "REQUEST_USD`, and `MODULE7_LANGSMITH_RUN_COST_LIMIT_USD`.\n"
+            "- **Helicone**: `MODULE7_HELICONE_ENABLED=true`, "
+            "`MODULE7_HELICONE_API_KEY`, "
+            "`MODULE7_HELICONE_GATEWAY_BASE_URL`, "
+            "`MODULE7_HELICONE_EVIDENCE_API_BASE_URL`, "
+            "`MODULE7_HELICONE_PROVIDER_TARGET_URL`, "
+            "`MODULE7_HELICONE_RESERVATION_PER_REQUEST_USD`, and "
+            "`MODULE7_HELICONE_RUN_COST_LIMIT_USD`.\n\n"
+            "While these are absent, the confirmation checkbox and the "
+            "**Generate bounded live evidence** button stay disabled and "
+            "no network request is made. When they apply, the checkbox "
+            "enables and an explicit confirmation issues a one-time "
+            "receipt that is consumed at the boundary when the button is "
+            "clicked.\n\n"
+            "**Difference from OpenAI BYOK:** BYOK live mode is a "
+            "per-session evaluation in which each reviewer supplies a "
+            "personal key for a bounded model run; Provider evidence "
+            "delegates to server-side, administrator-configured "
+            "verifiers and must never run on a public visitor's "
+            "credentials. Provider verification remains optional and "
+            "separately gated; deterministic evidence is unaffected.",
             title="Why live evidence is unavailable",
         )
     attempt_notice = st.empty()

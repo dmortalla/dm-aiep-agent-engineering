@@ -11,6 +11,7 @@ untrusted data.
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -28,7 +29,13 @@ from .safety_types import SafetyCheckResult, SafetyStage
 
 PROVIDER_NAME: Final = "OpenAI"
 _API_BASE: Final = "https://api.openai.com/v1"
-_ALLOWED_MODELS: Final = ("gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o")
+# Model lifecycle verified 2026-11-23 against the official OpenAI
+# deprecations page (https://platform.openai.com/docs/deprecations):
+# gpt-4.1-nano and its snapshot were shut down from the API on
+# 2026-10-23 and are removed.  gpt-4o, gpt-4o-mini and gpt-4.1-mini are
+# deprecated (snapshots shutdown 2027-01-14) but remain API-active and
+# stay allowlisted until their shutdown date.
+_ALLOWED_MODELS: Final = ("gpt-4.1-mini", "gpt-4o-mini", "gpt-4o")
 ALLOWED_BYOK_MODELS: Final = _ALLOWED_MODELS
 _MIN_OUTPUT_TOKENS: Final = 50
 _MAX_OUTPUT_TOKENS: Final = 400
@@ -610,9 +617,10 @@ def execute_live_run(
         transport: The provider transport seam; tests supply an
             offline fake.
         pricing: Optional documented per-model unit prices
-            (``input_per_1k`` and ``output_per_1k`` USD per 1k tokens)
-            supplied by the operator; absent pricing means the
-            estimated cost is reported as unavailable.
+            (``input_per_million`` and ``output_per_million`` USD per
+            one million tokens) supplied by the operator; absent, invalid or
+            legacy per-thousand rates mean the estimated cost is reported as
+            unavailable.
         safety: Optional accepted output-safety pipeline; a default
             pipeline is used when omitted.
 
@@ -730,19 +738,29 @@ def execute_live_run(
             UntrustedContent(value=bounded, source="live_model")
         )
         estimated: float | None = None
-        model_prices = prices.get(request.model)
-        if (
-            usage_source is UsageSource.PROVIDER_REPORTED
-            and isinstance(model_prices, Mapping)
-            and type(model_prices.get("input_per_1k")) in (int, float)
-            and type(model_prices.get("output_per_1k")) in (int, float)
-        ):
-            assert prompt_tokens is not None and completion_tokens is not None
-            estimated = round(
-                prompt_tokens / 1000 * float(model_prices["input_per_1k"])
-                + completion_tokens / 1000 * float(model_prices["output_per_1k"]),
-                6,
-            )
+        model_prices = prices.get(request.model) if isinstance(prices, Mapping) else None
+        if isinstance(model_prices, Mapping):
+            input_rate = model_prices.get("input_per_million")
+            output_rate = model_prices.get("output_per_million")
+            # M5: missing, zero, negative or non-finite rates never produce a
+            # misleading zero-cost or infinite estimate; the estimate is
+            # reported as unavailable instead.  Underlying arithmetic is not
+            # prematurely rounded.
+            if (
+                type(input_rate) in (int, float)
+                and type(output_rate) in (int, float)
+                and (not isinstance(input_rate, float) or math.isfinite(input_rate))
+                and (not isinstance(output_rate, float) or math.isfinite(output_rate))
+                and input_rate > 0
+                and output_rate > 0
+                and prompt_tokens is not None
+                and completion_tokens is not None
+            ):
+                estimated = round(
+                    prompt_tokens / 1_000_000 * float(input_rate)
+                    + completion_tokens / 1_000_000 * float(output_rate),
+                    8,
+                )
         if truncated:
             categories.add(FailureCategory.MALFORMED_RESPONSE)
         if not assessment.allowed:
