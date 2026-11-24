@@ -390,3 +390,37 @@ missing/malformed/incomplete/failed/incompatible status token. The console
 reads one operator-typed file read-only; it performs no Azure CLI, network
 or deployment operation, and an existing artifact is never acceptance until
 it validates.
+
+
+## Story 10.10 production operations — operational readiness
+
+Offline-deterministic operational registers are implemented; see
+[operational runbooks](docs/OPERATIONS.md) and [Story 10.10](docs/STORY_10_10.md).
+`scripts/operations_check.py` validates, with exit 0/1/2 semantics, five
+minimized evidence registers against the accepted contracts: the
+deployment-readiness checklist (the eight accepted M2 gate items `passed`
+plus three carried-open items `open`), evidence-based incident diagnostics
+(five fixed scenarios with per-scenario observation allowlists and fixed
+read-only guidance), the data-only rollback plan (bound to the accepted
+`ci/promotion.json` contract), the labeled SLO register
+(measured/proposed/illustrative discipline), and the configuration-bounded
+cost register (no dollar amounts asserted).
+
+VALIDATED ROLLBACK PLAN IS NOT AUTHORIZED EXECUTION: a plan claiming
+deployment authority is rejected, the execution authority must equal the
+accepted promotion-contract value, and the unresolved
+tested-source-to-cloud-image provenance binding is carried as an explicit
+precondition a plan cannot claim resolved. All validators are deterministic,
+no-key, offline, and fail closed on missing, malformed, contradictory or
+unsupported evidence; evidence content never selects any behavior.
+
+Exercised offline: the real checker accepted valid readiness evidence
+(`ready`, eight gates, three open items), rejected invalid/missing evidence
+with fixed errors, validated a conforming rollback plan
+(`deployment_authorized=false`), and rejected an authority-claiming plan.
+Simulated checks are offline deterministic evidence, never live-cloud
+evidence. Preserved limitations: M2 point-in-time Azure acceptance 8/8;
+provenance UNRESOLVED; actual rollback execution NOT VERIFIED; C-026/C-027
+DEFERRED to Story 10.11; full Module 10 completion NOT ESTABLISHED. Live
+operational exercises require fresh explicit human authorization and an
+existing cloud footprint.

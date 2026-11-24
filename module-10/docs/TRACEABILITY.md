@@ -171,6 +171,26 @@ completion claims.
 | C-026, C-027 | Explicitly deferred in formal M2 acceptance | Story 10.11 deliverables; not closable by M2/M3 evidence |
 | C-012, E-010 (teardown) | Cost configuration verified; teardown runbook exists | Teardown of the validated dedicated resource group is a human-controlled action with no module-local execution record; requires fresh authorization |
 
+## Story 10.10 implementation — operational readiness (offline deterministic)
+
+| Requirement | Implementation | Evidence boundary |
+|---|---|---|
+| C-015 | Codified deployment-readiness checklist (eight accepted M2 gate items + three carried-open items) validated fail-closed by `module10_ai.operations` | Offline checklist exercise; consistency is not deployment authority; no live checklist run |
+| C-016 | Incident scenario register (five fixed scenarios, per-scenario observation allowlists, fixed read-only guidance); live diagnostics reuse the accepted read-only verifier/KQL surface | Offline classification exercise; no live incident drill performed |
+| C-017 | Data-only rollback-plan validator bound to `ci/promotion.json` (accepted triggers, post-rollback checks, execution authority, `deployment_authorized=false`, provenance precondition `unresolved`) | Plan validation exercised; ACTUAL ROLLBACK EXECUTION NOT VERIFIED; execution remains operator-gated |
+| C-018 | Labeled SLO register enforcing measured/proposed/illustrative discipline (measured requires a bounded measurement and a real source) | Register mechanism exercised; no live SLO measurement exists |
+| C-012 (share) | Configuration-bounded cost register (verified↔observed-configuration, assumption↔operator-judgment, optional bounded budget threshold, no dollar amounts) | Configuration evidence only; no billing review performed |
+| C-013, C-014 (share) | Reliability posture in incident guidance; security carried by checklist gates and unchanged verifier boundaries | Accepted failure-path tests remain the reliability/security evidence base; no new security surface |
+| E-007, E-008, E-009, E-010, E-011, E-012 | Deterministic fail-closed validators with fixed sanitized errors, native gates, zero new footprint, typed interfaces, tested failure paths | 30 new focused cases; full suite 1185 passed; OFFLINE DETERMINISTIC evidence only |
+
+See [Story 10.10](STORY_10_10.md) and [operational runbooks](OPERATIONS.md).
+VALIDATED ROLLBACK PLAN IS NOT AUTHORIZED EXECUTION; live operational
+exercises (incident drills against the deployed app, rollback execution,
+live SLO attainment) require fresh explicit human authorization and an
+existing cloud footprint. M2 acceptance remains point-in-time 8/8 with
+provenance UNRESOLVED; actual rollback execution is NOT VERIFIED; C-026/C-027
+remain deferred to Story 10.11.
+
 ## Planned Story 10.9 recovery-authorization evidence (R0 planning, not complete)
 
 | Requirement | Planned evidence |

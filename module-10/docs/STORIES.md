@@ -78,4 +78,18 @@ read-only configuration/HTTP/telemetry verification and human provisioning/teard
 runbook are implemented. Supporting identity amendment is human-approved for
 repository implementation/local commit; independent acceptance is pending. Cloud execution has not
 occurred. See [Story 10.9](STORY_10_9.md) and [operator workflow](AZURE_DEPLOYMENT.md).
-Story 10.10 has not begun; final C-026/C-027 remain unaccepted.
+Final C-026/C-027 remain unaccepted.
+
+## Story 10.10 implementation
+
+Offline-deterministic operational readiness is implemented: the
+deployment-readiness checklist, evidence-based incident diagnostics, the
+data-only rollback-plan validator bound to the accepted promotion contract,
+the labeled SLO register, and the configuration-bounded cost register, with a
+deterministic no-key CLI (`scripts/operations_check.py`). See
+[Story 10.10](STORY_10_10.md) and [operational runbooks](OPERATIONS.md).
+VALIDATED ROLLBACK PLAN IS NOT AUTHORIZED EXECUTION; actual rollback execution
+is NOT VERIFIED; live operational exercises require fresh explicit human
+authorization. M2 acceptance remains point-in-time 8/8 with tested-source
+provenance UNRESOLVED; C-026/C-027 remain deferred to Story 10.11; full
+Module 10 completion is not established. Story 10.11 has not begun.
