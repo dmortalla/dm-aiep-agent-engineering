@@ -5,6 +5,7 @@ this file performs a real provider call, and none proves live
 connectivity.
 """
 
+import socket
 from pathlib import Path
 
 import httpx
@@ -27,6 +28,26 @@ from reliability_safety_observability.config import RuntimeSettings
 from reliability_safety_observability.errors import ConfigurationError
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _block_external_network(monkeypatch):
+    """Fail closed on any non-loopback socket connection during this suite.
+
+    Every provider interaction in this file uses an offline fake transport.
+    This guard makes an accidental live request impossible rather than merely
+    unlikely, so a missed monkeypatch cannot reach an external endpoint.
+    """
+    original = socket.socket.connect
+
+    def guard(sock, address):
+        host = address[0] if isinstance(address, tuple) else address
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            raise AssertionError(f"external network access is blocked: {host}")
+        return original(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guard)
+
 
 _SECRET_CANARY = "sk-live-secret-canary-xyz"
 _SAFE_BODY = {

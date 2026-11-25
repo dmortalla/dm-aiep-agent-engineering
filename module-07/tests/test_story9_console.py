@@ -4,6 +4,7 @@ import ast
 import copy
 import gc
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -34,6 +35,26 @@ APP = ROOT / "streamlit_app.py"
 def app() -> AppTest:
     """Return a fresh headless reviewer console."""
     return AppTest.from_file(str(APP), default_timeout=30).run(timeout=30)
+
+
+@pytest.fixture(autouse=True)
+def _block_external_network(monkeypatch):
+    """Fail closed on any non-loopback socket connection during this suite.
+
+    The provider seam is exercised only through offline fakes.  This guard
+    makes an accidental live request impossible rather than merely unlikely,
+    so no test in this file can reach an external endpoint even if a
+    transport were left unpatched.
+    """
+    original = socket.socket.connect
+
+    def guard(sock, address):
+        host = address[0] if isinstance(address, tuple) else address
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            raise AssertionError(f"external network access is blocked: {host}")
+        return original(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guard)
 
 
 def live_runtime() -> RuntimeSettings:
@@ -936,7 +957,7 @@ def test_35_estimated_cost_column_uses_eight_decimal_presentation(monkeypatch):
 
 
 def test_36_full_telemetry_records_remain_reachable_without_scrolling():
-    """M19/Q: every telemetry field stays reachable without horizontal scrolling."""
+    """M19/Q/M23: every telemetry field is readable via the native record selector."""
     import json
 
     at = app()
@@ -944,12 +965,347 @@ def test_36_full_telemetry_records_remain_reachable_without_scrolling():
     assert not at.exception
     frame = at.dataframe[0].value
     assert len(frame.columns) == 16
-    assert len(at.expander) >= 1
     records = frame.to_dict(orient="records")
-    payloads = []
-    for element in at.json:
+    assert records
+    # Each record is selectable in the expander and rendered as one
+    # vertical JSON payload with all of its fields; no hover or
+    # horizontal scrolling is involved.
+    selector = at.selectbox(key="telemetry_record")
+    assert selector is not None
+    for index in range(len(records)):
+        at.selectbox(key="telemetry_record").set_value(index).run()
+        assert not at.exception
+        payloads = []
+        for element in at.json:
+            try:
+                payloads.append(json.loads(element.value))
+            except ValueError:
+                continue
+        assert records[index] in payloads
+
+
+def _counting_complete(monkeypatch: pytest.MonkeyPatch, body: dict) -> list[dict]:
+    """Patch the transport with an offline fake; return its recorded calls."""
+    import reliability_safety_observability.byok_evaluation as byok
+
+    calls: list[dict] = []
+
+    def fake_complete(self, **kwargs: object) -> dict:
+        calls.append(dict(kwargs))
+        return body
+
+    monkeypatch.setattr(byok.OpenAITransport, "complete", fake_complete)
+    return calls
+
+
+def test_37_clear_key_completes_visible_and_owned_reset(monkeypatch):
+    """M21: Clear key clears the visible widget, retained state, and authority."""
+    _counting_complete(
+        monkeypatch,
+        {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-clear-28531").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    assert at.session_state["_byok_guard"].pending is not None
+    at.button(key="byok_clear_key").click().run()
+    assert not at.exception
+    # The visible credential is gone after the completed rerender.
+    assert at.text_input(key="byok_api_key").value == ""
+    assert not at.session_state.get("byok_api_key")
+    assert not at.session_state.get("byok_retain")
+    assert not at.session_state.get("byok_confirm")
+    assert at.session_state.get("_byok_key_retained") is None
+    assert at.session_state.get("_byok_key_saved_at") is None
+    assert at.session_state["_byok_guard"].pending is None
+    # The console remains in live mode.
+    assert at.radio(key="byok_mode").value == "Live mode (BYOK)"
+
+
+def test_38_clear_key_preserves_sanitized_results_without_provider_calls(monkeypatch):
+    """M21: sanitized results survive Clear key and zero provider requests occur."""
+    calls = _counting_complete(
+        monkeypatch,
+        {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-clear-28531").run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    result_before = at.session_state["_byok_result"]
+    assert result_before is not None and result_before.invocations == 1
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_clear_key").click().run()
+    assert not at.exception
+    # Sanitized evaluation results are preserved; no provider call was added.
+    assert at.session_state["_byok_result"] is result_before
+    assert len(calls) == 1
+
+
+def test_39_end_live_session_resets_all_live_selections(monkeypatch):
+    """M22: End live session returns every live selection to fresh defaults."""
+    _counting_complete(
+        monkeypatch,
+        {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-end-28531").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.selectbox(key="byok_model").set_value("gpt-4o").run()
+    at.multiselect(key="byok_cases").set_value(["SEC-BYOK-001"]).run()
+    at.number_input(key="byok_tokens").set_value(300).run()
+    at.checkbox(key="byok_price_enabled").set_value(True).run()
+    at.number_input(key="byok_price_in").set_value(0.4).run()
+    at.number_input(key="byok_price_out").set_value(1.6).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    assert at.session_state["_byok_result"] is not None
+    at.button(key="byok_end_session").click().run()
+    assert not at.exception
+    # Deterministic mode is selected and every live selection is reset.
+    assert at.radio(key="byok_mode").value == "Deterministic mode (no API key)"
+    assert at.session_state["_byok_result"] is None
+    assert at.session_state.get("_byok_key_retained") is None
+    assert at.session_state.get("_byok_key_saved_at") is None
+    assert at.session_state["_byok_guard"].pending is None
+    assert not at.session_state.get("byok_confirm")
+    assert not at.session_state.get("byok_retain")
+    assert at.session_state.get("_byok_notice") in (None, "")
+    # Returning to Live mode presents the fresh-session state, not stale data.
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    assert not at.exception
+    assert at.text_input(key="byok_api_key").value == ""
+    assert at.selectbox(key="byok_model").value == "gpt-4.1-mini"
+    assert at.multiselect(key="byok_cases").value == []
+    assert at.number_input(key="byok_tokens").value == 200
+    assert at.session_state["_byok_guard"].pending is None
+
+
+def test_40_manual_deterministic_switch_cleans_live_state(monkeypatch):
+    """M22: manually leaving live mode performs the equivalent cleanup."""
+    _counting_complete(
+        monkeypatch,
+        {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-switch-28531").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    assert at.session_state["_byok_guard"].pending is not None
+    at.radio(key="byok_mode").set_value("Deterministic mode (no API key)").run()
+    assert not at.exception
+    assert not at.session_state.get("byok_api_key")
+    assert at.session_state.get("_byok_key_retained") is None
+    assert not at.session_state.get("byok_confirm")
+    assert at.session_state["_byok_guard"].pending is None
+
+
+def test_41_missing_and_malformed_credential_feedback(monkeypatch):
+    """M24: missing keys get actionable feedback; shape issues stay visible and non-blocking."""
+    calls = _counting_complete(
+        monkeypatch,
+        {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    # Missing credential, no confirmation: the feedback names the missing key.
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    assert any("No API key" in warning.value for warning in at.warning)
+    # Missing credential with confirmation: the run fails closed without a call.
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    assert len(calls) == 0
+    assert any("No API key was supplied" in warning.value for warning in at.warning)
+    # A clearly malformed credential is flagged but never blocks execution.
+    at.text_input(key="byok_api_key").set_value("hello-world").run()
+    assert any("Check the API key" in warning.proto.title for warning in at.warning)
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    assert len(calls) == 1
+    # The shape hint itself never claims validity or shows the value.
+    assert all("hello-world" not in warning.value for warning in at.warning)
+
+
+def test_42_mocked_authentication_rejection_is_actionable_and_sanitized(monkeypatch):
+    """M24: provider authentication rejection produces clear incorrect-key feedback."""
+    import reliability_safety_observability.byok_evaluation as byok
+    from reliability_safety_observability.byok_evaluation import ProviderTransportError
+
+    def rejected(self, **kwargs: object) -> dict:
+        raise ProviderTransportError(byok.FailureCategory.AUTHENTICATION, "http_401")
+
+    monkeypatch.setattr(byok.OpenAITransport, "complete", rejected)
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-wrong-key-28531").run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    result = at.session_state["_byok_result"]
+    assert result is not None
+    assert byok.FailureCategory.AUTHENTICATION in result.failure_categories
+    assert any(error.proto.title == "Incorrect API key" for error in at.error)
+    # The feedback never echoes the credential value.
+    assert all("sk-wrong-key-28531" not in error.value for error in at.error)
+
+
+def test_43_rate_limit_and_timeout_are_not_mislabeled_as_credential_problems(monkeypatch):
+    """M24: rate limiting and transport failures keep their own classification."""
+    import reliability_safety_observability.byok_evaluation as byok
+    from reliability_safety_observability.byok_evaluation import ProviderTransportError
+
+    for category, title in (
+        (byok.FailureCategory.RATE_LIMIT, "Provider rate limit"),
+        (byok.FailureCategory.TIMEOUT, "Live evaluation unavailable"),
+    ):
+        def failing(self, _category=category, **kwargs: object) -> dict:
+            raise ProviderTransportError(_category, "classified")
+
+        monkeypatch.setattr(byok.OpenAITransport, "complete", failing)
+        at = app()
+        at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+        at.text_input(key="byok_api_key").set_value("sk-plausible-28531").run()
+        at.checkbox(key="byok_confirm").set_value(True).run()
+        at.button(key="byok_submit").click().run()
+        assert not at.exception
+        result = at.session_state["_byok_result"]
+        assert result is not None and category in result.failure_categories
+        # Never labeled as an incorrect API key.
+        assert not any(error.proto.title == "Incorrect API key" for error in at.error)
+        if category is byok.FailureCategory.RATE_LIMIT:
+            assert any(warning.proto.title == title for warning in at.warning)
+        else:
+            # A timeout is a per-case provider failure; it raises no
+            # incorrect-credential error at all.
+            assert not at.error
+
+
+def test_44_action_row_primary_and_secondary_buttons():
+    """M25: the run action is primary; credential actions are secondary."""
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    assert not at.exception
+    assert at.button(key="byok_submit").proto.type == "primary"
+    assert at.button(key="byok_clear_key").proto.type == "secondary"
+    assert at.button(key="byok_end_session").proto.type == "secondary"
+    # The three actions share one native column row: three sibling
+    # columns each hold exactly one of the action buttons.
+    groups = [
+        {getattr(child, "key", None) for child in col.children.values()}
+        for col in at.columns
+    ]
+    action_groups = [
+        keys for keys in groups
+        if keys & {"byok_submit", "byok_clear_key", "byok_end_session"}
+    ]
+    assert action_groups == [
+        {"byok_submit"},
+        {"byok_clear_key"},
+        {"byok_end_session"},
+    ]
+
+
+def test_45_unit_price_inputs_display_two_decimals_with_exact_values():
+    """M26: two-decimal display; entered values keep their exact precision."""
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.checkbox(key="byok_price_enabled").set_value(True).run()
+    assert at.number_input(key="byok_price_in").proto.format == "%.2f"
+    assert at.number_input(key="byok_price_out").proto.format == "%.2f"
+    at.number_input(key="byok_price_in").set_value(0.15).run()
+    at.number_input(key="byok_price_out").set_value(0.6).run()
+    at.number_input(key="byok_price_in").set_value(0.125).run()
+    # A sub-cent-supported rate is preserved exactly despite the 2-decimal display.
+    assert at.session_state["byok_price_in"] == 0.125
+
+
+def test_46_regression_cost_example_keeps_full_precision():
+    """M26: the accepted regression example yields USD 0.00010110, not rounded."""
+    import reliability_safety_observability.byok_evaluation as byok
+
+    body = {
+        "choices": [{"message": {"content": "A safe summary."}}],
+        "usage": {"prompt_tokens": 126, "completion_tokens": 137},
+    }
+
+    class _Transport:
+        def complete(self, **_kwargs: object) -> dict:
+            return body
+
+    result = byok.execute_live_run(
+        byok.LiveRunRequest(
+            model="gpt-4o-mini",
+            case_ids=("INJ-BYOK-001",),
+            max_requests=1,
+            max_output_tokens=200,
+        ),
+        api_key="k",
+        transport=_Transport(),
+        pricing={"gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.6}},
+    )
+    row = result.case_results[0]
+    assert row.estimated_cost_usd == round(
+        126 / 1_000_000 * 0.15 + 137 / 1_000_000 * 0.6, 8
+    )
+    assert row.estimated_cost_usd == 0.0001011
+
+
+def test_47_theme_configuration_matches_approved_tokens():
+    """M27: the module-local theme parses and uses only supported keys."""
+    import tomllib
+
+    from streamlit import config as st_config
+
+    path = ROOT / ".streamlit" / "config.toml"
+    assert path.is_file()
+    theme = tomllib.loads(path.read_text(encoding="utf-8"))["theme"]
+    for key in theme:
         try:
-            payloads.append(json.loads(element.value))
-        except ValueError:
-            continue
-    assert records in payloads
+            st_config.get_option(f"theme.{key}")
+        except Exception as exc:  # a specific configuration boundary
+            pytest.fail(f"theme key not supported by the installed version: {key} ({exc})")
+    assert theme["backgroundColor"] == "#171717"
+    assert theme["secondaryBackgroundColor"] == "#222222"
+    assert theme["primaryColor"] == "#1976CC"
+    assert theme["textColor"] == "#EEEEEE"
+    assert theme["borderColor"] == "#404040"
+
+
+def test_48_five_tabs_content_and_attribution_preserved():
+    """M27: the tab structure and exact attribution carry through the redesign."""
+    at = app()
+    assert not at.exception
+    assert [tab.label for tab in at.tabs] == [
+        "Overview",
+        "Workflow",
+        "Evaluation",
+        "Failure-recovery lab",
+        "Provider evidence",
+    ]
+    captions = " ".join(caption.value for caption in at.caption)
+    assert "Techademy AI Engineering program requirements" in captions

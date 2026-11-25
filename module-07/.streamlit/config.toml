@@ -1,0 +1,14 @@
+# Module 7 reviewer-console theme (Step 285.31, M27).
+# Approved design language: soft charcoal surfaces, professional blue
+# primary actions, subtle borders, clean sans-serif typography.
+# Every key below is a supported [theme] option in the pinned
+# Streamlit 1.66.1 (verified against the installed runtime).
+[theme]
+base = "dark"
+primaryColor = "#1976CC"
+backgroundColor = "#171717"
+secondaryBackgroundColor = "#222222"
+textColor = "#EEEEEE"
+borderColor = "#404040"
+buttonRadius = "medium"
+font = "sans-serif"

@@ -27,6 +27,7 @@ from reliability_safety_observability.byok_evaluation import (  # noqa: E402
     MAX_OUTPUT_TOKENS,
     MIN_OUTPUT_TOKENS,
     PROVIDER_NAME,
+    FailureCategory,
     LiveRunRequest,
     OpenAITransport,
     SessionRunGuard,
@@ -54,6 +55,34 @@ _APPLICATION_TITLE = "Module 7 Observation and Evaluation Console"
 # expiration is enforced lazily at render and execution boundaries;
 # no background worker runs inside Streamlit's script model.
 _RETENTION_LIFETIME_SECONDS: Final = 900.0
+_DETERMINISTIC_MODE_LABEL: Final = "Deterministic mode (no API key)"
+# M21/M22: widget-backed keys are reset by assigning their fresh-session
+# defaults (never by only deleting the key).  A deleted widget key is
+# re-seeded from the browser's widget-state registry on the next rerun,
+# so deletion alone leaves the visible value in place.  Assignments made
+# in callbacks and in the pre-instantiation lifecycle block are the
+# supported Streamlit lifecycle and reliably update the visible widget.
+_LIVE_WIDGET_DEFAULTS: Final = {
+    "byok_api_key": "",
+    "byok_retain": False,
+    "byok_confirm": False,
+    "byok_model": ALLOWED_BYOK_MODELS[0],
+    "byok_cases": [],
+    "byok_tokens": 200,
+    "byok_price_in": 0.0,
+    "byok_price_out": 0.0,
+    "byok_price_enabled": False,
+}
+_INCORRECT_KEY_MESSAGE = (
+    "The provider rejected the API key for this authorized request "
+    "(authentication failed). The key was not accepted; check the key "
+    "and confirm a new run. No retries were attempted, and no "
+    "credential material is shown."
+)
+_RATE_LIMIT_MESSAGE = (
+    "The provider rate-limited this authorized request. This is not a "
+    "credential problem; retry later with a fresh confirmation."
+)
 _ATTRIBUTION = (
     "Developed from Techademy AI Engineering program requirements. "
     "Independent implementation, engineering enhancements, and deployment."
@@ -158,6 +187,62 @@ def _state() -> None:
     st.session_state.setdefault("_byok_guard", SessionRunGuard())
     st.session_state.setdefault("_byok_result", None)
     st.session_state.setdefault("_byok_notice", None)
+
+
+def _reset_live_session_state(*, include_mode: bool) -> None:
+    """Reset every live-evaluation selection to its fresh-session default.
+
+    Args:
+        include_mode: When True the execution-mode radio is returned to
+            deterministic mode as well.  Unrelated deterministic state,
+            historical receipts and sanitized results are untouched.
+
+    Widget-backed keys are assigned rather than deleted: an assigned
+    value is adopted by the widget on the next run, while a deleted key
+    is re-seeded from the browser's widget-state registry.
+    """
+    if include_mode:
+        st.session_state["byok_mode"] = _DETERMINISTIC_MODE_LABEL
+    for key, value in _LIVE_WIDGET_DEFAULTS.items():
+        st.session_state[key] = value
+    for key in ("_byok_key_retained", "_byok_key_saved_at"):
+        st.session_state.pop(key, None)
+    st.session_state["_byok_guard"] = SessionRunGuard()
+    st.session_state._byok_result = None
+    st.session_state._byok_notice = None
+
+
+def _clear_key_clicked() -> None:
+    """Clear the credential and every application-owned retained reference.
+
+    Callback for the Clear key action: the visible credential widget,
+    session-only retention, retention timing, and any pending or held
+    authorization are reset without any provider request.  The current
+    evaluation mode and sanitized evaluation results are preserved.
+    """
+    st.session_state["byok_api_key"] = ""
+    st.session_state["byok_retain"] = False
+    st.session_state["byok_confirm"] = False
+    st.session_state.pop("_byok_key_retained", None)
+    st.session_state.pop("_byok_key_saved_at", None)
+    st.session_state["_byok_guard"] = SessionRunGuard()
+
+
+def _end_live_session_clicked() -> None:
+    """Perform the complete fail-closed live-session reset.
+
+    Callback for the End live session action: all live selections,
+    credential material, authorization and active results return to
+    their fresh-session state, and the console returns to deterministic
+    mode without any provider request.
+    """
+    _reset_live_session_state(include_mode=True)
+
+
+def _mode_changed() -> None:
+    """Clean live-session state when the operator returns to deterministic mode."""
+    if st.session_state.byok_mode == _DETERMINISTIC_MODE_LABEL:
+        _reset_live_session_state(include_mode=False)
 
 
 def _refresh_live_confirmation(console: ConsoleBoundary) -> None:
@@ -270,10 +355,10 @@ def overview(console: ConsoleBoundary) -> None:
     )
     mode = st.radio(
         "Execution mode",
-        options=("Deterministic mode (no API key)", "Live mode (BYOK)"),
+        options=(_DETERMINISTIC_MODE_LABEL, "Live mode (BYOK)"),
         key="byok_mode",
         horizontal=True,
-        on_change=_invalidate_byok_pending,
+        on_change=_mode_changed,
     )
     if mode == "Live mode (BYOK)":
         byok_model_check(console)
@@ -332,12 +417,25 @@ def workflow(console: ConsoleBoundary) -> None:
     _badge(view["evidence_class"])
     st.json(view)
     st.subheader("Normalized telemetry")
-    st.caption("Redacted normalized workflow telemetry — scroll horizontally for all columns.")
+    st.caption(
+        "Redacted normalized workflow telemetry. The complete record set "
+        "is readable in the expander below, without horizontal scrolling "
+        "or mouse hover."
+    )
     st.dataframe(result.records, hide_index=True)
-    with st.expander("Full telemetry records — every field, no horizontal scrolling"):
-        # The complete redacted record set stays reachable without relying on
-        # a horizontal scrollbar or on hover.
-        st.json(result.records)
+    if result.records:
+        # M23: an obvious, native record selector exposes every field of
+        # every redacted record vertically; no scrollbar interaction is
+        # required and the authoritative records are never duplicated or
+        # reshaped by the presentation layer.
+        with st.expander("Full telemetry records — select one to read every field"):
+            record = st.selectbox(
+                "Telemetry record",
+                options=list(range(len(result.records))),
+                format_func=lambda index: f"Record {index + 1} of {len(result.records)}",
+                key="telemetry_record",
+            )
+            st.json(result.records[record])
 
 
 def evaluation(console: ConsoleBoundary) -> None:
@@ -506,7 +604,7 @@ def _invalidate_byok_credential() -> None:
     """
     guard: SessionRunGuard = st.session_state._byok_guard
     guard.drop_pending()
-    st.session_state.pop("byok_confirm", None)
+    st.session_state["byok_confirm"] = False
     st.session_state.pop("_byok_key_retained", None)
     st.session_state.pop("_byok_key_saved_at", None)
 
@@ -531,8 +629,8 @@ def _invalidate_byok_pending() -> None:
         # Pricing validity is configuration-scoped: rates supplied for a
         # previous model or case set are reset so they can never be
         # silently applied to a different configuration.
-        st.session_state.pop("byok_price_in", None)
-        st.session_state.pop("byok_price_out", None)
+        st.session_state["byok_price_in"] = 0.0
+        st.session_state["byok_price_out"] = 0.0
 
 
 def _prepare_byok_authorization() -> None:
@@ -571,31 +669,20 @@ def byok_model_check(console: ConsoleBoundary) -> None:
     untrusted data and is never executed.
     """
     st.header("BYOK model check")
-    # Credential lifecycle is processed before widget creation so the
-    # displayed state matches the application-owned session state without
-    # touching widget-backed keys after instantiation.
-    if st.session_state.pop("_byok_switch_deterministic", False):
-        for key in (
-            "byok_api_key", "byok_retain", "byok_confirm",
-            "_byok_key_retained", "_byok_key_saved_at",
-        ):
-            st.session_state.pop(key, None)
-        st.session_state["_byok_guard"] = SessionRunGuard()
-    if st.session_state.pop("_byok_clear_key", False):
-        for key in ("byok_api_key", "byok_retain", "_byok_key_retained", "_byok_key_saved_at"):
-            st.session_state.pop(key, None)
-        st.session_state["_byok_guard"] = SessionRunGuard()
-    wipe = st.session_state.pop("_byok_wipe_credential", False)
-    if wipe:
-        st.session_state.pop("byok_api_key", None)
+    # Credential lifecycle is processed before widget creation so a reset
+    # value is adopted by the widget on this run, instead of being
+    # re-seeded from the browser's widget-state registry after a plain
+    # key deletion (the hosted defect corrected in Steps 285.30A/285.31).
+    if st.session_state.pop("_byok_wipe_credential", False):
+        st.session_state["byok_api_key"] = ""
         st.session_state.pop("_byok_key_retained", None)
         st.session_state.pop("_byok_key_saved_at", None)
     if st.session_state.pop("_byok_reset_confirmation", False):
-        st.session_state.pop("byok_confirm", None)
+        st.session_state["byok_confirm"] = False
     if st.session_state.get("_byok_key_retained") is not None:
         saved_at = st.session_state.get("_byok_key_saved_at")
         if type(saved_at) is not float or time.monotonic() - saved_at > _RETENTION_LIFETIME_SECONDS:
-            st.session_state.pop("byok_api_key", None)
+            st.session_state["byok_api_key"] = ""
             st.session_state.pop("_byok_key_retained", None)
             st.session_state.pop("_byok_key_saved_at", None)
             st.session_state["_byok_retention_expired"] = True
@@ -666,11 +753,13 @@ def byok_model_check(console: ConsoleBoundary) -> None:
                 min_value=0.0,
                 value=0.0,
                 step=0.05,
-                format="%.8f",
+                format="%.2f",
                 key="byok_price_in",
                 help=(
                     "Enter a documented rate for the selected model; "
-                    "zeros leave the estimate unavailable."
+                    "zeros leave the estimate unavailable. The display "
+                    "shows two decimals; the exact value entered is "
+                    "used for the estimate."
                 ),
             )
         with right:
@@ -679,11 +768,13 @@ def byok_model_check(console: ConsoleBoundary) -> None:
                 min_value=0.0,
                 value=0.0,
                 step=0.05,
-                format="%.8f",
+                format="%.2f",
                 key="byok_price_out",
                 help=(
                     "Enter a documented rate for the selected model; "
-                    "zeros leave the estimate unavailable."
+                    "zeros leave the estimate unavailable. The display "
+                    "shows two decimals; the exact value entered is "
+                    "used for the estimate."
                 ),
             )
         pricing = {
@@ -698,32 +789,48 @@ def byok_model_check(console: ConsoleBoundary) -> None:
         "attempt(s) - one per selected evaluation case, with no automatic "
         "retries. API invocation success is not evaluation success."
     )
-    st.text_input(
-        "API key (BYOK, masked)",
-        type="password",
-        key="byok_api_key",
-        on_change=_invalidate_byok_credential,
-        help=(
-            "Transient in-memory use only; cleared after the run unless "
-            "session-only retention is enabled."
-        ),
-    )
-    st.checkbox(
-        "Retain API key for this session only",
-        key="byok_retain",
-        on_change=_invalidate_byok_credential,
-        help=(
-            "When enabled, the key stays in this browser session's "
-            "memory for subsequent authorized runs. It is never written "
-            "to disk and expires after 15 minutes of inactivity."
-        ),
-    )
-    st.checkbox(
-        "I authorize exactly one bounded live evaluation run with the "
-        "settings above.",
-        key="byok_confirm",
-        on_change=_invalidate_byok_confirmation,
-    )
+    with st.container(border=True):
+        st.markdown("**Credential and authorization**")
+        st.text_input(
+            "API key (BYOK, masked)",
+            type="password",
+            key="byok_api_key",
+            on_change=_invalidate_byok_credential,
+            help=(
+                "Transient in-memory use only; cleared after the run unless "
+                "session-only retention is enabled."
+            ),
+        )
+        # M24: a locally detectable shape problem is surfaced before any
+        # generic authorization warning.  The check is deliberately
+        # narrow, non-blocking, and never claims validity for a
+        # plausible-looking key.
+        supplied_key = st.session_state.get("byok_api_key") or ""
+        if supplied_key and not supplied_key.strip().startswith("sk-"):
+            st.warning(
+                "This value does not have the usual shape of an OpenAI "
+                "API key (keys normally begin with 'sk-'). The format "
+                "alone is never proof of validity: the provider accepts "
+                "or rejects the key only when an authorized request is "
+                "made.",
+                title="Check the API key",
+            )
+        st.checkbox(
+            "Retain API key for this session only",
+            key="byok_retain",
+            on_change=_invalidate_byok_credential,
+            help=(
+                "When enabled, the key stays in this browser session's "
+                "memory for subsequent authorized runs. It is never written "
+                "to disk and expires after 15 minutes of inactivity."
+            ),
+        )
+        st.checkbox(
+            "I authorize exactly one bounded live evaluation run with the "
+            "settings above.",
+            key="byok_confirm",
+            on_change=_invalidate_byok_confirmation,
+        )
     if st.session_state.get("_byok_retain", False):
         st.caption(
             "Each authorization permits one bounded evaluation run. To "
@@ -749,29 +856,56 @@ def byok_model_check(console: ConsoleBoundary) -> None:
             "invalidated. Re-confirm to authorize the new configuration.",
             title="Fresh authorization required",
         )
-    if st.button("Clear key", key="byok_clear_key", width="content"):
-        st.session_state.pop("byok_api_key", None)
-        st.session_state.pop("_byok_key_retained", None)
-        st.session_state.pop("_byok_key_saved_at", None)
-        st.session_state.pop("byok_retain", None)
-        st.session_state["_byok_guard"] = SessionRunGuard()
-        st.session_state["_byok_switch_deterministic"] = True
-        st.rerun()
-    if st.button(
-        "Run authorized live evaluation",
-        key="byok_submit",
-        width="content",
-    ):
+    # M25: the three actions share one horizontal native row on wide
+    # displays; Streamlit's native columns stack vertically on narrow
+    # screens, preserving existing responsive behavior.  The primary
+    # action is the professional blue run button; the credential
+    # actions are secondary.
+    run_col, clear_col, end_col = st.columns(3)
+    with run_col:
+        run_requested = st.button(
+            "Run authorized live evaluation",
+            key="byok_submit",
+            type="primary",
+            width="stretch",
+        )
+    with clear_col:
+        st.button(
+            "Clear key",
+            key="byok_clear_key",
+            type="secondary",
+            on_click=_clear_key_clicked,
+            width="stretch",
+        )
+    with end_col:
+        st.button(
+            "End live session and clear credentials",
+            key="byok_end_session",
+            type="secondary",
+            on_click=_end_live_session_clicked,
+            width="stretch",
+        )
+    if run_requested:
         if guard.running:
             st.session_state._byok_notice = (
                 "A live run is already executing in this session; "
                 "overlapping or duplicate submissions are rejected."
             )
         elif not st.session_state.byok_confirm or pending is None:
-            st.session_state._byok_notice = (
-                "No pending authorization. Confirm the run first; a "
-                "fresh confirmation is required after any input change."
-            )
+            # M24: a missing credential is the actionable first problem;
+            # it must not be obscured by the generic authorization text.
+            if not (st.session_state.get("byok_api_key", "") or "").strip():
+                st.session_state._byok_notice = (
+                    "No API key is supplied; there is no pending "
+                    "authorization. Enter your key, then confirm the run; "
+                    "a fresh confirmation is required after any input "
+                    "change."
+                )
+            else:
+                st.session_state._byok_notice = (
+                    "No pending authorization. Confirm the run first; a "
+                    "fresh confirmation is required after any input change."
+                )
         elif request is None or pending.binding_digest != request.binding_digest:
             st.session_state._byok_notice = (
                 "The pending authorization does not match the current "
@@ -813,28 +947,6 @@ def byok_model_check(console: ConsoleBoundary) -> None:
                 st.session_state["_byok_reset_confirmation"] = True
                 api_key = ""
             st.rerun()
-    if st.button("End live session and clear credentials", key="byok_end_session", width="content"):
-        # M16: fail-closed end of the live session.  Credential widget
-        # state, retained copies, authorization receipts and retention
-        # preferences are cleared without any provider request.  The
-        # console returns to deterministic mode (the radio key is
-        # removed so its committed default applies on the next render).
-        for widget_key in (
-            "byok_api_key",
-            "byok_confirm",
-            "byok_retain",
-            "_byok_key_retained",
-            "_byok_key_saved_at",
-            "byok_cases",
-            "byok_tokens",
-            "byok_price_in",
-            "byok_price_out",
-            "byok_mode",
-        ):
-            st.session_state.pop(widget_key, None)
-        st.session_state["_byok_guard"] = SessionRunGuard()
-        st.session_state["_byok_switch_deterministic"] = True
-        st.rerun()
     notice = st.session_state._byok_notice
     if notice:
         st.warning(notice, title="Authorization boundary")
@@ -871,6 +983,15 @@ def byok_model_check(console: ConsoleBoundary) -> None:
             "evidence_class": "live_model",
         }
     )
+    # M24: provider-side classification is rendered from the sanitized
+    # result only.  Authentication rejection is actionable credential
+    # feedback; rate limiting and transport failures are never
+    # mislabeled as incorrect credentials.  Messages are fixed text and
+    # never echo the credential, provider bodies, or raw exceptions.
+    if FailureCategory.AUTHENTICATION in result.failure_categories:
+        st.error(_INCORRECT_KEY_MESSAGE, title="Incorrect API key")
+    elif FailureCategory.RATE_LIMIT in result.failure_categories:
+        st.warning(_RATE_LIMIT_MESSAGE, title="Provider rate limit")
     st.caption("Sanitized BYOK live evaluation outcomes.")
     st.dataframe(
         [
@@ -1051,6 +1172,10 @@ def main() -> None:
     _state()
     console = boundary()
     st.title(_APPLICATION_TITLE)
+    st.caption(
+        "Reliability, safety and observability — a credential-free "
+        "deterministic reviewer console with bounded BYOK evaluation."
+    )
     pages = st.tabs(
         [
             "Overview",
