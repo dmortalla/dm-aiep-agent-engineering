@@ -117,11 +117,21 @@ def test_safe_expected_errors(failure: Exception, message: str,
 
 
 def test_ui_workflow() -> None:
-    """UI imports, submits, renders real evidence, reruns and rejects blank input."""
+    """UI imports, submits, renders real evidence, reruns and rejects blank input.
+
+    The AppTest bound is 60 seconds: this test is the accepted baseline case
+    that timed out at its previous 15-second bound in three separate full-suite
+    runs across three sessions (Step 410.1-era record, Step 414 and Step 419.1
+    §K.1), while isolated runs complete in about one second — a load-sensitivity
+    of the bound on this machine's Windows venv, not an application defect. The
+    exercise's own cooperative deadline is 12 seconds, so 60 still bounds a
+    genuine hang at five times that budget while tolerating suite-contention
+    scheduling spikes.
+    """
     from streamlit.testing.v1 import AppTest
 
     app = AppTest.from_file(str(Path(__file__).parents[1] / "ui/app.py"),
-                            default_timeout=15).run()
+                            default_timeout=60).run()
     assert not app.exception
     assert len(app.tabs) == 3
     app.button[0].click().run()
@@ -266,6 +276,33 @@ def test_cloud_evidence_never_reflects_content(tmp_path: Path) -> None:
     assert set(report) <= {"status", "evidence", "deployment_authorized", "verified_at",
                            "stale", "region", "image", "revision", "checks", "replicas",
                            "limits", "teardown", "error"}
+
+
+def test_ui_hosted_mode_disables_server_path_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hosted mode must not read arbitrary server paths supplied through the browser."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("MODULE10_HOSTED", "1")
+    app = AppTest.from_file(str(Path(__file__).parents[1] / "ui/app.py"),
+                            default_timeout=30).run()
+    assert not app.exception
+    assert len(app.button) == 1  # Only the deterministic exercise form remains.
+    assert len(app.text_input) == 0
+    assert any("unavailable in the hosted" in item.value for item in app.info)
+    app.button[0].click().run()
+    assert not app.exception
+    assert app.success
+
+
+def test_ui_local_mode_keeps_evidence_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local mode preserves the accepted operator-supplied evidence workflow."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.delenv("MODULE10_HOSTED", raising=False)
+    app = AppTest.from_file(str(Path(__file__).parents[1] / "ui/app.py"),
+                            default_timeout=30).run()
+    assert not app.exception
+    assert len(app.button) == 2 and len(app.text_input) == 1
 
 
 def test_ui_cloud_evidence_workflow(tmp_path: Path) -> None:

@@ -208,6 +208,42 @@ Neither phase creates AKS, VM, database, Redis, Service Bus, GPU, private networ
 or gateway. Do not use Complete mode. Partial deployment still needs inventory
 review and teardown; a failed command does not mean zero incurred cost.
 
+## Reviewer console unit — approved two-unit deployment
+
+The approved S11-C01 amendment deploys a SECOND Container App that hosts the
+accepted Streamlit reviewer console. The same incremental app-phase template
+now renders both units (`arm_template(config, digest, reviewer_digest)`):
+the existing `m10-api-<suffix>` API unit is byte-unchanged, and the new
+`m10-ui-<suffix>` reviewer unit reuses the same environment, registry,
+workspace and registry-scoped pull identity with no new privileges. The
+reviewer unit: 0.5 CPU / 1 GiB, one replica minimum and maximum (personal
+demonstration window; scale-to-zero afterwards is a later human cost
+decision), digest-bound image
+`<registry>.azurecr.io/module10-ai-reviewer@sha256:<digest>`, Streamlit
+headless on port 8501 with `/_stcore/health` probes, approved HTTP ingress
+transport (which carries Streamlit's WebSocket traffic), HTTPS-only
+external access restricted to the same reviewer /32, no secrets, no
+environment or command overrides, and `MODULE10_HOSTED=1` so the hosted
+console DISABLES the operator-supplied server-path evidence section (a
+hosted server must not read server filesystem paths supplied through the
+browser; every other console capability works, and evidence loading
+remains a local-console capability).
+
+The reviewer image is built from `Dockerfile.reviewer` (locked reviewer
+dependency group, non-root UID 10001, read-only runtime) and published like
+the API image with the repository name `module10-ai-reviewer` and its own
+reviewed manifest digest (`--reviewer-digest`). One incremental
+`az deployment group create` of the app phase creates/updates both units;
+the verifier (`--verify-cloud`) now collects and validates both apps, both
+manifest digests and both revision sets, runs the five accepted API
+HTTPS acceptance requests unchanged, and adds ONE bounded reviewer
+health request (`/_stcore/health` must answer 200 `ok`) before the
+Monitor receipt gate. `cloud_evidence()` output and its accepted M3
+schema are unchanged; reviewer acceptance is recorded in the live session
+record, not in that artifact. The hosted console still performs no Azure
+CLI, network or deployment call and grants no authority; the human must
+personally interact with the hosted console before acceptance closes.
+
 ## Human verification and reviewer evidence
 
 Run from the permitted reviewer egress IP. Verify the app is stable and ready;
@@ -417,7 +453,11 @@ and scoped assignment. Deletion readiness is a contract, not completed teardown
 evidence. Never unregister shared providers or change/delete unrelated resources.
 Local images and external evidence may be retained for review; no global Docker
 prune or repository cleanup is authorized. Story 10.10 operations/rollback and
-final release acceptance remain separate.
+final release acceptance remain separate. The consolidated live operational
+acceptance session (provenance binding, bounded scaling/load demonstration,
+rollback execution with post-rollback checks, one non-destructive incident
+exercise, session-scoped SLO captures, fresh readiness checklist and the
+personal hosted-console demonstration) is runbooked in docs/OPERATIONS.md.
 
 ## Upstream reference basis
 

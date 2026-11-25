@@ -424,3 +424,40 @@ provenance UNRESOLVED; actual rollback execution NOT VERIFIED; C-026/C-027
 DEFERRED to Story 10.11; full Module 10 completion NOT ESTABLISHED. Live
 operational exercises require fresh explicit human authorization and an
 existing cloud footprint.
+
+
+## Story 10.11 Chunk S11-C01 — hosted reviewer deployment (local implementation)
+
+Local implementation only; no live deployment has occurred. A dedicated
+reviewer container (`Dockerfile.reviewer`) hosts the accepted Streamlit
+console with the locked reviewer dependency group, non-root UID 10001,
+read-only runtime, headless Streamlit on port 8501, and
+`MODULE10_HOSTED=1` which disables the operator-supplied server-path
+evidence section in hosted mode (a hosted server must not read server
+filesystem paths supplied through the browser; the deterministic exercise,
+operations and local container evidence sections work, and evidence
+loading remains a locally-run console capability). The approved Azure
+contract amendment deploys this as a second `m10-ui-<suffix>` Container App
+reusing the existing environment, registry, workspace and registry-scoped
+pull identity — no new privileges — with 0.5 CPU / 1 GiB, min 1 / max 1,
+digest-bound `module10-ai-reviewer` image, Streamlit health probes and the
+same restricted reviewer /32 HTTPS ingress. The verifier now validates
+both units, both manifest digests and both revision sets, keeps the five
+accepted API HTTPS acceptance requests unchanged, and adds one bounded
+reviewer health request; the M3 evidence schema is unchanged.
+
+A module-specific validation-only GitHub Actions workflow
+(`.github/workflows/module-10-validation.yml` — read-only token, Module 10
+path isolation, pinned actions, no credentials, no deployment, no registry
+publication) is PREPARED but requires human persistence and has never been
+executed remotely. The consolidated live acceptance runbook (provenance
+binding, bounded scaling/load demonstration, verified-digest rollback with
+post-rollback checks, one non-destructive incident exercise,
+session-scoped SLO captures, fresh readiness checklist, personal hosted
+console demonstration, cost/teardown disposition) is documented in
+[operational runbooks](docs/OPERATIONS.md). E-006 live-provider and BYOK
+functionality are explicitly deferred by human decision. Nothing here is
+live-cloud evidence; Chunk S11-C01 completion additionally requires
+successful live deployment, provenance, operational exercises, independent
+live-evidence acceptance and the personal human demonstration of the
+hosted application.

@@ -3,6 +3,21 @@
 Story 10.8 implements LOCAL CI/CD CONTRACT evidence. GitHub-hosted execution and
 Azure deployment are not verified. ADR-008 remains unchanged.
 
+## Prepared hosted validation workflow (S11-C01, not remotely verified)
+
+The approved amendment PREPARED a module-specific validation-only workflow at
+`.github/workflows/module-10-validation.yml`: the same accepted contract as
+`ci/workflow.json` (Ubuntu 24.04, Python 3.12.14, uv 0.12.5, locked reviewer
+group, fail-fast native gates, Docker build and native container acceptance,
+bounded manifest, seven-day artifact retention, 25-minute job timeout,
+contents:read token, no persist-credentials, path isolation to module-10 and
+the workflow file itself, manual dispatch, three pinned first-party actions
+with the immutable commits verified on 2026-10-15). It performs NO cloud
+credential use, NO deployment, NO registry publication and NO automated
+promotion or rollback. Its persistence to the repository is a
+human-controlled step; it has never been dispatched or executed remotely, and
+local preparation is distinct from observed hosted execution.
+
 ## Ownership and installation
 
 `ci/workflow.json` is the authoritative JSON-form YAML workflow specification.

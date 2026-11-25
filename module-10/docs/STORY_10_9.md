@@ -578,3 +578,22 @@ ACCEPT with 1155 tests passing and 12/12 independent adversarial probes).
 This documentation reconciliation records that accepted state; it makes
 no new acceptance claim. Live-provider, SLA, load, CI/CD and C-026/C-027
 completion remain deferred and are stated as deferred in the console.
+
+## Approved footprint amendment — S11-C01 reviewer unit (2026-11-24)
+
+The human approved deploying a SECOND Container App that hosts the accepted
+Streamlit reviewer console. The amended footprint (azure_contract.footprint)
+adds exactly one `reviewer_container_apps: 1` while reusing the existing
+group, environment, registry, workspace and registry-scoped pull identity —
+no new identity, assignment or privilege. The reviewer unit runs the same
+accepted console application from `Dockerfile.reviewer` with
+`MODULE10_HOSTED=1` disabling the operator-supplied server-path evidence
+section, 0.5 CPU / 1 GiB, one-replica minimum and maximum, digest-bound
+`module10-ai-reviewer` image, Streamlit health probes on port 8501, and the
+same restricted reviewer /32 HTTPS ingress. The API unit's accepted
+contract, compute, ingress, scaling, revision boundaries, five-request
+HTTPS acceptance and the M3 minimized evidence schema are byte-unchanged.
+This amendment records repository/local-implementation approval only; it
+grants no cloud mutation authority, and all live exercises (including the
+personal hosted-console demonstration) require the separately authorized
+consolidated live session.

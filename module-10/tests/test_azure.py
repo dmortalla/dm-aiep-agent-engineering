@@ -25,9 +25,17 @@ from module10_ai.azure_contract import (
     footprint,
     ingress,
     publication,
+    reviewer_container,
+    reviewer_ingress,
+    reviewer_scale,
     scale,
 )
-from module10_ai.azure_verification import VerificationError, subset, validate_state
+from module10_ai.azure_verification import (
+    VerificationError,
+    subset,
+    validate_reviewer_state,
+    validate_state,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -37,14 +45,16 @@ deployment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deployment)
 CONFIG = AzureConfig("reviewa", "8.8.8.8/32")
 DIGEST = "sha256:" + "a" * 64
+REVIEWER_DIGEST = "sha256:" + "b" * 64
 SUBSCRIPTION = str(uuid5(NAMESPACE_URL, "module10.synthetic.subscription"))
 PRINCIPAL = str(uuid5(NAMESPACE_URL, "module10.synthetic.principal"))
 
 
 def test_approved_identity_footprint() -> None:
-    """The approved amendment adds only one pull identity and one registry-scoped assignment."""
+    """The approved amendments add one pull identity, one assignment and one reviewer unit."""
     assert footprint() == {"resource_groups": 1, "registries": 1, "workspaces": 1,
-                           "environments": 1, "container_apps": 1, "user_assigned_identities": 1,
+                           "environments": 1, "container_apps": 1,
+                           "reviewer_container_apps": 1, "user_assigned_identities": 1,
                            "registry_scoped_acrpull_assignments": 1}
     resources = arm_template(CONFIG)["resources"]
     identities = [r for r in resources if r["type"] ==
@@ -54,9 +64,15 @@ def test_approved_identity_footprint() -> None:
     assert roles[0]["scope"] == (
         f"[resourceId('Microsoft.ContainerRegistry/registries', '{CONFIG.names['registry']}')]")
     assert roles[0]["properties"]["roleDefinitionId"].endswith(f"'{ACR_PULL}')]")
-    app = arm_template(CONFIG, DIGEST)["resources"][0]
-    assert len(app["identity"]["userAssignedIdentities"]) == 1
-    assert app["properties"]["configuration"]["identitySettings"][0]["lifecycle"] == "None"
+    api, reviewer = arm_template(CONFIG, DIGEST, REVIEWER_DIGEST)["resources"]
+    assert len(api["identity"]["userAssignedIdentities"]) == 1
+    assert api["properties"]["configuration"]["identitySettings"][0]["lifecycle"] == "None"
+    assert len(reviewer["identity"]["userAssignedIdentities"]) == 1
+    assert reviewer["properties"]["configuration"]["identitySettings"][0]["lifecycle"] == "None"
+    assert reviewer["name"] == CONFIG.names["reviewer"]
+    assert reviewer["properties"]["configuration"]["ingress"] == reviewer_ingress(
+        CONFIG.reviewer_cidr)
+    assert reviewer["properties"]["template"]["scale"] == reviewer_scale()
 
 
 @pytest.mark.parametrize("change", ["broader-role", "second-identity", "password-auth"])
@@ -84,6 +100,7 @@ def observed() -> dict:
              "workspace": "Microsoft.OperationalInsights/workspaces",
              "environment": "Microsoft.App/managedEnvironments",
              "app": "Microsoft.App/containerApps",
+             "reviewer": "Microsoft.App/containerApps",
              "identity": "Microsoft.ManagedIdentity/userAssignedIdentities"}
     for key, kind in kinds.items():
         state[key] = {"id": group_id + "/providers/" + kind + "/" + names[key],
@@ -132,6 +149,28 @@ def observed() -> dict:
         "active": True, "healthState": "Healthy", "runningState": "Running",
         "provisioningState": "Provisioned", "trafficWeight": 100,
         "template": copy.deepcopy(template)}}]
+    reviewer = state["reviewer"]
+    reviewer["identity"] = {"type": "UserAssigned",
+                            "userAssignedIdentities": {identity["id"]: {}}}
+    rsettings = {"activeRevisionsMode": "Single", "maxInactiveRevisions": 2,
+                 "ingress": reviewer_ingress(CONFIG.reviewer_cidr),
+                 "registries": [{"server": names["registry"] + ".azurecr.io",
+                                 "identity": identity["id"]}],
+                 "identitySettings": [{"identity": identity["id"], "lifecycle": "None"}]}
+    rsettings["ingress"]["fqdn"] = (names["reviewer"] +
+                                    ".synthetic.southcentralus.azurecontainerapps.io")
+    rtemplate = {"containers": [reviewer_container(CONFIG.reviewer_image(REVIEWER_DIGEST))],
+                 "scale": reviewer_scale(), "terminationGracePeriodSeconds": 15}
+    rrevision = names["reviewer"] + "--synthetic"
+    reviewer["properties"].update(environmentId=state["environment"]["id"],
+                                  workloadProfileName="Consumption", configuration=rsettings,
+                                  template=rtemplate, latestRevisionName=rrevision,
+                                  latestReadyRevisionName=rrevision)
+    state["reviewer_manifest"] = {"digest": REVIEWER_DIGEST}
+    state["reviewer_revisions"] = [{"name": rrevision, "properties": {
+        "active": True, "healthState": "Healthy", "runningState": "Running",
+        "provisioningState": "Provisioned", "trafficWeight": 100,
+        "template": copy.deepcopy(rtemplate)}}]
     return state
 
 
@@ -175,8 +214,8 @@ def test_arm_minimal_security_and_source_contract() -> None:
     logs = by_type["Microsoft.App/managedEnvironments"]["properties"]["appLogsConfiguration"]
     assert logs["destination"] == "log-analytics"
     assert logs["logAnalyticsConfiguration"]["sharedKey"].startswith("[listKeys(")
-    app = arm_template(CONFIG, DIGEST)
-    assert len(app["resources"]) == 1 and app["outputs"] == {}
+    app = arm_template(CONFIG, DIGEST, REVIEWER_DIGEST)
+    assert len(app["resources"]) == 2 and app["outputs"] == {}
     props = app["resources"][0]["properties"]
     assert props["configuration"]["identitySettings"][0]["lifecycle"] == "None"
     assert props["template"]["scale"] == scale()
@@ -186,6 +225,20 @@ def test_arm_minimal_security_and_source_contract() -> None:
     assert [(p["type"], p["httpGet"]["path"]) for p in service["probes"]] == [
         ("Startup", "/health/ready"), ("Readiness", "/health/ready"), ("Liveness", "/health/live")]
     assert props["configuration"]["ingress"] == ingress(CONFIG.reviewer_cidr)
+    reviewer = app["resources"][1]["properties"]
+    reviewer_service = reviewer["template"]["containers"][0]
+    assert reviewer_service["resources"] == {"cpu": 0.5, "memory": "1Gi"}
+    assert "command" not in reviewer_service and "env" not in reviewer_service
+    assert [(p["type"], p["httpGet"]["path"], p["httpGet"]["port"]) for p
+            in reviewer_service["probes"]] == [
+        ("Startup", "/_stcore/health", 8501), ("Readiness", "/_stcore/health", 8501),
+        ("Liveness", "/_stcore/health", 8501)]
+    assert reviewer["configuration"]["ingress"] == reviewer_ingress(CONFIG.reviewer_cidr)
+    assert reviewer["template"]["scale"] == reviewer_scale()
+    with pytest.raises(ValueError):
+        arm_template(CONFIG, DIGEST)
+    with pytest.raises(ValueError):
+        arm_template(CONFIG, None, REVIEWER_DIGEST)
     serialized = json.dumps(app) + json.dumps(foundation)
     assert "/subscriptions/" not in serialized and "passwordSecretRef" not in serialized
     assert "Microsoft.Compute" not in serialized and "Microsoft.Network" not in serialized
@@ -267,7 +320,7 @@ def test_transport_alias_preserves_ingress_security(field: str, value: object) -
         validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
 
 
-RESOURCE_KEYS = ("registry", "workspace", "environment", "app", "identity")
+RESOURCE_KEYS = ("registry", "workspace", "environment", "app", "reviewer", "identity")
 
 
 @pytest.mark.parametrize("resource", ("group", *RESOURCE_KEYS))
@@ -357,7 +410,8 @@ def test_observation_drift_fails_closed(path: tuple, value: object, transport: s
     assert "sensitive" not in str(error.value)
 
 
-@pytest.mark.parametrize("missing", ["app", "registry", "workspace", "roles", "inventory"])
+@pytest.mark.parametrize("missing", ["app", "reviewer", "registry", "workspace", "roles",
+                                     "inventory"])
 def test_missing_observation(missing: str) -> None:
     """Incomplete or incompatible Azure responses retain an actionable causal failure."""
     state = observed()
@@ -376,6 +430,80 @@ def test_extra_resources_and_authority_fail() -> None:
     state["roles"].append(copy.deepcopy(state["roles"][0]))
     with pytest.raises(VerificationError):
         validate_state(CONFIG, DIGEST, state, SUBSCRIPTION)
+
+
+def test_reviewer_state_validates_and_returns_console_host() -> None:
+    """The separate reviewer unit validates fail-closed and yields its safe hostname."""
+    result = validate_reviewer_state(CONFIG, observed(), SUBSCRIPTION, REVIEWER_DIGEST)
+    assert result == (CONFIG.names["reviewer"]
+                      + ".synthetic.southcentralus.azurecontainerapps.io")
+    assert isinstance(result, str) and "m10-ui-" in result
+
+
+def state_identity() -> str:
+    """Return the synthetic identity resource ID for registry-password fixtures."""
+    return (f"/subscriptions/{SUBSCRIPTION}/resourceGroups/{CONFIG.names['group']}/providers/"
+            "Microsoft.ManagedIdentity/userAssignedIdentities/" + CONFIG.names["identity"])
+
+
+@pytest.mark.parametrize("damage,path,value", [
+    ("image", ("template", "containers", 0, "image"), "public:latest"),
+    ("wrong-image", ("template", "containers", 0, "image"), CONFIG.image(DIGEST)),
+    ("ingress-open", ("configuration", "ingress", "ipSecurityRestrictions"),
+     [{"name": "reviewer", "action": "Allow", "ipAddressRange": "0.0.0.0/0"}]),
+    ("ingress-insecure", ("configuration", "ingress", "allowInsecure"), True),
+    ("ingress-port", ("configuration", "ingress", "targetPort"), 8000),
+    ("scale-min", ("template", "scale", "minReplicas"), 0),
+    ("scale-max", ("template", "scale", "maxReplicas"), 2),
+    ("env-override", ("template", "containers", 0, "env"), [{"name": "KEY"}]),
+    ("probe-path", ("template", "containers", 0, "probes", 0, "httpGet", "path"), "/"),
+    ("probes-missing", ("template", "containers", 0, "probes"), []),
+    ("idle", ("running", "runningState"), "ScaledToZero"),
+    ("unhealthy", ("running", "healthState"), "Unhealthy"),
+    ("traffic", ("running", "trafficWeight"), 99),
+    ("inactive-count", ("extra-active", None), None),
+    ("secrets", ("configuration", "secrets"), [{"value": "sensitive"}]),
+    ("identity", ("identity", "userAssignedIdentities"), {"/synthetic-extra": {}}),
+    ("registry-password", ("configuration", "registries"), [
+        {"server": CONFIG.names["registry"] + ".azurecr.io", "identity": state_identity(),
+         "username": "synthetic", "passwordSecretRef": "synthetic-ref"}]),
+    ("ready-revision", ("latestReadyRevisionName",), "other"),
+    ("provisioning", ("provisioning",), "Deploying"),
+])
+def test_reviewer_state_fail_closed(damage: str, path: tuple, value: object) -> None:
+    """Reviewer configuration drift, privilege and idle-state deviations cannot pass."""
+    state = observed()
+    reviewer = state["reviewer"]
+    if damage == "idle" or damage == "unhealthy" or damage == "traffic":
+        state["reviewer_revisions"][0]["properties"][path[-1]] = value
+    elif damage == "inactive-count":
+        state["reviewer_revisions"].append(copy.deepcopy(state["reviewer_revisions"][0]))
+    elif damage == "provisioning":
+        reviewer["properties"]["provisioningState"] = value
+    elif damage == "ready-revision":
+        reviewer["properties"]["latestReadyRevisionName"] = value
+    elif damage == "registry-password":
+        reviewer["properties"]["configuration"]["registries"] = value
+    elif damage == "identity":
+        reviewer["identity"]["userAssignedIdentities"] = value
+    else:
+        target = reviewer["properties"]
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+    with pytest.raises(VerificationError) as error:
+        validate_reviewer_state(CONFIG, state, SUBSCRIPTION, REVIEWER_DIGEST)
+    assert "sensitive" not in str(error.value)
+
+
+def test_reviewer_manifest_digest_mismatch_fails() -> None:
+    """The reviewer acceptance binds the deployed image to the reviewed digest."""
+    state = observed()
+    state["reviewer_manifest"]["digest"] = "sha256:" + "c" * 64
+    with pytest.raises(VerificationError):
+        validate_reviewer_state(CONFIG, state, SUBSCRIPTION, REVIEWER_DIGEST)
+    with pytest.raises(VerificationError):
+        validate_reviewer_state(CONFIG, state, SUBSCRIPTION, DIGEST)
 
 
 @pytest.mark.parametrize("command", [("group", "delete"), ("deployment", "group", "create"),
@@ -425,12 +553,14 @@ OPERATION_LABELS = {
     "workspace-resource": ("resource", "show"),
     "environment-resource": ("resource", "show"),
     "app-resource": ("resource", "show"),
+    "reviewer-resource": ("resource", "show"),
     "identity-resource": ("resource", "show"),
     "acr-arm-auth": ("acr", "config", "authentication-as-arm", "show"),
     "acr-manifest-metadata": ("acr", "manifest", "show-metadata"),
     "role-assignments-all": ("role", "assignment", "list"),
     "role-assignments-inherited": ("role", "assignment", "list"),
     "containerapp-revisions": ("containerapp", "revision", "list"),
+    "containerapp-reviewer-revisions": ("containerapp", "revision", "list"),
     "monitor-log-analytics": ("monitor", "log-analytics", "query"),
 }
 
@@ -440,7 +570,7 @@ def test_azure_read_operation_labels_are_complete(label: str, command: tuple[str
     """Every source-controlled operation label maps to an exact allowlisted read."""
     assert label in deployment.READ_LABELS
     assert command in deployment.READ_COMMANDS
-    assert len(deployment.READ_LABELS) == len(set(deployment.READ_LABELS)) == 13
+    assert len(deployment.READ_LABELS) == len(set(deployment.READ_LABELS)) == 15
 
 
 @pytest.mark.parametrize("label", sorted(OPERATION_LABELS))
@@ -506,8 +636,9 @@ def test_monitor_failure_is_distinguishable_from_collection(
 
     monkeypatch.setattr(deployment, "az_read", staging)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
     with pytest.raises(VerificationError) as error:
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     message = str(error.value)
     assert "(monitor-log-analytics during monitor-receipt) failed" in message
     assert "group-observation" not in message
@@ -534,8 +665,9 @@ def test_final_drift_collection_failure_is_distinguishable(
 
     monkeypatch.setattr(deployment, "az_read", staging)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
     with pytest.raises(VerificationError) as error:
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     message = str(error.value)
     assert "(resource-inventory during final-drift-check) failed" in message
     assert ("resource-inventory", "monitor-receipt") not in calls
@@ -573,12 +705,13 @@ def test_verifier_no_success_on_required_failure(failure: str,
 
     monkeypatch.setattr(deployment, "collect", collect)
     monkeypatch.setattr(deployment, "https_checks", http)
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
     monkeypatch.setattr(deployment, "az_read", lambda *args, **kwargs:
                         [] if failure == "monitor" else [{"successes": 2, "failures": 1}])
     monkeypatch.setattr(deployment.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(deployment, "cloud_evidence", lambda *args: pytest.fail("false success"))
     with pytest.raises(VerificationError):
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
 
 
 @pytest.mark.parametrize(
@@ -613,12 +746,13 @@ def test_monitor_receipt_accepts_only_valid_counts(
 def test_monitor_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bound ingestion lag to six queries and five sleeps without repeating HTTP traffic."""
     queries, sleeps, http_calls = [], [], []
-    monkeypatch.setattr(deployment, "collect", lambda *args: observed())
+    monkeypatch.setattr(deployment, "collect", lambda *args, **kwargs: observed())
     monkeypatch.setattr(deployment, "https_checks", lambda *args: http_calls.append(args))
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
     monkeypatch.setattr(deployment, "az_read", lambda *args, **kwargs: queries.append(args) or [])
     monkeypatch.setattr(deployment.time, "sleep", lambda seconds: sleeps.append(seconds))
     with pytest.raises(VerificationError, match="receipt missing"):
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     assert len(queries) == 6 and sleeps == [20] * 5 and len(http_calls) == 1
 
 
@@ -663,10 +797,11 @@ def test_https_acceptance_operations_are_five_and_finite() -> None:
                                            "deterministic-inference-2",
                                            "bounded-validation-rejection")
     assert len(set(deployment.HTTPS_OPERATIONS)) == 5
-    for label in deployment.HTTPS_OPERATIONS:
+    assert deployment.REVIEWER_HTTPS_OPERATIONS == ("reviewer-health",)
+    for label in deployment.HTTPS_OPERATIONS + deployment.REVIEWER_HTTPS_OPERATIONS:
         deployment._https_identity(label)
     for label in ("", "evil;rm", "cloud-liveness ", "hostile-token-bearing",
-                  "deterministic-inference-0"):
+                  "deterministic-inference-0", "reviewer-health ", "reviewer-health2"):
         with pytest.raises(VerificationError, match="approved acceptance identity"):
             deployment._https_identity(label)
 
@@ -825,7 +960,8 @@ def test_https_hostile_failure_stays_sanitized_through_cli(monkeypatch: pytest.M
                             https_respond("cloud-liveness", "connect", request_id))))
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
-                        "--verify-cloud", "--output", str(output)])
+                        "--verify-cloud", "--reviewer-digest", REVIEWER_DIGEST,
+                        "--output", str(output)])
     with pytest.raises(SystemExit) as error:
         deployment.main()
     assert error.value.code == 1 and not output.exists()
@@ -982,6 +1118,7 @@ def collector_double(state: dict, calls: list) -> object:
             name = args[args.index("--name") + 1]
             assert label == {"registry": "registry-resource", "workspace": "workspace-resource",
                              "environment": "environment-resource", "app": "app-resource",
+                             "reviewer": "reviewer-resource",
                              "identity": "identity-resource"}[
                 next(k for k, v in CONFIG.names.items() if v == name)]
             return copy.deepcopy(state[next(k for k, v in CONFIG.names.items() if v == name)])
@@ -996,11 +1133,19 @@ def collector_double(state: dict, calls: list) -> object:
             assert "--include-inherited" in args and label == "role-assignments-inherited"
             return copy.deepcopy(state["inherited_roles"])
         if command == ("containerapp", "revision", "list"):
-            assert label == "containerapp-revisions"
-            return copy.deepcopy(state["revisions"])
+            name = args[args.index("--name") + 1]
+            if name == CONFIG.names["app"]:
+                assert label == "containerapp-revisions"
+                return copy.deepcopy(state["revisions"])
+            assert name == CONFIG.names["reviewer"] and label == "containerapp-reviewer-revisions"
+            return copy.deepcopy(state["reviewer_revisions"])
         if command == ("acr", "manifest", "show-metadata"):
             assert label == "acr-manifest-metadata"
-            return copy.deepcopy(state["manifest"])
+            repository = args[args.index("--name") + 1]
+            if repository == "module10-ai@" + DIGEST:
+                return copy.deepcopy(state["manifest"])
+            assert repository == "module10-ai-reviewer@" + REVIEWER_DIGEST
+            return copy.deepcopy(state["reviewer_manifest"])
         if command == ("acr", "config", "authentication-as-arm", "show"):
             assert label == "acr-arm-auth"
             return copy.deepcopy(state["arm_auth"])
@@ -1016,14 +1161,15 @@ def test_real_collector_and_verifier_bind_every_read(monkeypatch: pytest.MonkeyP
     calls = []
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
     monkeypatch.setattr(deployment, "https_checks", lambda *args: None)
-    evidence = deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
+    evidence = deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     assert evidence["classification"] == "AZURE CLOUD / DETERMINISTIC INFERENCE"
     assert SUBSCRIPTION not in json.dumps(evidence) and PRINCIPAL not in json.dumps(evidence)
     roles = [args for command, args, _ in calls if command == ("role", "assignment", "list")]
     assert len(roles) == 4
     assert sum("--all" in args for args in roles) == 2
     assert sum("--scope" in args and "--include-inherited" in args for args in roles) == 2
-    assert len(calls) == 25  # Two twelve-read snapshots and one telemetry query.
+    assert len(calls) == 31  # Two fifteen-read snapshots and one telemetry query.
 
 
 @pytest.mark.parametrize("view", ["roles", "inherited_roles"])
@@ -1042,8 +1188,9 @@ def test_collector_rejects_authority_outside_registry(view: str, scope: str,
     state[view].append(extra)
     monkeypatch.setattr(deployment, "az_read", collector_double(state, []))
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: pytest.fail("HTTP reached"))
     with pytest.raises(VerificationError):
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
 
 
 @pytest.mark.parametrize("view", ["roles", "inherited_roles"])
@@ -1106,7 +1253,7 @@ def test_null_or_malformed_principals_fail(bad: object,
     calls = []
     monkeypatch.setattr(deployment, "az_read", collector_double(state, calls))
     with pytest.raises(VerificationError):
-        deployment.collect(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.collect(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     assert not any(command == ("role", "assignment", "list") for command, _, _ in calls)
 
 
@@ -1177,7 +1324,7 @@ def test_rbac_reads_omit_resource_group_and_keep_required_bindings(
     """
     calls = []
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
-    deployment.collect(CONFIG, DIGEST, SUBSCRIPTION)
+    deployment.collect(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
     reads = [args for command, args, _ in calls
              if command == ("role", "assignment", "list")]
     assert len(reads) == 2
@@ -1345,6 +1492,7 @@ def test_residual_group_state_failure_records_no_evidence(stderr: str,
     monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: pytest.fail("HTTP reached"))
 
     real_az_read = deployment.az_read
 
@@ -1361,7 +1509,8 @@ def test_residual_group_state_failure_records_no_evidence(stderr: str,
     monkeypatch.setattr(deployment, "az_read", az_read)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
-                        "--verify-cloud", "--output", str(output)])
+                        "--verify-cloud", "--reviewer-digest", REVIEWER_DIGEST,
+                        "--output", str(output)])
     with pytest.raises(SystemExit) as error:
         deployment.main()
     assert error.value.code == 1 and not output.exists()
@@ -1389,8 +1538,9 @@ def test_failed_rbac_read_prevents_evidence(view: str, monkeypatch: pytest.Monke
 
     monkeypatch.setattr(deployment, "az_read", failing)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: pytest.fail("HTTP reached"))
     with pytest.raises(VerificationError):
-        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION)
+        deployment.verify(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
 
 
 def test_acr_uses_documented_default_and_retains_receipt_gate() -> None:
@@ -1433,9 +1583,11 @@ def test_cli_acceptance_never_writes_failed_evidence(failure: str,
     monkeypatch.setattr(deployment, "az_read", collector_double(state, []))
     monkeypatch.setattr(deployment.getpass, "getpass", lambda prompt: SUBSCRIPTION)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: pytest.fail("HTTP reached"))
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
-                        "--verify-cloud", "--output", str(output)])
+                        "--verify-cloud", "--reviewer-digest", REVIEWER_DIGEST,
+                        "--output", str(output)])
     with pytest.raises(SystemExit) as error:
         deployment.main()
     assert error.value.code == 1 and not output.exists()
@@ -1467,9 +1619,11 @@ def test_private_pipe_entrypoint(payload: str, monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
+    monkeypatch.setattr(deployment, "reviewer_health_check", lambda *a: None)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
-                        "--verify-cloud", "--subscription-stdin", "--output", str(output)])
+                        "--verify-cloud", "--reviewer-digest", REVIEWER_DIGEST,
+                        "--subscription-stdin", "--output", str(output)])
     if payload in {"valid", "lf", "crlf"}:
         deployment.main()
         assert calls and SUBSCRIPTION not in output.read_text()
@@ -1526,7 +1680,7 @@ def test_unexpected_internal_failure_cannot_echo_exception_text(
     output = tmp_path / "no-acceptance.json"
     monkeypatch.setattr(deployment, "evidence_root", lambda: tmp_path)
 
-    def leaking(config: object, digest: object | None) -> object:
+    def leaking(config: object, *args: object) -> object:
         raise ValueError("synthetic secret path E:/tmp/x; rm -rf")
 
     monkeypatch.setattr(deployment, "arm_template", leaking)
@@ -1562,7 +1716,8 @@ def test_persistence_failure_reports_no_acceptance(error: Exception,
     monkeypatch.setattr(deployment.Path, "open", broken_open)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--render", "app",
-                        "--digest", DIGEST, "--output", str(output)])
+                        "--digest", DIGEST, "--reviewer-digest", REVIEWER_DIGEST,
+                        "--output", str(output)])
     with pytest.raises(SystemExit) as exit_error:
         deployment.main()
     assert exit_error.value.code == 1 and not output.exists()
@@ -2049,7 +2204,8 @@ def test_evidence_topology_failure_keeps_sanitized_stage(
                         lambda **kw: pytest.fail("Stdin reached"))
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
                         "--reviewer-cidr", CONFIG.reviewer_cidr, "--digest", DIGEST,
-                        "--verify-cloud", "--output", str(approved / "never.json")])
+                        "--verify-cloud", "--reviewer-digest", REVIEWER_DIGEST,
+                        "--output", str(approved / "never.json")])
     with pytest.raises(SystemExit) as error:
         deployment.main()
     assert error.value.code == 1

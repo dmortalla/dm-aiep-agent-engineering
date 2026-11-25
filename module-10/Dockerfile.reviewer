@@ -1,0 +1,31 @@
+FROM ghcr.io/astral-sh/uv:0.12.5 AS uv
+FROM python:3.12.14-slim-bookworm AS builder
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv
+WORKDIR /build
+COPY pyproject.toml uv.lock ./
+# Locked reviewer group: the accepted console dependencies, hash-verified from uv.lock.
+RUN uv sync --locked --no-dev --group reviewer --no-install-project --no-cache
+
+FROM python:3.12.14-slim-bookworm AS runtime
+ENV PATH="/opt/venv/bin:$PATH" PYTHONPATH=/app/src \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp MODULE10_HOSTED=1
+RUN groupadd --gid 10001 service && useradd --uid 10001 --gid service \
+    --no-create-home --shell /usr/sbin/nologin service
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY src/module10_ai /app/src/module10_ai
+COPY ui /app/ui
+RUN chmod -R a-w /app /opt/venv
+USER 10001:10001
+EXPOSE 8501
+STOPSIGNAL SIGTERM
+# Streamlit's standard health endpoint; the API image keeps its own separate healthcheck.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2).close()"]
+# Streamlit's secure defaults are kept: CORS protection and XSRF protection stay
+# enabled. The hosted console is same-origin (the browser and the WebSocket share
+# the deployed hostname), which Streamlit allows; disabling CORS would instead
+# answer every origin with Access-Control-Allow-Origin: * and accept a WebSocket
+# from any origin, which an ingress /32 restriction does not prevent.
+CMD ["python", "-m", "streamlit", "run", "ui/app.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false", "--server.fileWatcherType", "none", "--server.runOnSave", "false", "--server.maxUploadSize", "0"]

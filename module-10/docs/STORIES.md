@@ -93,3 +93,23 @@ is NOT VERIFIED; live operational exercises require fresh explicit human
 authorization. M2 acceptance remains point-in-time 8/8 with tested-source
 provenance UNRESOLVED; C-026/C-027 remain deferred to Story 10.11; full
 Module 10 completion is not established. Story 10.11 has not begun.
+
+## Story 10.11 Chunk S11-C01 — local implementation status
+
+The consolidated live-acceptance chunk's LOCAL implementation is in place:
+a separate reviewer deployment unit (Dockerfile.reviewer with the locked
+reviewer group, non-root runtime, hosted-mode server-path evidence access
+disabled), the approved two-unit Azure contract amendment (second
+`m10-ui-<suffix>` Container App reusing the environment, registry, workspace
+and registry-scoped pull identity; min 1 / max 1; digest-bound; same /32
+HTTPS ingress), verifier coverage for both units (including one bounded
+reviewer health request; the accepted five API acceptance requests and the
+M3 evidence schema are unchanged), the prepared module-specific
+validation-only GitHub Actions workflow (human persistence pending), and the
+15-step human-controlled live-acceptance runbook. E-006 live-provider and
+BYOK functionality are EXPLICITLY DEFERRED by human decision. See
+[Story 10.10](STORY_10_10.md), [operational runbooks](OPERATIONS.md) and the
+[Azure workflow](AZURE_DEPLOYMENT.md). No live deployment, provenance,
+scaling, rollback, incident or SLO evidence exists yet; the personal hosted
+Streamlit demonstration has not occurred; Chunk S11-C01 and Module 10
+completion remain unestablished.

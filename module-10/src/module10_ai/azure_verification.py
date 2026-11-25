@@ -11,6 +11,9 @@ from module10_ai.azure_contract import (
     AzureConfig,
     container,
     ingress,
+    reviewer_container,
+    reviewer_ingress,
+    reviewer_scale,
     scale,
 )
 
@@ -199,11 +202,12 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
                  "workspace": "Microsoft.OperationalInsights/workspaces",
                  "environment": "Microsoft.App/managedEnvironments",
                  "app": "Microsoft.App/containerApps",
+                 "reviewer": "Microsoft.App/containerApps",
                  "identity": "Microsoft.ManagedIdentity/userAssignedIdentities"}
         expected = {(n[key], kind.lower()) for key, kind in kinds.items()}
         observed = {(r["name"], r["type"].lower()) for r in state["inventory"]
                     if r["type"].lower() != "microsoft.authorization/roleassignments"}
-        require(observed == expected and len(state["inventory"]) <= 6,
+        require(observed == expected and len(state["inventory"]) <= 7,
                 "Resource inventory differs; inspect the dedicated Module 10 group.")
         group = state["group"]
         require(group["name"] == n["group"] and canonical_region(group["location"]) == REGION
@@ -318,6 +322,104 @@ def validate_state(config: AzureConfig, digest: str, state: dict,
     except (KeyError, TypeError, AttributeError) as exc:
         raise VerificationError(
             "Incomplete Azure observation; inspect CLI/API compatibility.") from exc
+
+
+def validate_reviewer_state(config: AzureConfig, state: dict, expected_subscription: str,
+                            digest: str) -> str:
+    """Validate the separate reviewer unit and return only its safe FQDN.
+
+    Args:
+        config: Approved naming and ingress contract.
+        state: Raw read-only observations held only in memory.
+        expected_subscription: Independent operator-selected UUID, never persisted.
+        digest: Operator-reviewed registry manifest identity of the reviewer image.
+
+    Returns:
+        Validated reviewer hostname for the bounded health check and the
+        human-hosted demonstration.
+
+    Raises:
+        VerificationError: Any reviewer ownership, security, revision or
+            scale contract differs. A ScaledToZero reviewer revision fails:
+            the approved minimum of one replica makes an idle reviewer an
+            unexplained condition, unlike the accepted API contract.
+    """
+    identifier(expected_subscription)
+    image = config.reviewer_image(digest)
+    n = config.names
+    try:
+        reviewer = state["reviewer"]
+        require(reviewer["identity"]["type"] == "UserAssigned"
+                and type(reviewer["identity"]["userAssignedIdentities"]) is dict
+                and len(reviewer["identity"]["userAssignedIdentities"]) == 1
+                and {resource_id(key) for key in reviewer["identity"]["userAssignedIdentities"]}
+                == {resource_id(state["identity"]["id"])},
+                "Reviewer container app identity differs.")
+        props = reviewer["properties"]
+        require(resource_id(props.get("environmentId", props.get("managedEnvironmentId")))
+                == resource_id(state["environment"]["id"])
+                and props["workloadProfileName"] == "Consumption"
+                and props["provisioningState"] == "Succeeded",
+                "Reviewer environment/state differs.")
+        settings = props["configuration"]
+        require(type(settings["ingress"]) is dict, "Reviewer ingress must be a mapping.")
+        observed_ingress = dict(settings["ingress"])
+        observed_ingress["transport"] = canonical_transport(settings["ingress"]["transport"])
+        require(settings["activeRevisionsMode"] == "Single"
+                and settings["maxInactiveRevisions"] == 2
+                and subset(observed_ingress, reviewer_ingress(config.reviewer_cidr))
+                and identity_entries(settings["registries"], [
+                    {"server": n["registry"] + ".azurecr.io", "identity": state["identity"]["id"]}])
+                and identity_entries(settings["identitySettings"], [
+                    {"identity": state["identity"]["id"], "lifecycle": "None"}])
+                and not settings.get("secrets") and dapr_disabled(settings.get("dapr")),
+                "Reviewer ingress/identity/revisions/security differs.")
+        require(not settings["ingress"].get("additionalPortMappings")
+                and not settings["ingress"].get("customDomains"),
+                "Unexpected reviewer ingress exposure.")
+        require(all(not r.get("username") and not r.get("passwordSecretRef")
+                    for r in settings["registries"]),
+                "Reviewer registry password authentication is forbidden.")
+        require(state["reviewer_manifest"]["digest"] == digest,
+                "Reviewer registry manifest identity differs from the reviewed digest.")
+
+        def validate_template(actual: object) -> None:
+            """Check each reviewer projection against the same material contract."""
+            template = probe_template(actual, reviewer_container(image)["probes"])
+            require(subset(template["containers"], [reviewer_container(image)])
+                    and subset(template["scale"], reviewer_scale())
+                    and template["terminationGracePeriodSeconds"] == 15
+                    and not template.get("initContainers") and not template.get("volumes")
+                    and not template.get("serviceBinds"),
+                    "Reviewer compute/probes/scaling/image differs.")
+            for item in template["containers"]:
+                require(not any(item.get(key) for key in
+                                ("env", "command", "args", "volumeMounts")),
+                        "Reviewer runtime overrides are forbidden.")
+
+        validate_template(props["template"])
+        revision = props["latestRevisionName"]
+        require(re.fullmatch(re.escape(n["reviewer"]) + r"--[a-z0-9-]{1,64}", revision)
+                is not None and props["latestReadyRevisionName"] == revision,
+                "Reviewer latest revision is not the ready revision.")
+        revisions = state["reviewer_revisions"]
+        active = [r for r in revisions if r["properties"]["active"]]
+        require(len(active) == 1 and active[0]["name"] == revision
+                and active[0]["properties"]["healthState"] == "Healthy"
+                and active[0]["properties"]["runningState"] == "Running"
+                and active[0]["properties"]["trafficWeight"] == 100
+                and active[0]["properties"]["provisioningState"] == "Provisioned",
+                "Reviewer active revision is unhealthy, idle, ambiguous or differs "
+                "from the reviewer template.")
+        validate_template(active[0]["properties"]["template"])
+        fqdn = settings["ingress"]["fqdn"]
+        require(isinstance(fqdn, str) and re.fullmatch(
+            re.escape(n["reviewer"]) + r"\.[a-z0-9-]+\.southcentralus\.azurecontainerapps\.io",
+            fqdn) is not None, "Unexpected reviewer hostname; hosted console blocked.")
+        return fqdn
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise VerificationError(
+            "Incomplete reviewer observation; inspect CLI/API compatibility.") from exc
 
 
 def cloud_evidence(config: AzureConfig, digest: str, revision: str) -> dict:

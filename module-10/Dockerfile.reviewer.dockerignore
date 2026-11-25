@@ -1,0 +1,13 @@
+# Reviewer build context: only this unit's required inputs. This file takes
+# precedence over the root .dockerignore for builds that select
+# Dockerfile.reviewer, so every exclusion must stand on its own here.
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/module10_ai/
+!src/module10_ai/*.py
+!ui/
+!ui/app.py
+# Re-excluded after the includes: last matching pattern wins.
+**/__pycache__

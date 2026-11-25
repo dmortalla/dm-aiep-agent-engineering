@@ -30,13 +30,22 @@ flowchart TD
     P[CI/CD Pipeline] --> I[Docker Image]
     I --> ACA[Azure Container Apps]
     ACA --> A
+    I --> RU[Reviewer Console Unit]
+    RU --> S
 ```
 
 The Streamlit console invokes the accepted application interfaces directly
 (Story 10.7/10.9 M3 reviewer adapter); it does not query a running HTTP
 container. Azure Monitor receives the application's bounded JSON telemetry
 only in the deployed Container Apps unit, verified point-in-time by the M2
-acceptance; local console evidence remains provider-neutral.
+acceptance; local console evidence remains provider-neutral. The approved
+S11-C01 amendment adds the separate Reviewer Console Unit: a second
+deployment unit built from `Dockerfile.reviewer` that hosts the SAME
+accepted console application with hosted-mode server-path evidence access
+disabled; it reuses the existing environment, registry, workspace and
+registry-scoped pull identity, adds no privilege, and is reachable only
+through the same restricted reviewer /32 HTTPS ingress. No other accepted
+architectural decision changed.
 
 1. Module 10 is standalone and must not depend on or modify another module.
 2. FastAPI is the production service boundary.

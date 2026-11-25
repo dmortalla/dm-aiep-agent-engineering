@@ -9,13 +9,19 @@ from dataclasses import dataclass
 REGION = "southcentralus"
 ACR_PULL = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
 TAGS = {"module": "10", "purpose": "deterministic-acceptance", "managed-by": "human"}
+REVIEWER_PORT = 8501
 
 
 def footprint() -> dict[str, int]:
-    """Return the human-approved footprint; counts are a contract, not Azure inventory."""
+    """Return the human-approved footprint; counts are a contract, not Azure inventory.
+
+    The approved S11-C01 amendment adds exactly one reviewer Container App
+    reusing the existing group, environment, registry, workspace and
+    registry-scoped pull identity; it adds no new identity or assignment.
+    """
     return {"resource_groups": 1, "registries": 1, "workspaces": 1, "environments": 1,
-            "container_apps": 1, "user_assigned_identities": 1,
-            "registry_scoped_acrpull_assignments": 1}
+            "container_apps": 1, "reviewer_container_apps": 1,
+            "user_assigned_identities": 1, "registry_scoped_acrpull_assignments": 1}
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +57,20 @@ class AzureConfig:
         """Return deterministic resource names without account identifiers."""
         return {"group": f"rg-module10-{self.suffix}", "registry": f"m10acr{self.suffix}",
                 "workspace": f"m10-logs-{self.suffix}", "environment": f"m10-env-{self.suffix}",
-                "app": f"m10-api-{self.suffix}", "identity": f"m10-pull-{self.suffix}"}
+                "app": f"m10-api-{self.suffix}", "reviewer": f"m10-ui-{self.suffix}",
+                "identity": f"m10-pull-{self.suffix}"}
 
     def image(self, digest: str) -> str:
         """Require a registry manifest digest; tags and Docker IDs are not provenance."""
         if type(digest) is not str or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
             raise ValueError("Require the independently reviewed ACR manifest SHA-256 digest.")
         return f"{self.names['registry']}.azurecr.io/module10-ai@{digest}"
+
+    def reviewer_image(self, digest: str) -> str:
+        """Require a registry manifest digest for the separate reviewer unit."""
+        if type(digest) is not str or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+            raise ValueError("Require the independently reviewed ACR manifest SHA-256 digest.")
+        return f"{self.names['registry']}.azurecr.io/module10-ai-reviewer@{digest}"
 
 
 def container(image: str) -> dict:
@@ -72,16 +85,53 @@ def container(image: str) -> dict:
                     ("Liveness", "/health/live", 3))]}
 
 
+def reviewer_container(image: str) -> dict:
+    """Define the approved separate reviewer unit: minimal compute and Streamlit probes.
+
+    Streamlit's standard health endpoint serves the sole probe path; there is no
+    command, environment, secret, volume or live-provider configuration.
+    """
+    return {"name": "reviewer", "image": image, "resources": {"cpu": 0.5, "memory": "1Gi"},
+            "probes": [
+                {"type": kind, "httpGet": {"path": "/_stcore/health", "port": REVIEWER_PORT,
+                                           "scheme": "HTTP"},
+                 "initialDelaySeconds": 10, "periodSeconds": 10, "timeoutSeconds": 2,
+                 "failureThreshold": failures, "successThreshold": 1}
+                for kind, failures in (("Startup", 10), ("Readiness", 3), ("Liveness", 3))]}
+
+
 def scale() -> dict:
     """Bound replicas and use the managed HTTP activation/load-distribution boundary."""
     return {"minReplicas": 0, "maxReplicas": 2, "rules": [
         {"name": "http", "http": {"metadata": {"concurrentRequests": "4"}}}]}
 
 
+def reviewer_scale() -> dict:
+    """Bound the reviewer unit to one replica for the initial demonstration window.
+
+    Minimum one keeps the personal human demonstration reachable without a
+    cold start; scale-to-zero afterwards is a later human cost decision.
+    """
+    return {"minReplicas": 1, "maxReplicas": 1, "rules": [
+        {"name": "http", "http": {"metadata": {"concurrentRequests": "128"}}}]}
+
+
 def ingress(cidr: str) -> dict:
     """Require HTTPS and an IP allow rule because the accepted API has no authentication."""
     return {"external": True, "targetPort": 8000, "transport": "http", "allowInsecure": False,
             "traffic": [{"latestRevision": True, "weight": 100}],
+            "ipSecurityRestrictions": [{"name": "reviewer", "action": "Allow",
+                                        "ipAddressRange": cidr}]}
+
+
+def reviewer_ingress(cidr: str) -> dict:
+    """Require the same restricted HTTPS boundary for the reviewer console.
+
+    The approved HTTP transport carries Streamlit's WebSocket traffic through
+    the managed ingress; only the reviewer /32 address may reach the unit.
+    """
+    return {"external": True, "targetPort": REVIEWER_PORT, "transport": "http",
+            "allowInsecure": False, "traffic": [{"latestRevision": True, "weight": 100}],
             "ipSecurityRestrictions": [{"name": "reviewer", "action": "Allow",
                                         "ipAddressRange": cidr}]}
 
@@ -127,15 +177,22 @@ def publication(candidate: dict, manifest_bytes: bytes) -> dict:
         raise ValueError("Malformed publication metadata; inspect candidate/manifest.") from exc
 
 
-def arm_template(config: AzureConfig, digest: str | None = None) -> dict:
+def arm_template(config: AzureConfig, digest: str | None = None,
+                 reviewer_digest: str | None = None) -> dict:
     """Render incremental resource-group ARM templates without executing Azure.
 
     Args:
         config: Strict approved configuration.
-        digest: None renders foundation; a reviewed digest renders the app phase.
+        digest: None renders foundation; a reviewed digest renders the API unit.
+        reviewer_digest: Required with digest; renders the separate reviewer unit
+            in the same incremental phase, reusing the environment, registry,
+            workspace and registry-scoped pull identity without new privileges.
 
     Returns:
         ARM JSON with server-side identity/key references and no secret outputs.
+
+    Raises:
+        ValueError: The app phase lacks either reviewed manifest digest.
     """
     n = config.names
 
@@ -147,6 +204,8 @@ def arm_template(config: AzureConfig, digest: str | None = None) -> dict:
     workspace_id = rid("Microsoft.OperationalInsights/workspaces", n["workspace"])
     resources = []
     if digest is None:
+        if reviewer_digest is not None:
+            raise ValueError("Foundation rendering does not accept a reviewer digest.")
         resources = [
             {"type": "Microsoft.ContainerRegistry/registries", "apiVersion": "2023-07-01",
              "name": n["registry"], "location": REGION, "tags": TAGS,
@@ -184,6 +243,8 @@ def arm_template(config: AzureConfig, digest: str | None = None) -> dict:
                                       "'2023-09-01').primarySharedKey]"}}}},
         ]
     else:
+        if reviewer_digest is None:
+            raise ValueError("App rendering requires the reviewed reviewer manifest digest.")
         resources = [{"type": "Microsoft.App/containerApps", "apiVersion": "2025-01-01",
             "name": n["app"], "location": REGION, "tags": TAGS,
             "identity": {"type": "UserAssigned", "userAssignedIdentities": {identity_id: {}}},
@@ -196,7 +257,21 @@ def arm_template(config: AzureConfig, digest: str | None = None) -> dict:
                     "registries": [{"server": n["registry"] + ".azurecr.io",
                                     "identity": identity_id}]},
                 "template": {"containers": [container(config.image(digest))], "scale": scale(),
-                             "terminationGracePeriodSeconds": 15}}}]
+                             "terminationGracePeriodSeconds": 15}}},
+            {"type": "Microsoft.App/containerApps", "apiVersion": "2025-01-01",
+             "name": n["reviewer"], "location": REGION, "tags": TAGS,
+             "identity": {"type": "UserAssigned", "userAssignedIdentities": {identity_id: {}}},
+             "properties": {
+                 "environmentId": rid("Microsoft.App/managedEnvironments", n["environment"]),
+                 "workloadProfileName": "Consumption",
+                 "configuration": {"activeRevisionsMode": "Single", "maxInactiveRevisions": 2,
+                     "ingress": reviewer_ingress(config.reviewer_cidr),
+                     "identitySettings": [{"identity": identity_id, "lifecycle": "None"}],
+                     "registries": [{"server": n["registry"] + ".azurecr.io",
+                                     "identity": identity_id}]},
+                 "template": {"containers": [reviewer_container(config.reviewer_image(
+                     reviewer_digest))], "scale": reviewer_scale(),
+                     "terminationGracePeriodSeconds": 15}}}]
     return {"$schema": "https://schema.management.azure.com/schemas/2019-04-01/"
                        "deploymentTemplate.json#", "contentVersion": "1.0.0.0",
             "resources": resources, "outputs": {}}

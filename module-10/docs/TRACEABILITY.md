@@ -191,6 +191,18 @@ existing cloud footprint. M2 acceptance remains point-in-time 8/8 with
 provenance UNRESOLVED; actual rollback execution is NOT VERIFIED; C-026/C-027
 remain deferred to Story 10.11.
 
+## Story 10.11 implementation — S11-C01 local implementation (live acceptance pending)
+
+| Requirement | Implementation | Evidence boundary |
+|---|---|---|
+| C-004, C-008, C-024 (amendment) | Approved two-unit contract: separate reviewer Container App reusing the environment/registry/workspace/pull identity, 0.5 CPU / 1 GiB, min 1 / max 1, digest-bound image, same /32 HTTPS ingress, Streamlit health probes | Offline contract/fixture tests; NO live deployment or scaling evidence yet |
+| E-002, E-004 (hosted) | Dedicated reviewer image (Dockerfile.reviewer, locked reviewer group, non-root, headless console, hosted server-path evidence access disabled) + reviewer container acceptance test | Local container acceptance pending Docker availability; hosted console NOT yet deployed; personal human demonstration pending |
+| C-010, C-021 (hosted validation) | Module-specific validation-only workflow prepared at `.github/workflows/module-10-validation.yml` (read-only token, path isolation, pinned actions, no credentials/deployment/registry) | Prepared locally; HUMAN persistence and hosted execution NOT verified |
+| C-017 (rollback readiness) | Mode-consistent rollback mechanism documented: verified-digest redeployment (Single revision mode) with the five post-rollback checks re-run; NO rollback without a verified target | Runbook only; live execution pending |
+| Live session prerequisites | 15-step consolidated live runbook (provenance, scaling, distribution, rollback, incident, SLO, checklist, personal demo, cost/teardown disposition) | Runbook only; all live exercises remain LIVE_VERIFICATION_REQUIRED |
+| E-006 / BYOK | Explicitly deferred by human decision (recorded, not silently waived); no provider/key surface exists or was added | Deferred disposition recorded in README and this row |
+| C-026, C-027 | Deferred to the post-Chunk-A acceptance record | Not closable by local implementation |
+
 ## Planned Story 10.9 recovery-authorization evidence (R0 planning, not complete)
 
 | Requirement | Planned evidence |

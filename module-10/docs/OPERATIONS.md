@@ -128,6 +128,88 @@ and `teardown`. A `verified` kind must rest on `observed-configuration`
 amount; actual billing review remains the operator's private responsibility
 per AZURE_DEPLOYMENT.md cost discipline.
 
+## Live operational acceptance runbook (Chunk S11-C01)
+
+Human-controlled, one consolidated session, executed in this exact order
+after the human grants the bounded cloud authorization and sets a cost
+ceiling. Every consequential mutation below is a human-run command from the
+accepted PowerShell workflow; agent participation is read-only verification
+support and register classification. All limits are finite and stated; no
+destructive fault injection and no unbounded load occur at any step.
+
+1. **Fresh read-only baseline** — verify the owned group, both container
+   apps, environment, registry, workspace and identity through the accepted
+   read-only verifier pattern or Portal facts; record what actually exists
+   without identifiers.
+2. **Current configuration** — record each unit's provisioning state,
+   ingress restriction, scale bounds and revision list.
+3. **Current image and revision identity** — record the currently deployed
+   digests and revision names (Portal facts are orientation, not evidence).
+4. **Rollback target** — deploy the previously accepted API digest as the
+   current revision's predecessor. The existing deployment has NO inactive
+   revisions, so the accepted mode-consistent rollback mechanism is
+   redeployment of a verified previous digest (Single revision mode keeps
+   only the latest revision on traffic; revision activation/traffic-set is
+   not available in Single mode). NEVER execute rollback without a verified
+   target: if the current revision's provenance cannot be established, the
+   safe alternative is the bounded two-verified-revision flow — publish the
+   newly tested digest (target A), deploy it (target B), verify B, then
+   roll back to verified A and re-verify A. Both digests must be
+   digest-pull content-matched (AZURE_DEPLOYMENT.md) before use.
+5. **Provenance** — establish tested-source-to-image provenance for BOTH
+   units: clean-source pipeline candidate → publish tested images →
+   registry manifest digests → digest-pull content-ID match → deploy those
+   digests. Unresolved provenance must not be presented as acceptance.
+6. **Digest-bound publication and deployment** — deploy both units by
+   digest via the amended app-phase template and runbook; verify.
+7. **Reviewer deployment verification** — verifier review of the reviewer
+   unit (configuration, digest, revision) plus ONE bounded health request;
+   then the PERSONAL human hosted-console demonstration (non-substitutable:
+   API-only checks, screenshots and logs do not count).
+8. **Bounded horizontal scaling demonstration** — API unit at min 0:
+   bounded concurrent load (at most 8 concurrent clients, at most 60
+   seconds per burst, at most 5 bursts, at most 600 requests total, no
+   retries) until observed replicas rise from 0; record the observed
+   maximum (ideally 2) and the observation source.
+9. **Distribution evidence** — during one burst with two replicas active,
+   record correlated console-log events attributable to more than one
+   replica (bounded aggregate query; no raw log export).
+10. **Rollback execution and post-rollback checks** — human executes the
+    verified-digest redeploy rollback per step 4's target, then re-runs the
+    accepted verifier: five API HTTPS checks, reviewer health check and the
+    fresh configuration/revision drift check (the promotion contract's
+    post-deployment checks). Record the actual outcome honestly.
+11. **One non-destructive incident exercise** — a single short burst above
+    the managed HTTP threshold (concurrentRequests 4) may or may not yield
+    application-level 503 responses; collect the ACTUAL observed condition
+    (HTTP status distribution, bounded counts, window) and classify it
+    through the operations CLI incident register. Do not assume the
+    threshold guarantees saturation; report what occurred.
+12. **Session-scoped SLO evidence** — capture measured readiness/liveness
+    success, a bounded inference-latency sample and Monitor receipt presence
+    from this session into the SLO register with real sources, labeled
+    measured with an explicit session-scope note. Short-session measurements
+    are never SLA attainment.
+13. **Fresh deployment-readiness checklist** — evaluate the checklist
+    register against THIS session's fresh verifier evidence, keeping
+    provenance/rollback/SLO items honestly open or newly supported.
+14. **Personal human hosted Streamlit demonstration** — the reviewer
+    personally runs the deterministic exercise, inspects operations and
+    local container evidence sections, and confirms the evidence-file
+    section is disclosed as hosted-unavailable.
+15. **Cost review and hosting disposition** — private billing review against
+    the cost register, then scale the reviewer unit to zero, tear down, or
+    continue hosting by explicit human cost decision; record the decision.
+
+Evidence: one consolidated session record (commands, exit codes, register
+outputs, observed facts, no identifiers/secrets) in the external evidence
+directory. Any failed exercise is recorded honestly, not retried
+unboundedly. Recording a failed mandatory step honestly does not satisfy it:
+if a mandatory step does not produce the evidence it claims to produce, the
+live acceptance is not met, the exact blocker is recorded, and the step is
+re-planned under fresh explicit human authorization rather than closed by
+documenting the failure.
+
 ## Exercised demonstration and limitations
 
 The offline demonstration exercised the real CLI against (1) valid readiness

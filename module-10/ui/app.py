@@ -1,10 +1,16 @@
 """Native Streamlit presentation; application authority lives in module10_ai."""
 
 import asyncio
+import os
 
 import streamlit as st
 
 from module10_ai.reviewer import cloud_evidence_report, exercise
+
+# Hosted mode is set only by the reviewer deployment unit. It disables the
+# operator-supplied evidence-file section because a hosted server must not
+# read arbitrary server filesystem paths supplied through the browser.
+HOSTED = os.environ.get("MODULE10_HOSTED", "") == "1"
 
 st.set_page_config(page_title="Module 10 · System console", page_icon=":material/monitoring:",
                    layout="wide")
@@ -93,17 +99,24 @@ with evidence:
         st.caption("Historical acceptance supplied by the reviewer. No live container status "
                    "is queried or claimed. Docker is not required for this console.")
     st.subheader("Azure cloud acceptance — operator-supplied evidence")
-    st.caption("Independent human verification writes one minimized JSON artifact (see "
-               "docs/AZURE_DEPLOYMENT.md). Paste that file's exact path; the console reads "
-               "only that one file read-only and never runs Azure CLI, network calls or "
-               "deployments. An existing file is not acceptance until it validates.")
+    if HOSTED:
+        st.info("Operator-supplied evidence file loading is unavailable in the hosted "
+                "console: a hosted server must not read server filesystem paths supplied "
+                "through the browser. Supply the artifact to the locally run console "
+                "instead; every other capability of this console works in hosted mode.")
+    else:
+        st.caption("Independent human verification writes one minimized JSON artifact (see "
+                   "docs/AZURE_DEPLOYMENT.md). Paste that file's exact path; the console reads "
+                   "only that one file read-only and never runs Azure CLI, network calls or "
+                   "deployments. An existing file is not acceptance until it validates.")
+        st.session_state.setdefault("cloud_evidence", None)
+        evidence_path = st.text_input(
+            "Exact acceptance artifact path",
+            help="Full path to the verifier-written module10-azure-acceptance JSON file. "
+                 "Single exact file only; no directory browsing.")
+        if st.button("Load acceptance evidence"):
+            st.session_state.cloud_evidence = cloud_evidence_report(evidence_path)
     st.session_state.setdefault("cloud_evidence", None)
-    evidence_path = st.text_input(
-        "Exact acceptance artifact path",
-        help="Full path to the verifier-written module10-azure-acceptance JSON file. "
-             "Single exact file only; no directory browsing.")
-    if st.button("Load acceptance evidence"):
-        st.session_state.cloud_evidence = cloud_evidence_report(evidence_path)
     cloud = st.session_state.cloud_evidence
     if cloud and cloud["status"] == "verified":
         st.success("Independently verified Azure Container Apps acceptance — point in "

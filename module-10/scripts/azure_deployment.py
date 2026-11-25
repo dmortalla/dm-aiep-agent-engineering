@@ -22,6 +22,7 @@ from module10_ai.azure_verification import (
     cloud_evidence,
     identifier,
     require,
+    validate_reviewer_state,
     validate_state,
 )
 from module10_ai.http_schemas import ErrorOutput, InferenceOutput
@@ -36,20 +37,28 @@ READ_COMMANDS = frozenset({
 })
 READ_LABELS = ("group-observation", "resource-inventory", "registry-resource",
                "workspace-resource", "environment-resource", "app-resource",
-               "identity-resource", "acr-arm-auth", "acr-manifest-metadata",
-               "role-assignments-all", "role-assignments-inherited",
-               "containerapp-revisions", "monitor-log-analytics")
+               "reviewer-resource", "identity-resource", "acr-arm-auth",
+               "acr-manifest-metadata", "role-assignments-all",
+               "role-assignments-inherited", "containerapp-revisions",
+               "containerapp-reviewer-revisions", "monitor-log-analytics")
 READ_PHASES = ("", "initial-collection", "monitor-receipt", "final-drift-check")
 HTTPS_OPERATIONS = ("cloud-liveness", "cloud-readiness", "deterministic-inference-1",
                     "deterministic-inference-2", "bounded-validation-rejection")
+REVIEWER_HTTPS_OPERATIONS = ("reviewer-health",)
 HTTPS_TRANSPORT_SUBTYPES = ("connect", "connect-timeout", "read", "read-timeout", "write",
                             "write-timeout", "pool-timeout", "protocol", "proxy",
                             "wall-clock-timeout", "unclassified")
 
 
 def _https_identity(label: str) -> None:
-    """Validate the finite HTTPS acceptance identity before any network activity."""
-    require(label in HTTPS_OPERATIONS, "HTTPS label is not an approved acceptance identity.")
+    """Validate the finite HTTPS acceptance identity before any network activity.
+
+    The five accepted API acceptance identities and the separate reviewer
+    health identity are the complete finite vocabulary; nothing else may
+    originate network traffic.
+    """
+    require(label in HTTPS_OPERATIONS + REVIEWER_HTTPS_OPERATIONS,
+            "HTTPS label is not an approved acceptance identity.")
 
 
 def _https_transport_subtype(exc: BaseException) -> str:
@@ -315,7 +324,8 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
 
 
 def collect(config: AzureConfig, digest: str, expected_subscription: str,
-            phase: str = "initial-collection") -> dict:
+            phase: str = "initial-collection", *,
+            reviewer_digest: str) -> dict:
     """Collect fresh resource and revision observations; never accept snapshot files."""
     require(phase in ("initial-collection", "final-drift-check"),
             "Disallowed verification phase for collection.")
@@ -335,6 +345,7 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str,
              "environment": ("Microsoft.App/managedEnvironments", "2025-01-01",
                              "environment-resource"),
              "app": ("Microsoft.App/containerApps", "2025-01-01", "app-resource"),
+             "reviewer": ("Microsoft.App/containerApps", "2025-01-01", "reviewer-resource"),
              "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31",
                           "identity-resource")}
     for key, (kind, version, label) in kinds.items():
@@ -344,6 +355,10 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str,
                              "--registry", n["registry"])
     state["manifest"] = read("acr-manifest-metadata", ("acr", "manifest", "show-metadata"),
                              "--registry", n["registry"], "--name", "module10-ai@" + digest)
+    state["reviewer_manifest"] = read("acr-manifest-metadata", ("acr", "manifest",
+                                                               "show-metadata"),
+                                      "--registry", n["registry"], "--name",
+                                      "module10-ai-reviewer@" + reviewer_digest)
     try:
         principal = identifier(state["identity"]["properties"]["principalId"])
         registry_id = state["registry"]["id"]
@@ -370,6 +385,9 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str,
                                     "--include-inherited")
     state["revisions"] = read("containerapp-revisions", ("containerapp", "revision", "list"),
                               "--resource-group", n["group"], "--name", n["app"])
+    state["reviewer_revisions"] = read("containerapp-reviewer-revisions",
+                                       ("containerapp", "revision", "list"),
+                                       "--resource-group", n["group"], "--name", n["reviewer"])
     return state
 
 
@@ -485,6 +503,72 @@ async def _https_checks(fqdn: str, request_id: str) -> None:
             "HTTPS/schema acceptance failed; no cloud success recorded.") from exc
 
 
+async def _reviewer_health(fqdn: str) -> None:
+    """Send one bounded reviewer-console health request with the same transport rules.
+
+    Streamlit's health endpoint answers plain text (not JSON); the same
+    verified TLS, no-redirect, no-proxy, 60-second wall-clock deadline and
+    64 KiB ceiling apply. The response text is compared, never reflected.
+    """
+    try:
+        async with httpx.AsyncClient(base_url="https://" + fqdn, timeout=60,
+                                     follow_redirects=False, trust_env=False) as client:
+            request = client.build_request("GET", "/_stcore/health")
+            response = None
+            try:
+                try:
+                    async with asyncio.timeout(60):
+                        _https_identity("reviewer-health")
+                        response = await client.send(request, stream=True)
+                        content = bytearray()
+                        cached = getattr(response, "_content", None)
+                        if cached is not None:
+                            require(len(cached) <= 65536,
+                                    "HTTP response exceeded acceptance bound for "
+                                    "(reviewer-health).")
+                            content.extend(cached)
+                        else:
+                            async for chunk in response.aiter_raw(chunk_size=4096):
+                                content.extend(chunk)
+                                require(len(content) <= 65536,
+                                        "HTTP response exceeded acceptance bound for "
+                                        "(reviewer-health).")
+                        status_code = response.status_code
+                        text = content.decode("ascii", errors="strict")
+                        await response.aclose()
+                        response = None
+                        require(status_code == 200 and text.strip() == "ok",
+                                "Reviewer console health check failed; no acceptance "
+                                "recorded.")
+                except VerificationError:
+                    raise
+                except (httpx.HTTPError, TimeoutError) as exc:
+                    subtype = _https_transport_subtype(exc)
+                    raise VerificationError(
+                        f"HTTPS acceptance (reviewer-health) failed at the transport "
+                        f"stage ({subtype}); no cloud success recorded.") from exc
+                except (ValueError, UnicodeError) as exc:
+                    raise VerificationError(
+                        "HTTPS acceptance (reviewer-health) failed at receiving/parsing; "
+                        "no cloud success recorded.") from exc
+            finally:
+                if response is not None:
+                    try:
+                        await response.aclose()
+                    except (httpx.HTTPError, OSError):
+                        pass
+    except (httpx.HTTPError, ValueError, TimeoutError) as exc:
+        if isinstance(exc, VerificationError):
+            raise
+        raise VerificationError(
+            "Reviewer HTTPS health acceptance failed; no cloud success recorded.") from exc
+
+
+def reviewer_health_check(fqdn: str) -> None:
+    """Run one bounded reviewer-console health acceptance request."""
+    asyncio.run(_reviewer_health(fqdn))
+
+
 def monitor_query(app: str, revision: str, request_id: str) -> str:
     """Generate fixed KQL with validated scope and only aggregate results, never raw logs."""
     require(re.fullmatch(r"m10-api-[a-z][a-z0-9]{5,11}", app) is not None
@@ -521,13 +605,15 @@ def _monitor_receipt_satisfied(rows: object) -> bool:
     return successes is not None and successes >= 2 and failures is not None and failures >= 1
 
 
-def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict:
-    """Verify configuration, five HTTP calls and at most six telemetry queries before success.
+def verify(config: AzureConfig, digest: str, expected_subscription: str, *,
+           reviewer_digest: str) -> dict:
+    """Verify both units, five API HTTP calls, one reviewer health check and telemetry.
 
     Args:
         config: Human-reviewed contract.
         digest: Human-reviewed manifest identity bound separately to the tested image.
         expected_subscription: Private independently selected subscription UUID.
+        reviewer_digest: Human-reviewed manifest identity of the tested reviewer image.
 
     Returns:
         Minimized genuine cloud observations, not deployment or release authority.
@@ -536,11 +622,14 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
         VerificationError: Any required gate or final drift check fails.
     """
     subscription = identifier(expected_subscription)
-    state = collect(config, digest, subscription)
+    state = collect(config, digest, subscription, reviewer_digest=reviewer_digest)
     fqdn = validate_state(config, digest, state, subscription)
+    reviewer_fqdn = validate_reviewer_state(config, state, subscription, reviewer_digest)
     revision = state["app"]["properties"]["latestRevisionName"]
+    reviewer_revision = state["reviewer"]["properties"]["latestRevisionName"]
     request_id = uuid.uuid4().hex
     https_checks(fqdn, request_id)
+    reviewer_health_check(reviewer_fqdn)
     query = monitor_query(config.names["app"], revision, request_id)
     workspace = state["workspace"]["properties"]["customerId"]
     for attempt in range(6):
@@ -553,9 +642,13 @@ def verify(config: AzureConfig, digest: str, expected_subscription: str) -> dict
         if attempt == 5:
             raise VerificationError("Azure Monitor receipt missing; wait for ingestion then rerun.")
         time.sleep(20)
-    final = collect(config, digest, subscription, phase="final-drift-check")
+    final = collect(config, digest, subscription, phase="final-drift-check",
+                    reviewer_digest=reviewer_digest)
     require(validate_state(config, digest, final, subscription) == fqdn
-            and final["app"]["properties"]["latestRevisionName"] == revision,
+            and validate_reviewer_state(config, final, subscription, reviewer_digest)
+            == reviewer_fqdn
+            and final["app"]["properties"]["latestRevisionName"] == revision
+            and final["reviewer"]["properties"]["latestRevisionName"] == reviewer_revision,
             "Cloud configuration/revision changed during acceptance; rerun after stabilization.")
     return cloud_evidence(config, digest, revision)
 
@@ -597,6 +690,9 @@ def main() -> None:
     parser.add_argument("--suffix", required=True)
     parser.add_argument("--reviewer-cidr", required=True)
     parser.add_argument("--digest")
+    parser.add_argument("--reviewer-digest",
+                        help="Reviewed reviewer-unit manifest digest; required for app "
+                             "rendering and cloud verification.")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--render", choices=("foundation", "app"))
     mode.add_argument("--verify-cloud", action="store_true")
@@ -611,10 +707,12 @@ def main() -> None:
             config = AzureConfig(args.suffix, args.reviewer_cidr)
             output = destination(args.output)
             if args.verify_cloud or args.render == "app":
-                if not args.digest:
-                    raise ValueError("App/verification requires the reviewed manifest digest.")
+                if not args.digest or not args.reviewer_digest:
+                    raise ValueError("App/verification requires both reviewed manifest "
+                                     "digests.")
                 config.image(args.digest)
-            elif args.digest:
+                config.reviewer_image(args.reviewer_digest)
+            elif args.digest or args.reviewer_digest:
                 raise ValueError("Foundation rendering does not accept an image digest.")
         except VerificationError:
             raise
@@ -623,9 +721,10 @@ def main() -> None:
                 "Pre-verification input/configuration validation failed; correct the "
                 "operator inputs and rerun. No cloud acceptance was recorded.") from exc
         data = (verify(config, args.digest,
-                       private_subscription(from_stdin=args.subscription_stdin))
+                       private_subscription(from_stdin=args.subscription_stdin),
+                       reviewer_digest=args.reviewer_digest)
                 if args.verify_cloud
-                else arm_template(config, args.digest))
+                else arm_template(config, args.digest, args.reviewer_digest))
         encoded = json.dumps(data, indent=2) + "\n"
         require(len(encoded.encode()) <= 32768, "Generated output exceeds metadata bound.")
         try:
