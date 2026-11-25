@@ -760,3 +760,196 @@ def test_28_provider_evidence_gating_is_explained() -> None:
     assert any("MODULE7_MODE=live" in value for value in explanations)
     assert any("configuration-gated" in value for value in explanations)
     assert at.checkbox(key="live_confirmation").disabled
+
+
+def test_29_retained_key_survives_run_and_enables_repeat(monkeypatch):
+    """M14/C/D: session-only retention keeps the key for the next run."""
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(byok.OpenAITransport, "__new__", lambda cls, *a, **k: object.__new__(cls))
+    monkeypatch.setattr(
+        byok.OpenAITransport,
+        "complete",
+        lambda self, **kwargs: {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-retained-probe").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    result = at.session_state["_byok_result"]
+    assert result is not None and result.invocations == 1
+    assert at.session_state["byok_api_key"] == "sk-retained-probe"
+    assert at.session_state["_byok_key_retained"] == "sk-retained-probe"
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    assert at.session_state["_byok_result"].invocations == 1
+
+
+def test_30_clear_key_control_empties_everything(monkeypatch):
+    """M15/E/F: Clear key clears widget, retention, and authorization."""
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(byok.OpenAITransport, "complete", lambda self, **k: {})
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-clear-probe").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_clear_key").click().run()
+    assert not at.exception
+    assert not at.session_state.get("byok_api_key")
+    assert not at.session_state.get("byok_retain")
+    assert at.session_state["_byok_guard"].pending is None
+    assert not at.session_state.get("byok_confirm")
+
+
+def test_31_end_live_session_returns_to_deterministic(monkeypatch):
+    """M16/G/H: end session clears everything and reverts the mode."""
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(byok.OpenAITransport, "complete", lambda self, **k: {})
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-end-session-probe").run()
+    at.button(key="byok_end_session").click().run()
+    assert not at.exception
+    assert not at.session_state.get("byok_api_key")
+    mode = at.session_state.get("byok_mode")
+    assert mode in (None, "Deterministic mode (no API key)")
+
+
+def test_32_expired_retained_credential_is_rejected_and_cleared(monkeypatch):
+    """M13/M16/I: an expired retained key cannot authorize a run."""
+    import reliability_safety_observability.byok_evaluation as byok
+    calls = []
+    monkeypatch.setattr(
+        byok.OpenAITransport,
+        "complete",
+        lambda self, **kw: calls.append(kw) or {
+            "choices": [{"message": {"content": "Summary."}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-expired-probe").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    saved = at.session_state.get("_byok_key_saved_at")
+    assert saved is not None
+    at.session_state["_byok_key_saved_at"] = saved - 901.0
+    at.run()
+    assert at.session_state.get("byok_api_key", None) in (None, "")
+    assert at.session_state.get("_byok_key_retained") is None
+    at.text_input(key="byok_api_key").set_value("sk-expired-probe").run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+
+
+def test_33_credential_change_invalidates_outstanding_authorization(monkeypatch):
+    """R4/J: a changed credential invalidates the pending grant."""
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(
+        byok.OpenAITransport,
+        "complete",
+        lambda self, **kwargs: {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-first-key").run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    assert at.session_state["_byok_guard"].pending is not None
+    at.text_input(key="byok_api_key").set_value("sk-second-key").run()
+    assert not at.exception
+    assert at.session_state["_byok_guard"].pending is None
+    assert not at.session_state.get("byok_confirm")
+
+
+def test_34_disabling_retention_clears_the_retained_credential(monkeypatch):
+    """M14/F: a retention change drops the grant and the retained credential."""
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(
+        byok.OpenAITransport,
+        "complete",
+        lambda self, **kwargs: {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-retention-probe").run()
+    at.checkbox(key="byok_retain").set_value(True).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert at.session_state.get("_byok_key_retained") == "sk-retention-probe"
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    assert at.session_state["_byok_guard"].pending is not None
+    at.checkbox(key="byok_retain").set_value(False).run()
+    assert at.session_state.get("_byok_key_retained") is None
+    assert at.session_state.get("_byok_key_saved_at") is None
+    assert at.session_state["_byok_guard"].pending is None
+    assert not at.session_state.get("byok_confirm")
+
+
+def test_35_estimated_cost_column_uses_eight_decimal_presentation(monkeypatch):
+    """M18/O: the estimated cost column renders eight decimal places."""
+    import json
+
+    import reliability_safety_observability.byok_evaluation as byok
+    monkeypatch.setattr(
+        byok.OpenAITransport,
+        "complete",
+        lambda self, **kwargs: {
+            "choices": [{"message": {"content": "A safe summary."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        },
+    )
+    at = app()
+    at.radio(key="byok_mode").set_value("Live mode (BYOK)").run()
+    at.text_input(key="byok_api_key").set_value("sk-cost-probe").run()
+    at.checkbox(key="byok_price_enabled").set_value(True).run()
+    at.number_input(key="byok_price_in").set_value(0.4).run()
+    at.number_input(key="byok_price_out").set_value(1.6).run()
+    at.checkbox(key="byok_confirm").set_value(True).run()
+    at.button(key="byok_submit").click().run()
+    assert not at.exception
+    configurations = [
+        json.loads("".join(at.dataframe[-1].proto.columns))
+    ]
+    cost = configurations[0].get("estimated_cost_usd")
+    assert cost is not None
+    assert cost["type_config"]["type"] == "number"
+    assert cost["type_config"]["format"] == "%.8f"
+    row = at.session_state["_byok_result"].case_results[0]
+    assert row.estimated_cost_usd == round(10 / 1_000_000 * 0.4 + 5 / 1_000_000 * 1.6, 8)
+
+
+def test_36_full_telemetry_records_remain_reachable_without_scrolling():
+    """M19/Q: every telemetry field stays reachable without horizontal scrolling."""
+    import json
+
+    at = app()
+    at.button(key="run_workflow").click().run()
+    assert not at.exception
+    frame = at.dataframe[0].value
+    assert len(frame.columns) == 16
+    assert len(at.expander) >= 1
+    records = frame.to_dict(orient="records")
+    payloads = []
+    for element in at.json:
+        try:
+            payloads.append(json.loads(element.value))
+        except ValueError:
+            continue
+    assert records in payloads
