@@ -29,8 +29,24 @@ from module10_ai.http_schemas import ErrorOutput, InferenceOutput
 from module10_ai.telemetry import correlation_id
 
 ROOT = Path(__file__).resolve().parents[1]
+ARM_ENDPOINT = "https://management.azure.com"
+# Single source of truth for every ARM resource read: the provider/type, the
+# pinned API version and the approved operation label per resource kind. A rest
+# read may only transport one of these identities, so an unapproved type or
+# API version cannot reach the ARM management plane.
+ARM_RESOURCE_KINDS = {
+    "registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01", "registry-resource"),
+    "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01",
+                  "workspace-resource"),
+    "environment": ("Microsoft.App/managedEnvironments", "2025-01-01",
+                    "environment-resource"),
+    "app": ("Microsoft.App/containerApps", "2025-01-01", "app-resource"),
+    "reviewer": ("Microsoft.App/containerApps", "2025-01-01", "reviewer-resource"),
+    "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31",
+                 "identity-resource"),
+}
 READ_COMMANDS = frozenset({
-    ("group", "show"), ("resource", "list"), ("resource", "show"),
+    ("group", "show"), ("resource", "list"), ("rest",),
     ("acr", "config", "authentication-as-arm", "show"), ("acr", "manifest", "show-metadata"),
     ("role", "assignment", "list"), ("containerapp", "revision", "list"),
     ("monitor", "log-analytics", "query"),
@@ -258,7 +274,8 @@ def child_environment() -> dict[str, str]:
 
 
 def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
-            phase: str = "") -> object:
+            phase: str = "",
+            arm_resource: tuple[str, str, str] | None = None) -> object:
     """Run only fixed read-only CLI operations, with timeout and attributed failures.
 
     Args:
@@ -267,6 +284,11 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
         subscription: Independent expected subscription; passed on every CLI read.
         label: One fixed source-controlled operation identity from ``READ_LABELS``.
         phase: Optional fixed verification phase from ``READ_PHASES``.
+        arm_resource: For a rest read only, the approved resource identity as
+            ``(key, resource_group, resource_name)``. The provider/type, the
+            pinned API version and the operation label are taken from
+            ``ARM_RESOURCE_KINDS``; the transported URI must equal the URI built
+            from that identity and the validated subscription.
 
     Returns:
         Parsed observations in memory, never raw printed evidence.
@@ -288,6 +310,26 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
             "Subscription override is forbidden.")
     require(not ("--scope" in args and "--all" in args),
             "Scope and all cannot be combined in an Azure read.")
+    if command == ("rest",):
+        # az rest is a generic transport. Bind it to exactly one approved ARM
+        # resource identity: the provider/type, the pinned API version and the
+        # operation label come from the source-controlled table, and the
+        # transported URI must equal the URI built from that identity, the
+        # approved resource group and name, and the independently supplied
+        # subscription. No other method, host, resource group, resource type,
+        # resource name, API version or query can be transported through the
+        # collector boundary.
+        require(arm_resource is not None,
+                "Azure rest reads require an approved resource identity.")
+        key, group, name = arm_resource
+        pinned = ARM_RESOURCE_KINDS.get(key)
+        require(pinned is not None and pinned[2] == label,
+                "Azure rest read label does not match its approved resource identity.")
+        require(len(args) == 4 and args[0] == "--method" and args[1] == "get"
+                and args[2] == "--url"
+                and args[3] == arm_resource_uri(subscription, group, pinned[0], name,
+                                                pinned[1]),
+                "Azure rest reads are restricted to pinned ARM management GETs.")
     executable = shutil.which("az")
     if not executable:
         raise VerificationError("Azure CLI is unavailable; use the operator's authenticated shell.")
@@ -323,6 +365,25 @@ def az_read(command: tuple[str, ...], *args: str, subscription: str, label: str,
                                 "no cloud acceptance recorded.") from exc
 
 
+def arm_resource_uri(subscription: str, group: str, kind: str, name: str,
+                     api_version: str) -> str:
+    """Build the exact pinned-version ARM URI for one bounded resource GET.
+
+    Args:
+        subscription: Independently validated expected subscription UUID.
+        group: The contract-approved resource group name.
+        kind: The source-controlled provider/type identity.
+        name: The contract-approved resource name.
+        api_version: The source-controlled pinned ARM API version.
+
+    Returns:
+        The exact ARM management URI carrying the pinned ``api-version`` query;
+        no shell, query or scope rewriting happens anywhere else.
+    """
+    return (f"{ARM_ENDPOINT}/subscriptions/{subscription}/resourceGroups/{group}"
+            f"/providers/{kind}/{name}?api-version={api_version}")
+
+
 def collect(config: AzureConfig, digest: str, expected_subscription: str,
             phase: str = "initial-collection", *,
             reviewer_digest: str) -> dict:
@@ -332,25 +393,23 @@ def collect(config: AzureConfig, digest: str, expected_subscription: str,
     n = config.names
     subscription = identifier(expected_subscription)
 
-    def read(label: str, command: tuple[str, ...], *args: str) -> object:
-        return az_read(command, *args, subscription=subscription, label=label, phase=phase)
+    def read(label: str, command: tuple[str, ...], *args: str,
+             arm_resource: tuple[str, str, str] | None = None) -> object:
+        return az_read(command, *args, subscription=subscription, label=label, phase=phase,
+                       arm_resource=arm_resource)
 
     state = {"group": read("group-observation", ("group", "show"), "--name", n["group"]),
              "inventory": read("resource-inventory", ("resource", "list"),
                                "--resource-group", n["group"])}
-    kinds = {"registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01",
-                          "registry-resource"),
-             "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01",
-                           "workspace-resource"),
-             "environment": ("Microsoft.App/managedEnvironments", "2025-01-01",
-                             "environment-resource"),
-             "app": ("Microsoft.App/containerApps", "2025-01-01", "app-resource"),
-             "reviewer": ("Microsoft.App/containerApps", "2025-01-01", "reviewer-resource"),
-             "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31",
-                          "identity-resource")}
-    for key, (kind, version, label) in kinds.items():
-        state[key] = read(label, ("resource", "show"), "--resource-group", n["group"],
-                          "--name", n[key], "--resource-type", kind, "--api-version", version)
+    for key, (kind, version, label) in ARM_RESOURCE_KINDS.items():
+        # The installed CLI (2.91.0) rejects generic `resource show` reads for
+        # these pinned api-versions (F-01); the equivalent pinned-version ARM
+        # GET via az rest returns the identical nested payload shape. The exact
+        # URI embeds the already-validated subscription, resource group,
+        # provider namespace, resource type, resource name and pinned version.
+        state[key] = read(label, ("rest",), "--method", "get", "--url",
+                          arm_resource_uri(subscription, n["group"], kind, n[key], version),
+                          arm_resource=(key, n["group"], n[key]))
     state["arm_auth"] = read("acr-arm-auth", ("acr", "config", "authentication-as-arm", "show"),
                              "--registry", n["registry"])
     state["manifest"] = read("acr-manifest-metadata", ("acr", "manifest", "show-metadata"),

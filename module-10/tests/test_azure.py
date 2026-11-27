@@ -549,12 +549,12 @@ def test_cli_timeout_and_bound(monkeypatch: pytest.MonkeyPatch) -> None:
 OPERATION_LABELS = {
     "group-observation": ("group", "show"),
     "resource-inventory": ("resource", "list"),
-    "registry-resource": ("resource", "show"),
-    "workspace-resource": ("resource", "show"),
-    "environment-resource": ("resource", "show"),
-    "app-resource": ("resource", "show"),
-    "reviewer-resource": ("resource", "show"),
-    "identity-resource": ("resource", "show"),
+    "registry-resource": ("rest",),
+    "workspace-resource": ("rest",),
+    "environment-resource": ("rest",),
+    "app-resource": ("rest",),
+    "reviewer-resource": ("rest",),
+    "identity-resource": ("rest",),
     "acr-arm-auth": ("acr", "config", "authentication-as-arm", "show"),
     "acr-manifest-metadata": ("acr", "manifest", "show-metadata"),
     "role-assignments-all": ("role", "assignment", "list"),
@@ -584,7 +584,9 @@ def test_azure_read_failure_names_the_operation(
                         lambda command, **kwargs: subprocess.CompletedProcess(
                             command, 1, "", hostile))
     with pytest.raises(VerificationError) as error:
-        deployment.az_read(OPERATION_LABELS[label], subscription=SUBSCRIPTION, label=label)
+        deployment.az_read(OPERATION_LABELS[label], *RESOURCE_URI_BY_LABEL.get(label, ()),
+                           subscription=SUBSCRIPTION, label=label,
+                           arm_resource=RESOURCE_IDENTITY_BY_LABEL.get(label))
     assert str(error.value) == (
         f"Azure read ({label}) failed; inspect access, extensions and resource state.")
     for leak in (SUBSCRIPTION, CONFIG.names["group"], CONFIG.names["registry"],
@@ -623,16 +625,19 @@ def test_monitor_failure_is_distinguishable_from_collection(
     monkeypatch.setattr(deployment, "az_read", collector_double(observed(), []))
 
     def staging(command: tuple[str, ...], *args: str, label: str, subscription: str,
-                phase: str = "") -> object:
+                phase: str = "",
+                arm_resource: tuple[str, str, str] | None = None) -> object:
         if label == "monitor-log-analytics":
             monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
             monkeypatch.setattr(deployment.subprocess, "run",
                                 lambda call, **kw: subprocess.CompletedProcess(call, 3, "",
                                                                               "raw"))
             return real_az_read(command, *args, subscription=subscription,
-                                label=label, phase=phase)
+                                label=label, phase=phase,
+                                arm_resource=arm_resource)
         return collector_double(observed(), [])(command, *args, label=label,
-                                                subscription=subscription, phase=phase)
+                                                subscription=subscription, phase=phase,
+                                                arm_resource=arm_resource)
 
     monkeypatch.setattr(deployment, "az_read", staging)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
@@ -653,15 +658,18 @@ def test_final_drift_collection_failure_is_distinguishable(
     calls = []
 
     def staging(command: tuple[str, ...], *args: str, label: str, subscription: str,
-                phase: str = "") -> object:
+                phase: str = "",
+                arm_resource: tuple[str, str, str] | None = None) -> object:
         calls.append((label, phase))
         if phase == "final-drift-check" and label == "resource-inventory":
             monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
             monkeypatch.setattr(deployment.subprocess, "run",
                                 lambda call, **kw: subprocess.CompletedProcess(call, 2, "", ""))
             return real_az_read(command, *args, subscription=subscription,
-                                label=label, phase=phase)
-        return double(command, *args, label=label, subscription=subscription, phase=phase)
+                                label=label, phase=phase,
+                                arm_resource=arm_resource)
+        return double(command, *args, label=label, subscription=subscription, phase=phase,
+                       arm_resource=arm_resource)
 
     monkeypatch.setattr(deployment, "az_read", staging)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: None)
@@ -1099,10 +1107,36 @@ def expected_registry() -> str:
             + "/providers/Microsoft.ContainerRegistry/registries/" + CONFIG.names["registry"])
 
 
+ARM_PINS = {
+    "registry": ("Microsoft.ContainerRegistry/registries", "2023-07-01"),
+    "workspace": ("Microsoft.OperationalInsights/workspaces", "2023-09-01"),
+    "environment": ("Microsoft.App/managedEnvironments", "2025-01-01"),
+    "app": ("Microsoft.App/containerApps", "2025-01-01"),
+    "reviewer": ("Microsoft.App/containerApps", "2025-01-01"),
+    "identity": ("Microsoft.ManagedIdentity/userAssignedIdentities", "2023-01-31"),
+}
+
+
+def expected_arm_uri(key: str) -> str:
+    """Independently derive the approved pinned-version ARM URI for one unit."""
+    kind, version = ARM_PINS[key]
+    return (f"https://management.azure.com/subscriptions/{SUBSCRIPTION}/resourceGroups/"
+            + CONFIG.names["group"] + f"/providers/{kind}/" + CONFIG.names[key]
+            + f"?api-version={version}")
+
+
+RESOURCE_LABELS = {key: key + "-resource" for key in ARM_PINS}
+RESOURCE_URI_BY_LABEL = {key + "-resource": ("--method", "get", "--url", expected_arm_uri(key))
+                         for key in ARM_PINS}
+RESOURCE_IDENTITY_BY_LABEL = {key + "-resource": (key, CONFIG.names["group"], CONFIG.names[key])
+                               for key in ARM_PINS}
+
+
 def collector_double(state: dict, calls: list) -> object:
     """Adapt synthetic observations to real collector commands without calling Azure."""
     def read(command: tuple[str, ...], *args: str, label: str, subscription: str,
-             phase: str = "") -> object:
+             phase: str = "",
+             arm_resource: tuple[str, str, str] | None = None) -> object:
         calls.append((command, args, subscription))
         assert label in deployment.READ_LABELS
         assert phase in ("initial-collection", "monitor-receipt", "final-drift-check")
@@ -1114,14 +1148,14 @@ def collector_double(state: dict, calls: list) -> object:
         if command == ("resource", "list"):
             assert label == "resource-inventory"
             return copy.deepcopy(state["inventory"])
-        if command == ("resource", "show"):
-            name = args[args.index("--name") + 1]
-            assert label == {"registry": "registry-resource", "workspace": "workspace-resource",
-                             "environment": "environment-resource", "app": "app-resource",
-                             "reviewer": "reviewer-resource",
-                             "identity": "identity-resource"}[
-                next(k for k, v in CONFIG.names.items() if v == name)]
-            return copy.deepcopy(state[next(k for k, v in CONFIG.names.items() if v == name)])
+        if command == ("rest",):
+            assert args[0] == "--method" and args[1] == "get" and args[2] == "--url"
+            assert arm_resource is not None
+            key, group, name = arm_resource
+            assert group == CONFIG.names["group"] and name == CONFIG.names[key]
+            key = next(k for k in ARM_PINS if args[3] == expected_arm_uri(k))
+            assert label == RESOURCE_LABELS[key]
+            return copy.deepcopy(state[key])
         if command == ("role", "assignment", "list"):
             assert "--assignee-object-id" in args and "--include-groups" in args
             assert args[args.index("--assignee-object-id") + 1] == PRINCIPAL
@@ -1170,6 +1204,111 @@ def test_real_collector_and_verifier_bind_every_read(monkeypatch: pytest.MonkeyP
     assert sum("--all" in args for args in roles) == 2
     assert sum("--scope" in args and "--include-inherited" in args for args in roles) == 2
     assert len(calls) == 31  # Two fifteen-read snapshots and one telemetry query.
+
+
+def test_rest_transport_builds_pinned_uris_for_all_units(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every resource read is one az rest GET bound to its exact pinned ARM URI.
+
+    The five kinds and both application units (app and reviewer) each use the
+    pinned api-version and the independently validated subscription; no generic
+    resource-show argv survives the correction.
+    """
+    calls = []
+    monkeypatch.setattr(deployment, "az_read", collector_double(observed(), calls))
+    deployment.collect(CONFIG, DIGEST, SUBSCRIPTION, reviewer_digest=REVIEWER_DIGEST)
+    rests = [entry for entry in calls if entry[0] == ("rest",)]
+    assert len(rests) == 6
+    assert {args[3] for _, args, _ in rests} == {expected_arm_uri(k) for k in ARM_PINS}
+    for _, args, subscription in rests:
+        assert subscription == SUBSCRIPTION
+        assert args[0] == "--method" and args[1] == "get" and args[2] == "--url"
+        assert "--resource-type" not in args and "--api-version" not in args
+    for key in ARM_PINS:
+        assert any(args[3] == expected_arm_uri(key) for _, args, _ in rests)
+    assert not any(command == ("resource", "show") for command, _, _ in calls)
+
+
+def test_rest_read_is_restricted_to_one_pinned_management_get(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The az rest boundary rejects methods, hosts, scopes and subscriptions off the pin."""
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    argv = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        argv.append(command)
+        assert command[command.index("--subscription") + 1] == SUBSCRIPTION
+        assert command[command.index("--url") + 1] == expected_arm_uri("registry")
+        return subprocess.CompletedProcess(command, 0, '{"id": "nested"}', "")
+
+    monkeypatch.setattr(deployment.subprocess, "run", run)
+    assert deployment.az_read(("rest",), "--method", "get", "--url",
+                              expected_arm_uri("registry"), subscription=SUBSCRIPTION,
+                              label="registry-resource",
+                              arm_resource=RESOURCE_IDENTITY_BY_LABEL["registry-resource"]
+                              ) == {"id": "nested"}
+    other = str(uuid5(NAMESPACE_URL, "module10.synthetic.other-subscription"))
+    for bad in (
+        ("--method", "post", "--url", expected_arm_uri("registry")),
+        ("--method", "get", "--url", "https://evil.example/subscriptions/" + SUBSCRIPTION
+         + "/resourceGroups/" + CONFIG.names["group"] + "/providers/"
+         + ARM_PINS["app"][0] + "/" + CONFIG.names["app"] + "?api-version=2025-01-01"),
+        ("--method", "get", "--url", expected_arm_uri("registry").replace(SUBSCRIPTION, other)),
+        ("--method", "get", "--url",
+         expected_arm_uri("registry").replace(f"?api-version={ARM_PINS['registry'][1]}", "")),
+        ("--method", "get", "--url", expected_arm_uri("registry"), "--body", "{}"),
+        ("--url", expected_arm_uri("registry")),
+    ):
+        with pytest.raises(VerificationError, match="pinned ARM management GETs"):
+            deployment.az_read(("rest",), *bad, subscription=SUBSCRIPTION,
+                               label="registry-resource",
+                               arm_resource=RESOURCE_IDENTITY_BY_LABEL["registry-resource"])
+    assert len(argv) == 1
+
+
+def test_rest_read_rejects_unapproved_resource_identities(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The rest boundary admits only the pinned identity, version and URI.
+
+    The Coordinator's finding is that a subscription-prefix check and the
+    presence of the substring "api-version=" do not by themselves enforce an
+    approved API version, resource group, provider/type or resource name. Each
+    variant below must therefore fail closed.
+    """
+    monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
+    monkeypatch.setattr(deployment.subprocess, "run",
+                        lambda command, **kwargs: subprocess.CompletedProcess(
+                            command, 0, "{}", ""))
+    identity = RESOURCE_IDENTITY_BY_LABEL["registry-resource"]
+    base = expected_arm_uri("registry")
+    for bad_url in (
+        base.replace("api-version=2023-07-01", "api-version=2099-01-01"),
+        base.replace("api-version=2023-07-01", "api-version=2023-07-01&api-version=1"),
+        base.replace("api-version=2023-07-01", "api-version=2023-07-01&$expand=instances"),
+        base.replace("api-version=2023-07-01", "api-version=2023-07-01#fragment"),
+        base.replace("resourceGroups/" + CONFIG.names["group"],
+                     "resourceGroups/rg-module10-someothergroup"),
+        base.replace("/providers/" + ARM_PINS["registry"][0],
+                     "/providers/Microsoft.Authorization/roleAssignments"),
+        base.replace("/" + CONFIG.names["registry"], "/m10acr-othername"),
+        base.replace("management.azure.com", "management.azure.com.evil.example"),
+    ):
+        with pytest.raises(VerificationError, match="pinned ARM management GETs"):
+            deployment.az_read(("rest",), "--method", "get", "--url", bad_url,
+                               subscription=SUBSCRIPTION, label="registry-resource",
+                               arm_resource=identity)
+    with pytest.raises(VerificationError, match="approved resource identity"):
+        deployment.az_read(("rest",), "--method", "get", "--url", base,
+                           subscription=SUBSCRIPTION, label="registry-resource")
+    with pytest.raises(VerificationError, match="approved resource identity"):
+        deployment.az_read(("rest",), "--method", "get", "--url", base,
+                           subscription=SUBSCRIPTION, label="registry-resource",
+                           arm_resource=("unlisted", CONFIG.names["group"],
+                                          CONFIG.names["registry"]))
+    with pytest.raises(VerificationError, match="does not match its approved resource"):
+        deployment.az_read(("rest",), "--method", "get", "--url", base,
+                           subscription=SUBSCRIPTION, label="app-resource",
+                           arm_resource=identity)
 
 
 @pytest.mark.parametrize("view", ["roles", "inherited_roles"])
@@ -1497,14 +1636,16 @@ def test_residual_group_state_failure_records_no_evidence(stderr: str,
     real_az_read = deployment.az_read
 
     def az_read(command: tuple[str, ...], *args: str, label: str, subscription: str,
-                phase: str = "") -> object:
+                phase: str = "",
+                arm_resource: tuple[str, str, str] | None = None) -> object:
         if command == ("role", "assignment", "list"):
             monkeypatch.setattr(deployment.shutil, "which", lambda name: "az")
             monkeypatch.setattr(deployment.subprocess, "run", lambda cmd, **kw:
                                 subprocess.CompletedProcess(cmd, 2, "", stderr))
             return real_az_read(command, *args, subscription=subscription, label=label,
-                                phase=phase)
-        return double(command, *args, label=label, subscription=subscription, phase=phase)
+                                phase=phase, arm_resource=arm_resource)
+        return double(command, *args, label=label, subscription=subscription, phase=phase,
+                       arm_resource=arm_resource)
 
     monkeypatch.setattr(deployment, "az_read", az_read)
     monkeypatch.setattr(sys, "argv", ["azure_deployment", "--suffix", CONFIG.suffix,
@@ -1529,12 +1670,14 @@ def test_failed_rbac_read_prevents_evidence(view: str, monkeypatch: pytest.Monke
     read = collector_double(observed(), [])
 
     def failing(command: tuple[str, ...], *args: str, label: str, subscription: str,
-                phase: str = "") -> object:
+                phase: str = "",
+                arm_resource: tuple[str, str, str] | None = None) -> object:
         if command == ("role", "assignment", "list") and (
                 (view == "roles" and "--all" in args)
                 or (view == "inherited_roles" and "--scope" in args)):
             raise VerificationError("Synthetic RBAC collection failure.")
-        return read(command, *args, label=label, subscription=subscription, phase=phase)
+        return read(command, *args, label=label, subscription=subscription, phase=phase,
+                      arm_resource=arm_resource)
 
     monkeypatch.setattr(deployment, "az_read", failing)
     monkeypatch.setattr(deployment, "https_checks", lambda *a: pytest.fail("HTTP reached"))
